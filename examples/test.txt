@@ -1,0 +1,9 @@
+This is a sample plaintext file.
+
+It contains multiple paragraphs of text that can be converted to Markdown format.
+
+The conversion process will wrap this content in a Markdown code block,
+preserving the original formatting and structure of the text.
+
+This is useful for including documentation, notes, or other plaintext content
+in your Markdown documents.
