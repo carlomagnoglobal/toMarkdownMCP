@@ -459,6 +459,115 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                 },
                 "required": ["directory"]
             }
+        },
+        {
+            "name": "get_vault_statistics",
+            "description": "Returns statistics about a directory: file counts by type, top-level folder list, and top 20 most frequent tags from Markdown files",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directory": {
+                        "type": "string",
+                        "description": "Root directory to analyze"
+                    }
+                },
+                "required": ["directory"]
+            }
+        },
+        {
+            "name": "extract_active_todos",
+            "description": "Scans for uncompleted tasks (lines containing '- [ ]') and returns them grouped by file",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directory": {
+                        "type": "string",
+                        "description": "Root directory to scan (default: current directory)",
+                        "default": "."
+                    },
+                    "folder_scope": {
+                        "type": "string",
+                        "description": "Optional subfolder path to restrict scan"
+                    }
+                },
+                "required": []
+            }
+        },
+        {
+            "name": "safe_append_or_replace_section",
+            "description": "Updates content under a specific heading in a Markdown file without touching the rest of the document",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the Markdown file"
+                    },
+                    "heading": {
+                        "type": "string",
+                        "description": "Heading name to target (without # symbols, e.g. 'Action Items')"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Markdown content to insert"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["append", "overwrite"],
+                        "description": "'append' adds to bottom of section; 'overwrite' replaces everything under the heading",
+                        "default": "append"
+                    }
+                },
+                "required": ["path", "heading", "content"]
+            }
+        },
+        {
+            "name": "resolve_and_validate_links",
+            "description": "Validates a list of note names or file paths against real files on disk",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "links": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Note names, filenames, or paths to validate"
+                    },
+                    "directory": {
+                        "type": "string",
+                        "description": "Root directory to search (default: current directory)",
+                        "default": "."
+                    }
+                },
+                "required": ["links"]
+            }
+        },
+        {
+            "name": "upsert_markdown_table",
+            "description": "Inserts or overwrites a Markdown table under a specific heading. Creates file if it does not exist",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the Markdown file (will be created if absent)"
+                    },
+                    "heading": {
+                        "type": "string",
+                        "description": "Section heading under which the table should be placed"
+                    },
+                    "headers": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Column names for the table"
+                    },
+                    "rows": {
+                        "type": "array",
+                        "items": { "type": "array", "items": { "type": "string" } },
+                        "description": "Array of rows, each an array of cell strings"
+                    }
+                },
+                "required": ["path", "heading", "headers", "rows"]
+            }
         }
     ]);
 
@@ -491,6 +600,11 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
         Some("batch_convert_files") => handle_batch_convert_files(&arguments),
         Some("search_files") => handle_search_files(&arguments),
         Some("get_recently_modified_files") => handle_get_recently_modified_files(&arguments),
+        Some("get_vault_statistics") => handle_get_vault_statistics(&arguments),
+        Some("extract_active_todos") => handle_extract_active_todos(&arguments),
+        Some("safe_append_or_replace_section") => handle_safe_append_or_replace_section(&arguments),
+        Some("resolve_and_validate_links") => handle_resolve_and_validate_links(&arguments),
+        Some("upsert_markdown_table") => handle_upsert_markdown_table(&arguments),
         _ => {
             return JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -1468,4 +1582,447 @@ fn handle_get_recently_modified_files(args: &Value) -> Result<String, Box<dyn st
     }
 
     Ok(result)
+}
+
+fn handle_get_vault_statistics(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let directory = args.get("directory")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("directory".to_string())) as Box<dyn std::error::Error>)?;
+
+    use std::collections::HashMap;
+
+    let mut ext_counts: HashMap<String, usize> = HashMap::new();
+    let mut top_level_folders = std::collections::BTreeSet::new();
+    let mut tag_counts: HashMap<String, usize> = HashMap::new();
+
+    fn collect_stats(
+        dir: &Path,
+        base_depth: usize,
+        ext_counts: &mut HashMap<String, usize>,
+        top_level_folders: &mut std::collections::BTreeSet<String>,
+        tag_counts: &mut HashMap<String, usize>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                let depth = path.iter().count();
+                if depth == base_depth + 1 {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if !name.starts_with('.') {
+                            top_level_folders.insert(name.to_string());
+                        }
+                    }
+                }
+                if depth < base_depth + 3 {
+                    let _ = collect_stats(&path, base_depth, ext_counts, top_level_folders, tag_counts);
+                }
+            } else {
+                let file_ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                if !file_ext.is_empty() {
+                    *ext_counts.entry(file_ext.to_string()).or_insert(0) += 1;
+                }
+
+                if file_ext == "md" || file_ext == "txt" {
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        for line in content.lines() {
+                            if line.starts_with("tags:") {
+                                let tags_str = line.strip_prefix("tags:").unwrap_or("").trim();
+                                if tags_str.starts_with('[') && tags_str.ends_with(']') {
+                                    let csv = tags_str.trim_start_matches('[').trim_end_matches(']');
+                                    for tag in csv.split(',') {
+                                        let clean_tag = tag.trim().trim_matches('"').trim_matches('\'');
+                                        if !clean_tag.is_empty() {
+                                            *tag_counts.entry(clean_tag.to_string()).or_insert(0) += 1;
+                                        }
+                                    }
+                                }
+                            } else if line.trim().starts_with("#") && !line.starts_with("##") {
+                                continue;
+                            } else {
+                                for word in line.split_whitespace() {
+                                    if word.starts_with('#') && word.len() > 1 {
+                                        let tag = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '-');
+                                        if !tag.is_empty() && tag.chars().next().map_or(false, |c| c.is_alphabetic()) {
+                                            *tag_counts.entry(tag.to_string()).or_insert(0) += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let base = Path::new(directory);
+    let base_depth = base.iter().count();
+    let _ = collect_stats(base, base_depth, &mut ext_counts, &mut top_level_folders, &mut tag_counts);
+
+    let mut result = String::new();
+    result.push_str("# Vault Statistics\n\n");
+
+    result.push_str("## File Distribution\n\n");
+    result.push_str("| Extension | Count |\n");
+    result.push_str("|-----------|-------|\n");
+    let mut exts: Vec<_> = ext_counts.iter().collect();
+    exts.sort_by_key(|&(_, count)| std::cmp::Reverse(*count));
+    for (ext, count) in exts {
+        result.push_str(&format!("| .{} | {} |\n", ext, count));
+    }
+
+    result.push_str("\n## Top-Level Folders\n\n");
+    for folder in &top_level_folders {
+        result.push_str(&format!("- {}\n", folder));
+    }
+
+    result.push_str("\n## Top 20 Tags\n\n");
+    let mut tags: Vec<_> = tag_counts.iter().collect();
+    tags.sort_by_key(|&(_, count)| std::cmp::Reverse(*count));
+    for (tag, count) in tags.iter().take(20) {
+        result.push_str(&format!("- **#{}** ({} occurrences)\n", tag, count));
+    }
+
+    Ok(result)
+}
+
+fn handle_extract_active_todos(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let directory = args.get("directory")
+        .and_then(|v| v.as_str())
+        .unwrap_or(".");
+
+    let folder_scope = args.get("folder_scope")
+        .and_then(|v| v.as_str());
+
+    let scan_dir = folder_scope.unwrap_or(directory);
+
+    let mut todos_by_file: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    let mut total_todos = 0;
+
+    fn scan_for_todos(
+        dir: &Path,
+        todos_by_file: &mut std::collections::BTreeMap<String, Vec<String>>,
+        total: &mut usize,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                let _ = scan_for_todos(&path, todos_by_file, total);
+            } else {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    for line in content.lines() {
+                        if line.contains("- [ ]") {
+                            let path_str = path.to_string_lossy().to_string();
+                            todos_by_file.entry(path_str).or_insert_with(Vec::new).push(line.trim().to_string());
+                            *total += 1;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let path = Path::new(scan_dir);
+    let _ = scan_for_todos(path, &mut todos_by_file, &mut total_todos);
+
+    let mut result = String::new();
+    result.push_str("# Active Tasks\n\n");
+
+    if todos_by_file.is_empty() {
+        result.push_str("No active tasks found.\n");
+    } else {
+        for (file_path, tasks) in todos_by_file.iter() {
+            result.push_str(&format!("## {}\n\n", file_path));
+            for task in tasks {
+                result.push_str(&format!("{}\n", task));
+            }
+            result.push('\n');
+        }
+
+        result.push_str(&format!("**Total:** {} tasks across {} files\n", total_todos, todos_by_file.len()));
+    }
+
+    Ok(result)
+}
+
+fn handle_safe_append_or_replace_section(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let path = args.get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("path".to_string())) as Box<dyn std::error::Error>)?;
+
+    let heading = args.get("heading")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("heading".to_string())) as Box<dyn std::error::Error>)?;
+
+    let content = args.get("content")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("content".to_string())) as Box<dyn std::error::Error>)?;
+
+    let mode = args.get("mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("append");
+
+    let file_path = Path::new(path);
+    let current_content = std::fs::read_to_string(file_path)
+        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    let lines: Vec<&str> = current_content.lines().collect();
+    let mut heading_line_idx = None;
+    let mut heading_level = 0;
+
+    for (idx, line) in lines.iter().enumerate() {
+        if let Some(stripped) = line.strip_prefix('#') {
+            let level = stripped.len() - stripped.trim_start_matches('#').len();
+            if level > 0 && level <= 6 {
+                let heading_text = stripped.trim_start_matches('#').trim();
+                if heading_text == heading {
+                    heading_line_idx = Some(idx);
+                    heading_level = level;
+                    break;
+                }
+            }
+        }
+    }
+
+    if heading_line_idx.is_none() {
+        return Err(Box::new(ConversionError::ConversionFailed(format!("Heading '{}' not found", heading))));
+    }
+
+    let start_idx = heading_line_idx.unwrap() + 1;
+    let mut end_idx = lines.len();
+
+    for idx in start_idx..lines.len() {
+        if let Some(stripped) = lines[idx].strip_prefix('#') {
+            let level = stripped.len() - stripped.trim_start_matches('#').len();
+            if level > 0 && level <= heading_level {
+                end_idx = idx;
+                break;
+            }
+        }
+    }
+
+    let mut result_lines = Vec::new();
+    result_lines.extend_from_slice(&lines[..start_idx]);
+
+    if mode == "overwrite" {
+        result_lines.push(content);
+    } else {
+        result_lines.extend_from_slice(&lines[start_idx..end_idx]);
+        result_lines.push(content);
+    }
+
+    result_lines.extend_from_slice(&lines[end_idx..]);
+
+    let updated_content = result_lines.join("\n");
+    std::fs::write(file_path, updated_content)
+        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    Ok(format!("Updated section '{}' in {} (mode: {})", heading, path, mode))
+}
+
+fn handle_resolve_and_validate_links(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let links_array = args.get("links")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("links".to_string())) as Box<dyn std::error::Error>)?;
+
+    let directory = args.get("directory")
+        .and_then(|v| v.as_str())
+        .unwrap_or(".");
+
+    let mut all_files = Vec::new();
+
+    fn collect_all_files(dir: &Path, files: &mut Vec<String>) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                let _ = collect_all_files(&path, files);
+            } else {
+                if let Some(path_str) = path.to_str() {
+                    files.push(path_str.to_lowercase());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let base = Path::new(directory);
+    let _ = collect_all_files(base, &mut all_files);
+
+    let mut result = String::new();
+    result.push_str("# Link Validation Results\n\n");
+
+    for link_val in links_array {
+        if let Some(link) = link_val.as_str() {
+            let link_lower = link.to_lowercase();
+            let mut found = false;
+            let mut closest_match = None;
+
+            for file in &all_files {
+                if file.ends_with(&link_lower) || file.contains(&link_lower) {
+                    found = true;
+                    closest_match = Some(file.clone());
+                    break;
+                }
+            }
+
+            if found {
+                result.push_str(&format!("✅ **{}** — Found: {}\n", link, closest_match.unwrap_or_default()));
+            } else {
+                let mut fuzzy_match = None;
+                for file in &all_files {
+                    if file.contains(&link_lower) {
+                        fuzzy_match = Some(file.clone());
+                        break;
+                    }
+                }
+
+                if let Some(fm) = fuzzy_match {
+                    result.push_str(&format!("⚠️ **{}** — Partial match: {}\n", link, fm));
+                } else {
+                    result.push_str(&format!("❌ **{}** — Not found\n", link));
+                }
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+fn handle_upsert_markdown_table(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let path = args.get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("path".to_string())) as Box<dyn std::error::Error>)?;
+
+    let heading = args.get("heading")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("heading".to_string())) as Box<dyn std::error::Error>)?;
+
+    let headers = args.get("headers")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("headers".to_string())) as Box<dyn std::error::Error>)?;
+
+    let rows = args.get("rows")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("rows".to_string())) as Box<dyn std::error::Error>)?;
+
+    let mut header_strs = Vec::new();
+    for h in headers {
+        if let Some(hs) = h.as_str() {
+            header_strs.push(hs.replace('|', "\\|"));
+        }
+    }
+
+    let mut row_vecs = Vec::new();
+    for row in rows {
+        if let Some(row_arr) = row.as_array() {
+            let mut row_cells = Vec::new();
+            for cell in row_arr {
+                if let Some(cs) = cell.as_str() {
+                    row_cells.push(cs.replace('|', "\\|"));
+                }
+            }
+            if !row_cells.is_empty() {
+                row_vecs.push(row_cells);
+            }
+        }
+    }
+
+    let row_count = row_vecs.len();
+    let col_count = header_strs.len();
+
+    let mut table = String::new();
+    table.push_str("| ");
+    table.push_str(&header_strs.join(" | "));
+    table.push_str(" |\n");
+    table.push_str("|");
+    for _ in 0..col_count {
+        table.push_str("---|");
+    }
+    table.push('\n');
+
+    for row_cells in row_vecs {
+        table.push_str("| ");
+        table.push_str(&row_cells.join(" | "));
+        table.push_str(" |\n");
+    }
+
+    let file_path = Path::new(path);
+    let success_msg = format!("Table inserted/updated under '{}' in {} ({} rows, {} columns)", heading, path, row_count, col_count);
+
+    if file_path.exists() {
+        let current = std::fs::read_to_string(file_path)
+            .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+        let lines: Vec<&str> = current.lines().collect();
+        let mut heading_idx = None;
+
+        for (idx, line) in lines.iter().enumerate() {
+            if let Some(stripped) = line.strip_prefix('#') {
+                let heading_text = stripped.trim_start_matches('#').trim();
+                if heading_text == heading {
+                    heading_idx = Some(idx);
+                    break;
+                }
+            }
+        }
+
+        if let Some(h_idx) = heading_idx {
+            let mut found_table = false;
+            for idx in (h_idx + 1)..lines.len() {
+                if lines[idx].starts_with('|') {
+                    let table_start = idx;
+                    let mut table_end = idx + 1;
+                    while table_end < lines.len() && lines[table_end].starts_with('|') {
+                        table_end += 1;
+                    }
+                    found_table = true;
+
+                    let mut new_lines = lines[..table_start].to_vec();
+                    new_lines.push(&table);
+                    new_lines.extend_from_slice(&lines[table_end..]);
+
+                    std::fs::write(file_path, new_lines.join("\n"))
+                        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+                    return Ok(success_msg);
+                }
+                if let Some(next_h) = lines[idx].strip_prefix('#') {
+                    let level = next_h.len() - next_h.trim_start_matches('#').len();
+                    if level > 0 {
+                        break;
+                    }
+                }
+            }
+
+            if !found_table {
+                let mut new_lines = lines.clone();
+                new_lines.insert(h_idx + 1, "");
+                new_lines.insert(h_idx + 2, &table);
+                std::fs::write(file_path, new_lines.join("\n"))
+                    .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+                return Ok(success_msg);
+            }
+        } else {
+            let mut new_content = current.clone();
+            if !new_content.ends_with('\n') {
+                new_content.push('\n');
+            }
+            new_content.push_str(&format!("\n## {}\n\n{}", heading, table));
+            std::fs::write(file_path, new_content)
+                .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+            return Ok(success_msg);
+        }
+    }
+
+    let new_content = format!("## {}\n\n{}", heading, table);
+    std::fs::write(file_path, new_content)
+        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    Ok(success_msg)
 }
