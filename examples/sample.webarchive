@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>MainResource</key>
+	<dict>
+		<key>Data</key>
+		<data>
+		PCFET0NUWVBFIGh0bWw+CjxodG1sIGxhbmc9ImVuIj4KPGhlYWQ+CiAgICA8
+		bWV0YSBjaGFyc2V0PSJVVEYtOCI+CiAgICA8bWV0YSBuYW1lPSJ2aWV3cG9y
+		dCIgY29udGVudD0id2lkdGg9ZGV2aWNlLXdpZHRoLCBpbml0aWFsLXNjYWxl
+		PTEuMCI+CiAgICA8bWV0YSBuYW1lPSJhdXRob3IiIGNvbnRlbnQ9IlRlc3Qg
+		QXJjaGl2ZSI+CiAgICA8bWV0YSBuYW1lPSJkZXNjcmlwdGlvbiIgY29udGVu
+		dD0iU2FtcGxlIHdlYnBhZ2UgYXJjaGl2ZWQgZm9yIHRlc3RpbmciPgogICAg
+		PHRpdGxlPlNhbXBsZSBBcmNoaXZlZCBXZWJwYWdlPC90aXRsZT4KPC9oZWFk
+		Pgo8Ym9keT4KICAgIDxoMT5TYW1wbGUgQXJjaGl2ZWQgV2VicGFnZTwvaDE+
+		CgogICAgPGgyPkludHJvZHVjdGlvbjwvaDI+CiAgICA8cD5UaGlzIGlzIGEg
+		c2FtcGxlIHdlYnBhZ2UgdGhhdCBoYXMgYmVlbiBhcmNoaXZlZCBhcyBhIHdl
+		YmFyY2hpdmUgZmlsZSBmb3IgdGVzdGluZyB3ZWJhcmNoaXZlIGNvbnZlcnNp
+		b24uPC9wPgoKICAgIDxoMj5GZWF0dXJlczwvaDI+CiAgICA8dWw+CiAgICAg
+		ICAgPGxpPkFyY2hpdmVkIEhUTUwgY29udGVudDwvbGk+CiAgICAgICAgPGxp
+		PkVtYmVkZGVkIHJlc291cmNlcyBzdXBwb3J0PC9saT4KICAgICAgICA8bGk+
+		TWV0YWRhdGEgcHJlc2VydmF0aW9uPC9saT4KICAgICAgICA8bGk+RnVsbCBI
+		VE1MIHRvIE1hcmtkb3duIGNvbnZlcnNpb248L2xpPgogICAgPC91bD4KCiAg
+		ICA8aDI+Q29udGVudCBTZWN0aW9uczwvaDI+CiAgICA8aDM+U2VjdGlvbiBB
+		PC9oMz4KICAgIDxwPlRoaXMgaXMgdGhlIGZpcnN0IHNlY3Rpb24gd2l0aCBz
+		b21lIHNhbXBsZSB0ZXh0IGFuZCA8c3Ryb25nPmJvbGQgY29udGVudDwvc3Ry
+		b25nPi48L3A+CgogICAgPGgzPlNlY3Rpb24gQjwvaDM+CiAgICA8cD5UaGlz
+		IGlzIHRoZSBzZWNvbmQgc2VjdGlvbiB3aXRoIDxlbT5lbXBoYXNpemVkIHRl
+		eHQ8L2VtPiBhbmQgbW9yZSBzYW1wbGUgY29udGVudC48L3A+CgogICAgPGgy
+		PkNvbmNsdXNpb248L2gyPgogICAgPHA+V2ViYXJjaGl2ZSBmaWxlcyBjYW4g
+		YmUgZWFzaWx5IGNvbnZlcnRlZCB0byBNYXJrZG93biBmb3JtYXQgdXNpbmcg
+		dGhlIHRvTWFya2Rvd25NQ1Agc2VydmVyLjwvcD4KPC9ib2R5Pgo8L2h0bWw+
+		</data>
+		<key>MIMEType</key>
+		<string>text/html</string>
+		<key>URL</key>
+		<string>https://example.com/sample.html</string>
+		<key>WebResourceResponse</key>
+		<dict>
+			<key>MIMEType</key>
+			<string>text/html</string>
+			<key>URL</key>
+			<string>https://example.com/sample.html</string>
+			<key>textEncodingName</key>
+			<string>UTF-8</string>
+		</dict>
+	</dict>
+	<key>Resources</key>
+	<array/>
+</dict>
+</plist>

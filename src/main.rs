@@ -11,6 +11,7 @@ mod sources;
 mod html_converter;
 mod toc_generator;
 mod image_extractor;
+mod webarchive_parser;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
@@ -387,9 +388,9 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         ""
     };
 
-    // Check if this is an HTML file
+    // Check if this is an HTML-like file
     let extension = path.extension().and_then(|ext| ext.to_str());
-    let is_html = matches!(extension, Some("html" | "htm" | "mhtml"));
+    let is_html = matches!(extension, Some("html" | "htm" | "mhtml" | "webarchive"));
 
     if is_html {
         // Handle HTML conversion
@@ -615,18 +616,26 @@ fn handle_html_file_conversion(
     image_format: ImageFormat,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let path = Path::new(file_path);
-
-    // Read file
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
-
-    // Check if this is an MHTML file
     let extension = path.extension().and_then(|ext| ext.to_str());
-    let mut html_content = if extension == Some("mhtml") {
-        extract_html_from_mhtml(&content)
+
+    // For webarchive files, read as binary; for others, read as text
+    let mut html_content = if extension == Some("webarchive") {
+        let binary_content = std::fs::read(path)
+            .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+        webarchive_parser::extract_html_from_webarchive(&binary_content)
             .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?
     } else {
-        content
+        // Read as text for HTML/HTM/MHTML files
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+        if extension == Some("mhtml") {
+            extract_html_from_mhtml(&content)
+                .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?
+        } else {
+            content
+        }
     };
 
     // Process images if needed

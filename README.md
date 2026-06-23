@@ -32,11 +32,12 @@ Supports converting from multiple sources including local files, HTTP/HTTPS URLs
 - **Multiple file sources** - files, URLs, stdin, directories
 - **Zero external MCP dependencies** - pure Rust implementation
 
-## Supported File Types (60+ Languages + HTML)
+## Supported File Types (60+ Languages + Web Formats)
 
 ### Web & Document Formats
 - **HTML Documents**: `*.html`, `*.htm` - Standard HTML with full conversion to Markdown
-- **MHTML Archives**: `*.mhtml` - MIME HTML archives (web page archives from browsers)
+- **MHTML Archives**: `*.mhtml` - MIME HTML archives (single-file web archives from browsers)
+- **Webarchive**: `*.webarchive` - Safari/Apple webarchive format (macOS/iOS web archives)
 - **HTML to Markdown** - Converts HTML structure (headings, lists, links, code blocks, etc.)
 
 ### Programming Languages (60+)
@@ -391,8 +392,32 @@ For detailed documentation on each feature:
 - [CSS_STYLING_HINTS.md](CSS_STYLING_HINTS.md) - Preserve CSS information
 - [IMAGE_EXTRACTION.md](IMAGE_EXTRACTION.md) - Control image handling
 - [TOC_GENERATION.md](TOC_GENERATION.md) - Generate table of contents
+- [WEBARCHIVE_SUPPORT.md](WEBARCHIVE_SUPPORT.md) - Safari webarchive support
 
 For complete HTML conversion documentation, see [HTML_SUPPORT.md](HTML_SUPPORT.md).
+
+## Webarchive Support
+
+Convert Safari web archives (`.webarchive`) to Markdown:
+
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "webpage.webarchive",
+    "extract_metadata": true,
+    "generate_toc": true
+  }
+}
+```
+
+Webarchive files from Safari, Mail, and other Apple applications are fully supported with:
+- Automatic HTML extraction from the plist container
+- Support for all HTML conversion features (metadata, images, CSS hints, TOC)
+- UTF-8 and binary data handling
+- Cross-platform compatibility
+
+See [WEBARCHIVE_SUPPORT.md](WEBARCHIVE_SUPPORT.md) for complete documentation.
 
 ## Testing
 
@@ -416,6 +441,7 @@ Pre-built examples are in the `examples/` directory:
 - `examples/sample.html` - Standard HTML document
 - `examples/sample.htm` - Legacy HTM format
 - `examples/sample.mhtml` - MHTML archive
+- `examples/sample.webarchive` - Safari webarchive format (macOS/iOS)
 - `examples/sample_with_metadata.html` - HTML with rich metadata for testing metadata extraction
 - `examples/styled_page.html` - HTML with inline CSS styling for CSS hints testing
 - `examples/toc_demo.html` - Multi-level heading structure for TOC generation testing
