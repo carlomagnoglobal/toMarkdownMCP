@@ -105,6 +105,7 @@ Converts a file to Markdown format. For HTML files, supports optional metadata e
 - `extract_forms` (boolean, optional): Extract HTML forms as Markdown tables (default: false)
 - `preserve_comments` (boolean, optional): Preserve HTML comments in output (default: false)
 - `extract_links` (boolean, optional): Extract and summarize all links in document (default: false)
+- `analyze_headings` (boolean, optional): Analyze heading structure and hierarchy (default: false)
 - `extract_images` (boolean, optional): Extract and process images (default: false)
 - `image_format` (string, optional): Image output format: "link" or "skip" (default: "link")
 - `generate_toc` (boolean, optional): Generate table of contents from headings (default: false)
@@ -167,6 +168,7 @@ Converts code or HTML from various sources (file, URL, stdin) to Markdown format
 - `extract_forms` (boolean, optional): Extract HTML forms as Markdown tables (default: false)
 - `preserve_comments` (boolean, optional): Preserve HTML comments in output (default: false)
 - `extract_links` (boolean, optional): Extract and summarize all links in document (default: false)
+- `analyze_headings` (boolean, optional): Analyze heading structure and hierarchy (default: false)
 - `extract_images` (boolean, optional): Extract and process images (default: false)
 - `image_format` (string, optional): Image output format: "link" or "skip" (default: "link")
 - `generate_toc` (boolean, optional): Generate table of contents from headings (default: false)
@@ -420,6 +422,7 @@ For detailed documentation on each feature:
 - [IMAGE_EXTRACTION.md](IMAGE_EXTRACTION.md) - Control image handling
 - [TABLE_CONVERSION.md](TABLE_CONVERSION.md) - Convert HTML tables to Markdown
 - [FORM_EXTRACTION.md](FORM_EXTRACTION.md) - Extract and convert HTML forms
+- [HEADING_ANALYSIS.md](HEADING_ANALYSIS.md) - Analyze heading structure and hierarchy
 - [LINK_EXTRACTION.md](LINK_EXTRACTION.md) - Extract and summarize links
 - [COMMENT_PRESERVATION.md](COMMENT_PRESERVATION.md) - Preserve HTML comments
 - [CODE_LANGUAGE_DETECTION.md](CODE_LANGUAGE_DETECTION.md) - Auto-detect code block languages
@@ -628,6 +631,57 @@ Extract and categorize all hyperlinks in a document:
 ```
 
 See [LINK_EXTRACTION.md](LINK_EXTRACTION.md) for complete documentation.
+
+## Heading Structure Analysis
+
+Analyze document heading hierarchy and validate structure:
+
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "page.html",
+    "analyze_headings": true
+  }
+}
+```
+
+**Features:**
+- Extracts all h1-h6 headings in document order
+- Validates proper heading hierarchy
+- Detects issues (jumps, multiple h1s, broken nesting)
+- Generates statistics on heading distribution
+- Creates visual tree representation
+- Important for accessibility and SEO
+
+**Example Output:**
+```markdown
+## Heading Structure Analysis
+
+**Total Headings:** 4
+
+### Heading Levels Distribution
+
+| Level | Count |
+|-------|-------|
+| H1 | 1 |
+| H2 | 2 |
+| H3 | 1 |
+
+**Hierarchy Depth:** 1 - 3
+
+### ✓ No Hierarchy Issues
+
+## Document Heading Structure
+
+```
+├─ H1: Main Title
+  ├─ H2: Section 1
+    ├─ H3: Subsection
+  ├─ H2: Section 2
+```
+
+See [HEADING_ANALYSIS.md](HEADING_ANALYSIS.md) for complete documentation.
 
 ## Webarchive Support
 
