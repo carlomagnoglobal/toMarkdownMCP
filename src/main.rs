@@ -14,7 +14,7 @@ use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
 use error::ConversionError;
 use sources::{SourceType, fetch_from_source, list_files_in_directory};
-use html_converter::{html_to_markdown_enhanced, extract_html_from_mhtml};
+use html_converter::{html_to_markdown_with_metadata, extract_html_from_mhtml};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonRpcRequest {
@@ -102,7 +102,7 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
     let tools = json!([
         {
             "name": "convert_file",
-            "description": "Convert a text or code file to Markdown format",
+            "description": "Convert a text, code, or HTML file to Markdown format",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -122,6 +122,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                     "add_line_numbers": {
                         "type": "boolean",
                         "description": "Add line numbers to code block (default: false)",
+                        "default": false
+                    },
+                    "extract_metadata": {
+                        "type": "boolean",
+                        "description": "Extract metadata from HTML files as YAML frontmatter (default: false)",
                         "default": false
                     }
                 },
@@ -157,7 +162,7 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
         },
         {
             "name": "convert_from_source",
-            "description": "Convert code from various sources (file, URL, stdin) to Markdown",
+            "description": "Convert code or HTML from various sources (file, URL, stdin) to Markdown",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -176,6 +181,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                     "add_line_numbers": {
                         "type": "boolean",
                         "description": "Add line numbers to code block (default: false)",
+                        "default": false
+                    },
+                    "extract_metadata": {
+                        "type": "boolean",
+                        "description": "Extract metadata from HTML as YAML frontmatter (default: false)",
                         "default": false
                     }
                 },
@@ -285,6 +295,10 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let extract_metadata = args.get("extract_metadata")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     let path = Path::new(file_path);
 
     // Get filename if needed
@@ -302,7 +316,7 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
 
     if is_html {
         // Handle HTML conversion
-        return handle_html_file_conversion(file_path, filename);
+        return handle_html_file_conversion(file_path, filename, extract_metadata);
     }
 
     // Read file
@@ -369,6 +383,10 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let extract_metadata = args.get("extract_metadata")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     // Parse source
     let source = SourceType::from_string(source_str)
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
@@ -408,6 +426,13 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
         }
     };
 
+    // Check if this is HTML and should extract metadata
+    if (language == "html" || language == "htm") && extract_metadata {
+        let markdown = html_to_markdown_with_metadata(&content, true)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+        return Ok(markdown);
+    }
+
     Ok(convert_to_markdown_with_options(
         &content,
         Some(language.as_str()),
@@ -444,6 +469,7 @@ fn handle_list_directory_files(args: &Value) -> Result<String, Box<dyn std::erro
 fn handle_html_file_conversion(
     file_path: &str,
     filename: &str,
+    extract_metadata: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let path = Path::new(file_path);
 
@@ -460,13 +486,13 @@ fn handle_html_file_conversion(
         content
     };
 
-    // Convert HTML to Markdown
-    let markdown = html_to_markdown_enhanced(&html_content)
+    // Convert HTML to Markdown with optional metadata extraction
+    let markdown = html_to_markdown_with_metadata(&html_content, extract_metadata)
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
 
-    // Add filename as heading if not empty
+    // Add filename as heading if not empty (and metadata not extracted)
     let mut result = String::new();
-    if !filename.is_empty() {
+    if !filename.is_empty() && !extract_metadata {
         result.push_str(&format!("# {}\n\n", filename));
     }
     result.push_str(&markdown);

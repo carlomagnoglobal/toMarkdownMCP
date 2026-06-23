@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use scraper::{Html, Selector};
+use std::collections::BTreeMap;
 
 /// Convert HTML content to Markdown (basic conversion)
 #[allow(dead_code)]
@@ -13,10 +14,25 @@ pub fn html_to_markdown(html_content: &str) -> Result<String> {
     Ok(markdown)
 }
 
-/// Convert HTML content with enhanced formatting
+/// Convert HTML content with enhanced formatting (wrapper for backward compatibility)
+#[allow(dead_code)]
 pub fn html_to_markdown_enhanced(html_content: &str) -> Result<String> {
+    html_to_markdown_with_metadata(html_content, false)
+}
+
+/// Convert HTML content with optional metadata extraction
+pub fn html_to_markdown_with_metadata(html_content: &str, extract_metadata: bool) -> Result<String> {
     let document = Html::parse_document(html_content);
     let mut markdown = String::new();
+
+    // Extract metadata if requested
+    if extract_metadata {
+        let metadata = extract_html_metadata(html_content)?;
+        if !metadata.is_empty() {
+            markdown.push_str(&metadata_to_yaml_frontmatter(&metadata));
+            markdown.push_str("\n");
+        }
+    }
 
     // Extract title if present
     let title_selector = Selector::parse("title").map_err(|_| anyhow!("Invalid selector"))?;
@@ -98,25 +114,73 @@ fn cleanup_markdown(markdown: &str) -> String {
     result.trim_end().to_string() + "\n"
 }
 
-/// Extract metadata from HTML
-#[allow(dead_code)]
-pub fn extract_html_metadata(html_content: &str) -> Result<HtmlMetadata> {
+/// Extract metadata from HTML and return as key-value map
+pub fn extract_html_metadata(html_content: &str) -> Result<BTreeMap<String, String>> {
     let document = Html::parse_document(html_content);
-    let mut metadata = HtmlMetadata::default();
+    let mut metadata = BTreeMap::new();
 
     // Extract title
     let title_selector = Selector::parse("title").map_err(|_| anyhow!("Invalid selector"))?;
     if let Some(title_elem) = document.select(&title_selector).next() {
-        metadata.title = Some(title_elem.inner_html());
+        let title = title_elem.inner_html();
+        if !title.is_empty() {
+            metadata.insert("title".to_string(), title);
+        }
     }
 
-    // Extract meta description
-    let meta_selector = Selector::parse("meta[name=\"description\"]")
-        .map_err(|_| anyhow!("Invalid selector"))?;
-    if let Some(meta_elem) = document.select(&meta_selector).next() {
-        if let Some(content) = meta_elem.value().attr("content") {
-            metadata.description = Some(content.to_string());
+    // Extract meta tags (description, author, keywords, etc.)
+    let meta_selector = Selector::parse("meta").map_err(|_| anyhow!("Invalid selector"))?;
+
+    for meta_elem in document.select(&meta_selector) {
+        let elem = meta_elem.value();
+
+        // Check for name attribute (standard meta tags)
+        if let Some(name) = elem.attr("name") {
+            if let Some(content) = elem.attr("content") {
+                let key = name.to_lowercase();
+                if !content.is_empty() && !metadata.contains_key(&key) {
+                    metadata.insert(key, content.to_string());
+                }
+            }
         }
+
+        // Check for property attribute (Open Graph)
+        if let Some(property) = elem.attr("property") {
+            if let Some(content) = elem.attr("content") {
+                if property.starts_with("og:") && !content.is_empty() {
+                    let key = property.replace("og:", "og_");
+                    if !metadata.contains_key(&key) {
+                        metadata.insert(key, content.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Extract language from html tag
+    let html_selector = Selector::parse("html").map_err(|_| anyhow!("Invalid selector"))?;
+    if let Some(html_elem) = document.select(&html_selector).next() {
+        if let Some(lang) = html_elem.value().attr("lang") {
+            metadata.insert("language".to_string(), lang.to_string());
+        }
+    }
+
+    Ok(metadata)
+}
+
+/// Extract detailed metadata for analysis
+#[allow(dead_code)]
+pub fn extract_html_metadata_detailed(html_content: &str) -> Result<HtmlMetadata> {
+    let document = Html::parse_document(html_content);
+    let mut metadata = HtmlMetadata::default();
+    let map = extract_html_metadata(html_content)?;
+
+    // Populate HtmlMetadata from map
+    if let Some(title) = map.get("title") {
+        metadata.title = Some(title.clone());
+    }
+    if let Some(description) = map.get("description") {
+        metadata.description = Some(description.clone());
     }
 
     // Extract headings
@@ -139,6 +203,40 @@ pub fn extract_html_metadata(html_content: &str) -> Result<HtmlMetadata> {
     metadata.code_block_count = document.select(&code_selector).count();
 
     Ok(metadata)
+}
+
+/// Convert metadata map to YAML frontmatter format
+pub fn metadata_to_yaml_frontmatter(metadata: &BTreeMap<String, String>) -> String {
+    if metadata.is_empty() {
+        return String::new();
+    }
+
+    let mut yaml = String::from("---\n");
+
+    for (key, value) in metadata.iter() {
+        // Skip internal keys
+        if key == "og_image" || key == "og_type" {
+            continue;
+        }
+
+        // Format the key
+        let formatted_key = key.replace('_', "-");
+
+        // Check if value needs to be quoted (contains special chars or is numeric)
+        let needs_quotes = value.contains(':') || value.contains('"') ||
+                          value.starts_with(' ') || value.ends_with(' ') ||
+                          value.contains('\n');
+
+        if needs_quotes {
+            let escaped = value.replace('"', "\\\"");
+            yaml.push_str(&format!("{}: \"{}\"\n", formatted_key, escaped));
+        } else {
+            yaml.push_str(&format!("{}: {}\n", formatted_key, value));
+        }
+    }
+
+    yaml.push_str("---\n");
+    yaml
 }
 
 #[derive(Debug, Default)]
