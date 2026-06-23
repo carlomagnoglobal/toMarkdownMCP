@@ -7,10 +7,12 @@ use std::path::Path;
 mod converter;
 mod file_type;
 mod error;
+mod sources;
 
-use converter::convert_to_markdown;
-use file_type::detect_language;
+use converter::convert_to_markdown_with_options;
+use file_type::{detect_language, detect_language_from_filename};
 use error::ConversionError;
+use sources::{SourceType, fetch_from_source, list_files_in_directory};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonRpcRequest {
@@ -110,6 +112,15 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                         "type": "boolean",
                         "description": "Include filename as Markdown heading (default: true)",
                         "default": true
+                    },
+                    "file_type": {
+                        "type": "string",
+                        "description": "Optional: explicitly specify language (overrides detection)"
+                    },
+                    "add_line_numbers": {
+                        "type": "boolean",
+                        "description": "Add line numbers to code block (default: false)",
+                        "default": false
                     }
                 },
                 "required": ["file_path"]
@@ -132,9 +143,60 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                     "title": {
                         "type": "string",
                         "description": "Optional: title for the markdown document"
+                    },
+                    "add_line_numbers": {
+                        "type": "boolean",
+                        "description": "Add line numbers to code block (default: false)",
+                        "default": false
                     }
                 },
                 "required": ["content"]
+            }
+        },
+        {
+            "name": "convert_from_source",
+            "description": "Convert code from various sources (file, URL, stdin) to Markdown",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "description": "Source: file path, URL (http://...), or '-' for stdin"
+                    },
+                    "file_type": {
+                        "type": "string",
+                        "description": "Optional: specify code language (auto-detected from file extension if omitted)"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Optional: title for the markdown document"
+                    },
+                    "add_line_numbers": {
+                        "type": "boolean",
+                        "description": "Add line numbers to code block (default: false)",
+                        "default": false
+                    }
+                },
+                "required": ["source"]
+            }
+        },
+        {
+            "name": "list_directory_files",
+            "description": "List all code files in a directory (recursively)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directory": {
+                        "type": "string",
+                        "description": "Directory path to scan for code files"
+                    },
+                    "recursive": {
+                        "type": "boolean",
+                        "description": "Recursively scan subdirectories (default: true)",
+                        "default": true
+                    }
+                },
+                "required": ["directory"]
             }
         }
     ]);
@@ -156,6 +218,14 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
     let result = match tool_name {
         Some("convert_file") => handle_convert_file(&arguments),
         Some("convert_text") => handle_convert_text(&arguments),
+        Some("convert_from_source") => {
+            // This needs to be async
+            match handle_convert_from_source(&arguments).await {
+                Ok(content) => Ok(content),
+                Err(e) => Err(e),
+            }
+        }
+        Some("list_directory_files") => handle_list_directory_files(&arguments),
         _ => {
             return JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -206,14 +276,32 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
+    let explicit_file_type = args.get("file_type")
+        .and_then(|v| v.as_str());
+
+    let add_line_numbers = args.get("add_line_numbers")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     let path = Path::new(file_path);
 
     // Read file
     let content = std::fs::read_to_string(path)
         .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
 
-    // Detect language from file extension
-    let language = detect_language(path);
+    // Detect language from file extension or use explicit type
+    let language = if let Some(explicit) = explicit_file_type {
+        explicit.to_string()
+    } else {
+        let detected = detect_language(path);
+        if detected.is_empty() {
+            detect_language_from_filename(
+                path.file_name().and_then(|n| n.to_str()).unwrap_or("")
+            )
+        } else {
+            detected
+        }
+    };
 
     // Get filename if needed
     let filename = if include_filename {
@@ -224,7 +312,12 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         ""
     };
 
-    Ok(convert_to_markdown(&content, Some(&language), Some(filename)))
+    Ok(convert_to_markdown_with_options(
+        &content,
+        Some(&language),
+        Some(filename),
+        add_line_numbers,
+    ))
 }
 
 fn handle_convert_text(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
@@ -238,5 +331,101 @@ fn handle_convert_text(args: &Value) -> Result<String, Box<dyn std::error::Error
     let title = args.get("title")
         .and_then(|v| v.as_str());
 
-    Ok(convert_to_markdown(content, file_type, title))
+    let add_line_numbers = args.get("add_line_numbers")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    Ok(convert_to_markdown_with_options(
+        content,
+        file_type,
+        title,
+        add_line_numbers,
+    ))
+}
+
+async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let source_str = args.get("source")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("source".to_string())) as Box<dyn std::error::Error>)?;
+
+    let explicit_file_type = args.get("file_type")
+        .and_then(|v| v.as_str());
+
+    let title = args.get("title")
+        .and_then(|v| v.as_str());
+
+    let add_line_numbers = args.get("add_line_numbers")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    // Parse source
+    let source = SourceType::from_string(source_str)
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    // Fetch content
+    let content = fetch_from_source(&source)
+        .await
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    // Detect language
+    let language = if let Some(explicit) = explicit_file_type {
+        explicit.to_string()
+    } else {
+        match &source {
+            SourceType::FilePath(path) => {
+                let p = Path::new(path);
+                let detected = detect_language(p);
+                if detected.is_empty() {
+                    detect_language_from_filename(
+                        p.file_name().and_then(|n| n.to_str()).unwrap_or("")
+                    )
+                } else {
+                    detected
+                }
+            }
+            SourceType::Url(url) => {
+                // Try to detect from URL path
+                if let Ok(parsed_url) = url::Url::parse(url) {
+                    let path = parsed_url.path();
+                    let p = Path::new(path);
+                    detect_language(p)
+                } else {
+                    String::new()
+                }
+            }
+            _ => String::new(),
+        }
+    };
+
+    Ok(convert_to_markdown_with_options(
+        &content,
+        Some(language.as_str()),
+        title,
+        add_line_numbers,
+    ))
+}
+
+fn handle_list_directory_files(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let directory = args.get("directory")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("directory".to_string())) as Box<dyn std::error::Error>)?;
+
+    let recursive = args.get("recursive")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+
+    let files = list_files_in_directory(directory, recursive)
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    let mut result = String::new();
+    result.push_str(&format!("# Code Files in: {}\n\n", directory));
+    result.push_str(&format!("Found {} files:\n\n", files.len()));
+
+    for file in files {
+        if let Some(path_str) = file.to_str() {
+            result.push_str(&format!("- `{}`\n", path_str));
+        }
+    }
+
+    Ok(result)
 }

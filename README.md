@@ -4,23 +4,34 @@ A Model Context Protocol (MCP) server written in Rust that converts plaintext an
 
 ## Features
 
-- **Convert text files** to Markdown format
-- **Auto-detect programming languages** from file extensions
+- **Convert code files** to Markdown format from multiple sources:
+  - File paths (local files)
+  - HTTP/HTTPS URLs
+  - stdin
+  - Directory scanning with automatic code file detection
+- **Auto-detect 60+ programming languages** from file extensions and filenames
+- **Line numbers** support for better code readability
 - **Code syntax highlighting** with proper Markdown code blocks
+- **Explicit language specification** for extension-less files
 - **Cross-platform** support (Windows, Linux, macOS)
 - **JSON-RPC 2.0** MCP protocol implementation
 - **Zero external MCP dependencies** - pure Rust implementation
 
-## Supported File Types
+## Supported Languages (60+)
 
 The server auto-detects and properly formats code for:
 
-- **Web**: HTML, CSS, SCSS, JavaScript, TypeScript, Vue
-- **Server-side**: Python, Ruby, PHP, Java, C#, C++, C, Rust, Go, Kotlin, Swift
-- **Scripting**: Bash, PowerShell, Batch, Fish
-- **Data/Config**: JSON, YAML, XML, TOML, SQL, GraphQL
-- **Markup**: Markdown, ReStructuredText, LaTeX
-- **Other**: Dockerfile, Makefile, Gradle, R, Lua, Perl, Clojure, Elixir, Erlang
+- **Web**: HTML, CSS, SCSS, Sass, Less, JavaScript, JSX, TypeScript, TSX, Vue, Svelte, Astro
+- **Server-side**: Python, Ruby, PHP, Java, C#, C++, C, Rust, Go, Kotlin, Swift, Objective-C, Scala, Groovy, VB.NET, ASP
+- **Scripting**: Bash, PowerShell, Batch, Fish, Perl, AWK, Sed
+- **Data/Config**: JSON, YAML, XML, TOML, INI, Properties, SQL, GraphQL, Protocol Buffers
+- **Markup/Docs**: Markdown, ReStructuredText, LaTeX, AsciiDoc
+- **Build**: Dockerfile, Makefile, CMake, Gradle, Ninja
+- **Functional**: Lisp, Scheme, Racket, Clojure, Elixir, Erlang, Haskell, OCaml, F#, Zig
+- **Data Science**: R, Julia, Python (with RMarkdown)
+- **Other**: Lua, Nim, Dart, Vim, and more...
+
+**Filename-Based Detection:** Also detects Dockerfile, Makefile, .bashrc, .gitignore, package.json, Cargo.toml, etc.
 
 ## Building
 
@@ -64,6 +75,8 @@ Converts a file to Markdown format.
 **Parameters:**
 - `file_path` (string, required): Path to the file to convert
 - `include_filename` (boolean, optional): Include filename as heading (default: true)
+- `file_type` (string, optional): Explicitly specify language (overrides detection)
+- `add_line_numbers` (boolean, optional): Add line numbers to code block (default: false)
 
 **Example:**
 ```json
@@ -75,7 +88,7 @@ Converts a file to Markdown format.
     "name": "convert_file",
     "arguments": {
       "file_path": "/path/to/script.py",
-      "include_filename": true
+      "add_line_numbers": true
     }
   }
 }
@@ -88,6 +101,7 @@ Converts plain text content to Markdown format.
 - `content` (string, required): The text content to convert
 - `file_type` (string, optional): Programming language identifier (e.g., 'rust', 'python', 'javascript')
 - `title` (string, optional): Title for the Markdown document
+- `add_line_numbers` (boolean, optional): Add line numbers to code block (default: false)
 
 **Example:**
 ```json
@@ -100,10 +114,87 @@ Converts plain text content to Markdown format.
     "arguments": {
       "content": "fn main() { println!(\"Hello\"); }",
       "file_type": "rust",
-      "title": "Hello World in Rust"
+      "title": "Hello World in Rust",
+      "add_line_numbers": true
     }
   }
 }
+```
+
+#### 3. `convert_from_source` (NEW)
+Converts code from various sources (file, URL, stdin) to Markdown format.
+
+**Parameters:**
+- `source` (string, required): File path, HTTP/HTTPS URL, or `-` for stdin
+- `file_type` (string, optional): Explicitly specify language (overrides detection)
+- `title` (string, optional): Title for the Markdown document
+- `add_line_numbers` (boolean, optional): Add line numbers to code block (default: false)
+
+**Example - From URL:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "3",
+  "method": "tools/call",
+  "params": {
+    "name": "convert_from_source",
+    "arguments": {
+      "source": "https://raw.githubusercontent.com/user/repo/main/src/main.rs",
+      "add_line_numbers": true
+    }
+  }
+}
+```
+
+**Example - From stdin:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "4",
+  "method": "tools/call",
+  "params": {
+    "name": "convert_from_source",
+    "arguments": {
+      "source": "-",
+      "file_type": "python"
+    }
+  }
+}
+```
+
+#### 4. `list_directory_files` (NEW)
+Lists all code files in a directory.
+
+**Parameters:**
+- `directory` (string, required): Directory path to scan
+- `recursive` (boolean, optional): Recursively scan subdirectories (default: true)
+
+**Example:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "5",
+  "method": "tools/call",
+  "params": {
+    "name": "list_directory_files",
+    "arguments": {
+      "directory": "src",
+      "recursive": true
+    }
+  }
+}
+```
+
+**Response:**
+```
+# Code Files in: src
+
+Found 12 files:
+
+- `src/main.rs`
+- `src/lib.rs`
+- `src/utils.rs`
+...
 ```
 
 ## Testing
