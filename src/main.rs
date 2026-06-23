@@ -18,6 +18,7 @@ mod form_extractor;
 mod comment_extractor;
 mod link_extractor;
 mod heading_analyzer;
+mod blockquote_extractor;
 mod definition_list_converter;
 
 use converter::convert_to_markdown_with_options;
@@ -195,6 +196,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                         "type": "boolean",
                         "description": "Extract and convert HTML definition lists (default: false)",
                         "default": false
+                    },
+                    "extract_blockquotes": {
+                        "type": "boolean",
+                        "description": "Extract and convert HTML blockquotes (default: false)",
+                        "default": false
                     }
                 },
                 "required": ["file_path"]
@@ -308,6 +314,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                     "extract_definition_lists": {
                         "type": "boolean",
                         "description": "Extract and convert HTML definition lists (default: false)",
+                        "default": false
+                    },
+                    "extract_blockquotes": {
+                        "type": "boolean",
+                        "description": "Extract and convert HTML blockquotes (default: false)",
                         "default": false
                     }
                 },
@@ -468,6 +479,10 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let extract_blockquotes = args.get("extract_blockquotes")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     let path = Path::new(file_path);
 
     // Get filename if needed
@@ -485,7 +500,7 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
 
     if is_html {
         // Handle HTML conversion
-        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level, extract_images, image_format, convert_tables, extract_forms, preserve_comments, extract_links, analyze_headings, extract_definition_lists);
+        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level, extract_images, image_format, convert_tables, extract_forms, preserve_comments, extract_links, analyze_headings, extract_definition_lists, extract_blockquotes);
     }
 
     // Read file
@@ -816,6 +831,7 @@ fn handle_html_file_conversion(
     extract_links: bool,
     analyze_headings: bool,
     extract_definition_lists: bool,
+    extract_blockquotes: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let path = Path::new(file_path);
     let extension = path.extension().and_then(|ext| ext.to_str());
@@ -839,6 +855,16 @@ fn handle_html_file_conversion(
             content
         }
     };
+
+    // Extract blockquotes if needed
+    let mut blockquote_summary = String::new();
+    if extract_blockquotes {
+        let blockquotes = blockquote_extractor::extract_blockquotes_from_html(&html_content)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+        if !blockquotes.is_empty() {
+            blockquote_summary = blockquote_extractor::generate_blockquote_summary(&blockquotes);
+        }
+    }
 
     // Extract definition lists if needed
     let mut definition_list_summary = String::new();
@@ -918,7 +944,12 @@ fn handle_html_file_conversion(
         result.push_str(&format!("# {}\n\n", filename));
     }
 
-    // Add summaries if present (definition lists, headings, links, comments)
+    // Add summaries if present (blockquotes, definition lists, headings, links, comments)
+    if !blockquote_summary.is_empty() {
+        result.push_str(&blockquote_summary);
+        result.push('\n');
+    }
+
     if !definition_list_summary.is_empty() {
         result.push_str(&definition_list_summary);
         result.push('\n');
