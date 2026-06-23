@@ -198,56 +198,39 @@ fn base64_encode(data: &[u8]) -> String {
     result
 }
 
-/// Process HTML content and replace image tags with Markdown
+/// Process HTML content and replace image tags
 pub fn process_images_in_html(
     html_content: &str,
     image_format: ImageFormat,
 ) -> Result<String> {
+    // For skip format, remove all img tags
     if image_format == ImageFormat::Skip {
-        return Ok(html_content.to_string());
-    }
+        // Use a simple approach: repeatedly find and remove <img...> tags
+        let mut result = html_content.to_string();
 
-    // Extract images and replace in HTML
-    let document = Html::parse_document(html_content);
-    let mut result = html_content.to_string();
-
-    let img_selector = Selector::parse("img").map_err(|_| anyhow!("Invalid selector"))?;
-
-    // Collect all replacements first (to avoid iterator issues)
-    let mut replacements: Vec<(String, String)> = Vec::new();
-
-    for img in document.select(&img_selector) {
-        let src = img.value()
-            .attr("src")
-            .unwrap_or_default()
-            .to_string();
-
-        if src.is_empty() {
-            continue;
-        }
-
-        let alt_text = img.value()
-            .attr("alt")
-            .unwrap_or("Image")
-            .to_string();
-
-        let markdown = format!("![{}]({})", alt_text, src);
-        let html_tag = format!("<img src=\"{}\"", src);
-
-        replacements.push((html_tag, markdown));
-    }
-
-    // Apply replacements
-    for (old, new) in replacements {
-        if let Some(pos) = result.find(&old) {
-            // Find the closing > of the img tag
-            if let Some(end) = result[pos..].find('>') {
-                result.replace_range(pos..pos + end + 1, &new);
+        loop {
+            // Find the start of an img tag
+            if let Some(start) = result.find("<img") {
+                // Find the end of the img tag (the closing >)
+                if let Some(end) = result[start..].find('>') {
+                    let end_pos = start + end + 1;
+                    // Remove the entire img tag using drain
+                    result.drain(start..end_pos);
+                } else {
+                    // Malformed tag, skip
+                    break;
+                }
+            } else {
+                // No more img tags
+                break;
             }
         }
+
+        return Ok(result);
     }
 
-    Ok(result)
+    // For link format, keep images as-is (html_to_markdown will handle conversion)
+    Ok(html_content.to_string())
 }
 
 #[cfg(test)]
