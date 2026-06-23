@@ -9,12 +9,14 @@ mod file_type;
 mod error;
 mod sources;
 mod html_converter;
+mod toc_generator;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
 use error::ConversionError;
 use sources::{SourceType, fetch_from_source, list_files_in_directory};
 use html_converter::{html_to_markdown_with_options, extract_html_from_mhtml};
+use toc_generator::{generate_toc, format_toc};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonRpcRequest {
@@ -133,6 +135,16 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                         "type": "boolean",
                         "description": "Preserve CSS styling hints as HTML comments in output (default: false)",
                         "default": false
+                    },
+                    "generate_toc": {
+                        "type": "boolean",
+                        "description": "Generate table of contents from headings (default: false)",
+                        "default": false
+                    },
+                    "toc_max_level": {
+                        "type": "integer",
+                        "description": "Maximum heading level to include in TOC (1-6, default: 3)",
+                        "default": 3
                     }
                 },
                 "required": ["file_path"]
@@ -197,6 +209,16 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                         "type": "boolean",
                         "description": "Preserve CSS styling hints as HTML comments (default: false)",
                         "default": false
+                    },
+                    "generate_toc": {
+                        "type": "boolean",
+                        "description": "Generate table of contents from headings (default: false)",
+                        "default": false
+                    },
+                    "toc_max_level": {
+                        "type": "integer",
+                        "description": "Maximum heading level to include in TOC (1-6, default: 3)",
+                        "default": 3
                     }
                 },
                 "required": ["source"]
@@ -313,6 +335,14 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let generate_toc_flag = args.get("generate_toc")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let toc_max_level = args.get("toc_max_level")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(3) as usize;
+
     let path = Path::new(file_path);
 
     // Get filename if needed
@@ -330,7 +360,7 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
 
     if is_html {
         // Handle HTML conversion
-        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints);
+        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level);
     }
 
     // Read file
@@ -405,6 +435,14 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let generate_toc_flag = args.get("generate_toc")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let toc_max_level = args.get("toc_max_level")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(3) as usize;
+
     // Parse source
     let source = SourceType::from_string(source_str)
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
@@ -445,20 +483,34 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
     };
 
     // Check if this is HTML and should use HTML-specific conversion
-    if language == "html" || language == "htm" {
+    let mut markdown = if language == "html" || language == "htm" {
         if extract_metadata || preserve_css_hints {
-            let markdown = html_to_markdown_with_options(&content, extract_metadata, preserve_css_hints)
-                .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
-            return Ok(markdown);
+            html_to_markdown_with_options(&content, extract_metadata, preserve_css_hints)
+                .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?
+        } else {
+            convert_to_markdown_with_options(
+                &content,
+                Some(language.as_str()),
+                title,
+                add_line_numbers,
+            )
         }
+    } else {
+        convert_to_markdown_with_options(
+            &content,
+            Some(language.as_str()),
+            title,
+            add_line_numbers,
+        )
+    };
+
+    // Generate table of contents if requested
+    if generate_toc_flag {
+        markdown = generate_toc_for_markdown(&markdown, toc_max_level)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
     }
 
-    Ok(convert_to_markdown_with_options(
-        &content,
-        Some(language.as_str()),
-        title,
-        add_line_numbers,
-    ))
+    Ok(markdown)
 }
 
 fn handle_list_directory_files(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
@@ -486,11 +538,27 @@ fn handle_list_directory_files(args: &Value) -> Result<String, Box<dyn std::erro
     Ok(result)
 }
 
+fn generate_toc_for_markdown(markdown: &str, max_level: usize) -> Result<String, Box<dyn std::error::Error>> {
+    let headings = generate_toc(markdown, max_level)
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    if headings.is_empty() {
+        return Ok(markdown.to_string());
+    }
+
+    let toc_content = format_toc(&headings, "Table of Contents");
+    let result = toc_generator::insert_toc(markdown, &toc_content);
+
+    Ok(result)
+}
+
 fn handle_html_file_conversion(
     file_path: &str,
     filename: &str,
     extract_metadata: bool,
     preserve_css_hints: bool,
+    generate_toc_flag: bool,
+    toc_max_level: usize,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let path = Path::new(file_path);
 
@@ -508,8 +576,14 @@ fn handle_html_file_conversion(
     };
 
     // Convert HTML to Markdown with optional metadata extraction and CSS hints
-    let markdown = html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
+    let mut markdown = html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    // Generate table of contents if requested
+    if generate_toc_flag {
+        markdown = generate_toc_for_markdown(&markdown, toc_max_level)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+    }
 
     // Add filename as heading if not empty (and metadata not extracted)
     let mut result = String::new();
