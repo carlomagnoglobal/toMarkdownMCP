@@ -101,6 +101,7 @@ Converts a file to Markdown format. For HTML files, supports optional metadata e
 - `add_line_numbers` (boolean, optional): Add line numbers to code block (default: false)
 - `extract_metadata` (boolean, optional): Extract metadata from HTML as YAML frontmatter (default: false)
 - `preserve_css_hints` (boolean, optional): Preserve CSS styling hints as comments (default: false)
+- `convert_tables` (boolean, optional): Convert HTML tables to Markdown pipe tables (default: false)
 - `extract_images` (boolean, optional): Extract and process images (default: false)
 - `image_format` (string, optional): Image output format: "link" or "skip" (default: "link")
 - `generate_toc` (boolean, optional): Generate table of contents from headings (default: false)
@@ -159,6 +160,7 @@ Converts code or HTML from various sources (file, URL, stdin) to Markdown format
 - `add_line_numbers` (boolean, optional): Add line numbers to code block (default: false)
 - `extract_metadata` (boolean, optional): Extract metadata from HTML as YAML frontmatter (default: false)
 - `preserve_css_hints` (boolean, optional): Preserve CSS styling hints as comments (default: false)
+- `convert_tables` (boolean, optional): Convert HTML tables to Markdown pipe tables (default: false)
 - `extract_images` (boolean, optional): Extract and process images (default: false)
 - `image_format` (string, optional): Image output format: "link" or "skip" (default: "link")
 - `generate_toc` (boolean, optional): Generate table of contents from headings (default: false)
@@ -339,6 +341,24 @@ Preserve CSS styling information as HTML comments:
 }
 ```
 
+#### Table Conversion
+Convert HTML tables to Markdown pipe tables:
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "data_table.html",
+    "convert_tables": true
+  }
+}
+```
+
+**Features:**
+- Converts `<table>` elements to Markdown pipe syntax
+- Handles simple and structured tables (thead/tbody)
+- Preserves cell content and formatting
+- Supports multiple tables in one document
+
 #### Image Extraction
 Control how images are handled during conversion:
 ```json
@@ -378,6 +398,7 @@ All HTML features work together seamlessly:
   "arguments": {
     "file_path": "article.html",
     "extract_metadata": true,
+    "convert_tables": true,
     "extract_images": true,
     "image_format": "link",
     "preserve_css_hints": true,
@@ -391,10 +412,56 @@ For detailed documentation on each feature:
 - [METADATA_EXTRACTION.md](METADATA_EXTRACTION.md) - Extract document metadata
 - [CSS_STYLING_HINTS.md](CSS_STYLING_HINTS.md) - Preserve CSS information
 - [IMAGE_EXTRACTION.md](IMAGE_EXTRACTION.md) - Control image handling
+- [TABLE_CONVERSION.md](TABLE_CONVERSION.md) - Convert HTML tables to Markdown
 - [TOC_GENERATION.md](TOC_GENERATION.md) - Generate table of contents
 - [WEBARCHIVE_SUPPORT.md](WEBARCHIVE_SUPPORT.md) - Safari webarchive support
 
 For complete HTML conversion documentation, see [HTML_SUPPORT.md](HTML_SUPPORT.md).
+
+## HTML Table Conversion
+
+Convert HTML tables to clean Markdown pipe format:
+
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "data.html",
+    "convert_tables": true
+  }
+}
+```
+
+**Features:**
+- Converts all HTML `<table>` elements to Markdown syntax
+- Handles both simple and structured tables (thead/tbody)
+- Preserves cell content with proper text extraction
+- Supports multiple tables in one document
+- Works with formatted content (bold, italic, etc.)
+- Escapes special characters appropriately
+
+**Example Input:**
+```html
+<table>
+  <tr>
+    <th>Name</th>
+    <th>Age</th>
+  </tr>
+  <tr>
+    <td>Alice</td>
+    <td>30</td>
+  </tr>
+</table>
+```
+
+**Example Output:**
+```markdown
+| Name | Age |
+| :--- | :--- |
+| Alice | 30 |
+```
+
+See [TABLE_CONVERSION.md](TABLE_CONVERSION.md) for complete documentation.
 
 ## Webarchive Support
 
@@ -413,7 +480,7 @@ Convert Safari web archives (`.webarchive`) to Markdown:
 
 Webarchive files from Safari, Mail, and other Apple applications are fully supported with:
 - Automatic HTML extraction from the plist container
-- Support for all HTML conversion features (metadata, images, CSS hints, TOC)
+- Support for all HTML conversion features (metadata, images, CSS hints, TOC, tables)
 - UTF-8 and binary data handling
 - Cross-platform compatibility
 
@@ -446,6 +513,7 @@ Pre-built examples are in the `examples/` directory:
 - `examples/styled_page.html` - HTML with inline CSS styling for CSS hints testing
 - `examples/toc_demo.html` - Multi-level heading structure for TOC generation testing
 - `examples/images_demo.html` - Multiple image examples for testing image extraction
+- `examples/table_demo.html` - Various table types for testing table conversion
 
 Or create your own test files:
 
