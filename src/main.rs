@@ -568,6 +568,67 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                 },
                 "required": ["path", "heading", "headers", "rows"]
             }
+        },
+        {
+            "name": "read_file",
+            "description": "Read raw file content as-is, without any conversion or processing",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file to read"
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "First line to return (default: 1)",
+                        "default": 1
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Last line to return (omit for full file)"
+                    }
+                },
+                "required": ["path"]
+            }
+        },
+        {
+            "name": "create_or_append_file",
+            "description": "Create a new file with content, or append/overwrite an existing file",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file to create or modify"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Content to write or append"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["create", "append", "overwrite"],
+                        "description": "Mode: 'create' (fails if exists), 'append' (add to end), 'overwrite' (replace entirely)",
+                        "default": "create"
+                    }
+                },
+                "required": ["path", "content"]
+            }
+        },
+        {
+            "name": "get_tool_help",
+            "description": "Get help on available tools. Specify a tool name for detailed help, or omit for a summary of all tools",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": "Name of a specific tool (omit for full list)"
+                    }
+                },
+                "required": []
+            }
         }
     ]);
 
@@ -605,6 +666,9 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
         Some("safe_append_or_replace_section") => handle_safe_append_or_replace_section(&arguments),
         Some("resolve_and_validate_links") => handle_resolve_and_validate_links(&arguments),
         Some("upsert_markdown_table") => handle_upsert_markdown_table(&arguments),
+        Some("read_file") => handle_read_file(&arguments),
+        Some("create_or_append_file") => handle_create_or_append_file(&arguments),
+        Some("get_tool_help") => handle_get_tool_help(&arguments),
         _ => {
             return JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -2025,4 +2089,160 @@ fn handle_upsert_markdown_table(args: &Value) -> Result<String, Box<dyn std::err
         .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
 
     Ok(success_msg)
+}
+
+fn handle_read_file(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let path = args.get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("path".to_string())) as Box<dyn std::error::Error>)?;
+
+    let start_line = args.get("start_line")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1) as usize;
+
+    let end_line = args.get("end_line")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize);
+
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    let lines: Vec<&str> = content.lines().collect();
+    let start_idx = (start_line.saturating_sub(1)).min(lines.len());
+    let end_idx = end_line.unwrap_or(lines.len()).min(lines.len());
+
+    let selected_lines = if start_idx < end_idx && start_idx < lines.len() {
+        lines[start_idx..end_idx].join("\n")
+    } else {
+        String::new()
+    };
+
+    let file_ext = Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or("txt");
+    let output = format!("```{}\n{}\n```", file_ext, selected_lines);
+
+    Ok(output)
+}
+
+fn handle_create_or_append_file(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let path = args.get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("path".to_string())) as Box<dyn std::error::Error>)?;
+
+    let content = args.get("content")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("content".to_string())) as Box<dyn std::error::Error>)?;
+
+    let mode = args.get("mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("create");
+
+    let file_path = Path::new(path);
+
+    // Create parent directories if needed
+    if let Some(parent) = file_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+        }
+    }
+
+    match mode {
+        "create" => {
+            if file_path.exists() {
+                return Err(Box::new(ConversionError::ConversionFailed(format!("File already exists: {}", path))));
+            }
+            std::fs::write(file_path, content)
+                .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+        }
+        "append" => {
+            let mut existing = if file_path.exists() {
+                std::fs::read_to_string(file_path)
+                    .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?
+            } else {
+                String::new()
+            };
+            existing.push_str(content);
+            std::fs::write(file_path, existing)
+                .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+        }
+        "overwrite" => {
+            std::fs::write(file_path, content)
+                .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+        }
+        _ => {
+            return Err(Box::new(ConversionError::ConversionFailed(format!("Invalid mode: {}", mode))));
+        }
+    }
+
+    Ok(format!("File {} with mode '{}'", if file_path.exists() { "created/updated" } else { "processed" }, mode))
+}
+
+fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let tool_name = args.get("tool_name")
+        .and_then(|v| v.as_str());
+
+    let mut help = String::new();
+
+    if let Some(name) = tool_name {
+        // Detailed help for specific tool
+        help.push_str(&format!("# Tool: {}\n\n", name));
+
+        match name {
+            "read_file" => {
+                help.push_str("Read raw file content without conversion.\n\n");
+                help.push_str("**Parameters:**\n");
+                help.push_str("| Name | Type | Required | Default | Description |\n");
+                help.push_str("|------|------|----------|---------|-------------|\n");
+                help.push_str("| path | string | yes | - | File path to read |\n");
+                help.push_str("| start_line | integer | no | 1 | First line to return |\n");
+                help.push_str("| end_line | integer | no | - | Last line to return (omit for full file) |\n\n");
+                help.push_str("**Example:**\n```json\n{\"path\": \"config.json\", \"start_line\": 1, \"end_line\": 50}\n```\n");
+            }
+            "create_or_append_file" => {
+                help.push_str("Create a new file or append/overwrite an existing file.\n\n");
+                help.push_str("**Parameters:**\n");
+                help.push_str("| Name | Type | Required | Default | Description |\n");
+                help.push_str("|------|------|----------|---------|-------------|\n");
+                help.push_str("| path | string | yes | - | File path |\n");
+                help.push_str("| content | string | yes | - | Content to write |\n");
+                help.push_str("| mode | string | no | create | 'create', 'append', or 'overwrite' |\n\n");
+                help.push_str("**Example:**\n```json\n{\"path\": \"notes.md\", \"content\": \"# Hello\", \"mode\": \"create\"}\n```\n");
+            }
+            "get_tool_help" => {
+                help.push_str("Get help on available tools.\n\n");
+                help.push_str("**Parameters:**\n");
+                help.push_str("| Name | Type | Required | Default | Description |\n");
+                help.push_str("|------|------|----------|---------|-------------|\n");
+                help.push_str("| tool_name | string | no | - | Name of a specific tool (omit for full list) |\n\n");
+                help.push_str("**Example:**\n```json\n{\"tool_name\": \"read_file\"}\n```\n");
+            }
+            _ => {
+                help.push_str("Unknown tool. Use get_tool_help without tool_name to see all tools.\n");
+            }
+        }
+    } else {
+        // Summary of all tools
+        help.push_str("# Available Tools\n\n");
+        help.push_str("| Tool | Description |\n");
+        help.push_str("|------|-------------|\n");
+        help.push_str("| convert_file | Convert file to Markdown with HTML processing options |\n");
+        help.push_str("| convert_text | Convert raw text to Markdown |\n");
+        help.push_str("| convert_from_source | Convert from file, URL, or stdin to Markdown |\n");
+        help.push_str("| list_directory_files | List code files in a directory |\n");
+        help.push_str("| get_file_summary | Lightweight file snapshot (metadata, headings, preview) |\n");
+        help.push_str("| batch_convert_files | Convert multiple files (up to 10) in one call |\n");
+        help.push_str("| search_files | Search files with context snippets |\n");
+        help.push_str("| get_recently_modified_files | List recently modified files with timestamps |\n");
+        help.push_str("| get_vault_statistics | Global vault statistics (files, folders, tags) |\n");
+        help.push_str("| extract_active_todos | Find all unchecked tasks across files |\n");
+        help.push_str("| safe_append_or_replace_section | Update content under a heading |\n");
+        help.push_str("| resolve_and_validate_links | Validate file links |\n");
+        help.push_str("| upsert_markdown_table | Insert/overwrite Markdown table under heading |\n");
+        help.push_str("| read_file | Read raw file content without conversion |\n");
+        help.push_str("| create_or_append_file | Create or modify files |\n");
+        help.push_str("| get_tool_help | Get help on tools (you are here) |\n\n");
+        help.push_str("Use `get_tool_help` with a tool_name parameter for detailed help on a specific tool.\n");
+    }
+
+    Ok(help)
 }
