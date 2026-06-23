@@ -15,6 +15,7 @@ mod webarchive_parser;
 mod table_converter;
 mod code_language_detector;
 mod form_extractor;
+mod comment_extractor;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
@@ -171,6 +172,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                         "type": "boolean",
                         "description": "Extract HTML forms and convert to Markdown tables (default: false)",
                         "default": false
+                    },
+                    "preserve_comments": {
+                        "type": "boolean",
+                        "description": "Preserve HTML comments in output (default: false)",
+                        "default": false
                     }
                 },
                 "required": ["file_path"]
@@ -264,6 +270,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                     "extract_forms": {
                         "type": "boolean",
                         "description": "Extract HTML forms and convert to Markdown tables (default: false)",
+                        "default": false
+                    },
+                    "preserve_comments": {
+                        "type": "boolean",
+                        "description": "Preserve HTML comments in output (default: false)",
                         "default": false
                     }
                 },
@@ -408,6 +419,10 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let preserve_comments = args.get("preserve_comments")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     let path = Path::new(file_path);
 
     // Get filename if needed
@@ -425,7 +440,7 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
 
     if is_html {
         // Handle HTML conversion
-        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level, extract_images, image_format, convert_tables, extract_forms);
+        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level, extract_images, image_format, convert_tables, extract_forms, preserve_comments);
     }
 
     // Read file
@@ -527,6 +542,10 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let preserve_comments = args.get("preserve_comments")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     // Parse source
     let source = SourceType::from_string(source_str)
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
@@ -568,8 +587,19 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
 
     // Check if this is HTML and should use HTML-specific conversion
     let mut markdown = if language == "html" || language == "htm" {
-        if extract_metadata || preserve_css_hints || extract_images || convert_tables || extract_forms {
+        if extract_metadata || preserve_css_hints || extract_images || convert_tables || extract_forms || preserve_comments {
             let mut html_content = content.clone();
+            let mut comment_summary = String::new();
+
+            // Process comments if needed (remove but extract info, or preserve)
+            if preserve_comments {
+                let (html, comments) = comment_extractor::process_comments_in_html(&html_content, true)
+                    .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+                html_content = html;
+                if !comments.is_empty() {
+                    comment_summary = comment_extractor::generate_comment_summary(&comments);
+                }
+            }
 
             // Extract forms if needed
             if extract_forms {
@@ -590,8 +620,17 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
                     .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
             }
 
-            html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
-                .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?
+            let mut html_markdown = html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
+                .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+
+            // Prepend comment summary if present
+            if !comment_summary.is_empty() {
+                comment_summary.push('\n');
+                comment_summary.push_str(&html_markdown);
+                comment_summary
+            } else {
+                html_markdown
+            }
         } else {
             convert_to_markdown_with_options(
                 &content,
@@ -668,6 +707,7 @@ fn handle_html_file_conversion(
     image_format: ImageFormat,
     convert_tables: bool,
     extract_forms: bool,
+    preserve_comments: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let path = Path::new(file_path);
     let extension = path.extension().and_then(|ext| ext.to_str());
@@ -691,6 +731,17 @@ fn handle_html_file_conversion(
             content
         }
     };
+
+    // Process comments if needed
+    let mut comment_summary = String::new();
+    if preserve_comments {
+        let (html, comments) = comment_extractor::process_comments_in_html(&html_content, true)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+        html_content = html;
+        if !comments.is_empty() {
+            comment_summary = comment_extractor::generate_comment_summary(&comments);
+        }
+    }
 
     // Extract forms if needed
     if extract_forms {
@@ -726,6 +777,13 @@ fn handle_html_file_conversion(
     if !filename.is_empty() && !extract_metadata {
         result.push_str(&format!("# {}\n\n", filename));
     }
+
+    // Add comment summary if present
+    if !comment_summary.is_empty() {
+        result.push_str(&comment_summary);
+        result.push('\n');
+    }
+
     result.push_str(&markdown);
 
     Ok(result)

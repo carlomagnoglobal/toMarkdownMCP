@@ -103,6 +103,7 @@ Converts a file to Markdown format. For HTML files, supports optional metadata e
 - `preserve_css_hints` (boolean, optional): Preserve CSS styling hints as comments (default: false)
 - `convert_tables` (boolean, optional): Convert HTML tables to Markdown pipe tables (default: false)
 - `extract_forms` (boolean, optional): Extract HTML forms as Markdown tables (default: false)
+- `preserve_comments` (boolean, optional): Preserve HTML comments in output (default: false)
 - `extract_images` (boolean, optional): Extract and process images (default: false)
 - `image_format` (string, optional): Image output format: "link" or "skip" (default: "link")
 - `generate_toc` (boolean, optional): Generate table of contents from headings (default: false)
@@ -163,6 +164,7 @@ Converts code or HTML from various sources (file, URL, stdin) to Markdown format
 - `preserve_css_hints` (boolean, optional): Preserve CSS styling hints as comments (default: false)
 - `convert_tables` (boolean, optional): Convert HTML tables to Markdown pipe tables (default: false)
 - `extract_forms` (boolean, optional): Extract HTML forms as Markdown tables (default: false)
+- `preserve_comments` (boolean, optional): Preserve HTML comments in output (default: false)
 - `extract_images` (boolean, optional): Extract and process images (default: false)
 - `image_format` (string, optional): Image output format: "link" or "skip" (default: "link")
 - `generate_toc` (boolean, optional): Generate table of contents from headings (default: false)
@@ -416,6 +418,7 @@ For detailed documentation on each feature:
 - [IMAGE_EXTRACTION.md](IMAGE_EXTRACTION.md) - Control image handling
 - [TABLE_CONVERSION.md](TABLE_CONVERSION.md) - Convert HTML tables to Markdown
 - [FORM_EXTRACTION.md](FORM_EXTRACTION.md) - Extract and convert HTML forms
+- [COMMENT_PRESERVATION.md](COMMENT_PRESERVATION.md) - Preserve HTML comments
 - [CODE_LANGUAGE_DETECTION.md](CODE_LANGUAGE_DETECTION.md) - Auto-detect code block languages
 - [TOC_GENERATION.md](TOC_GENERATION.md) - Generate table of contents
 - [WEBARCHIVE_SUPPORT.md](WEBARCHIVE_SUPPORT.md) - Safari webarchive support
@@ -519,6 +522,58 @@ Extract HTML forms and convert them to readable Markdown tables:
 
 See [FORM_EXTRACTION.md](FORM_EXTRACTION.md) for complete documentation.
 
+## Comment Preservation
+
+Extract and preserve HTML comments during conversion:
+
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "page.html",
+    "preserve_comments": true
+  }
+}
+```
+
+**Features:**
+- Extracts all `<!-- -->` comments from HTML
+- Detects comment types (regular, directives, conditional)
+- Generates summary of comments found
+- Preserves IE conditional comments
+- Captures developer notes and TODOs
+- Useful for documentation and code review
+
+**Example Input:**
+```html
+<!-- Main page -->
+<h1>Welcome</h1>
+<!-- TODO: Add footer section -->
+<!--[if IE]><p>IE Only</p><![endif]-->
+```
+
+**Example Output:**
+```markdown
+## Comments Found
+
+**Total:** 3 comments
+
+**Conditional:** 1 | **Regular:** 2
+
+### Conditional Comments (IE)
+
+1. `[if IE]><p>IE Only</p><![endif]`
+
+### Regular Comments
+
+1. `Main page`
+2. `TODO: Add footer section`
+
+# Welcome
+```
+
+See [COMMENT_PRESERVATION.md](COMMENT_PRESERVATION.md) for complete documentation.
+
 ## Webarchive Support
 
 Convert Safari web archives (`.webarchive`) to Markdown:
@@ -572,6 +627,7 @@ Pre-built examples are in the `examples/` directory:
 - `examples/table_demo.html` - Various table types for testing table conversion
 - `examples/code_blocks_demo.html` - Code blocks in multiple languages for language detection testing
 - `examples/form_demo.html` - Various HTML forms for testing form extraction
+- `examples/comment_demo.html` - HTML comments of various types for testing comment preservation
 
 Or create your own test files:
 
