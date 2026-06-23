@@ -17,6 +17,7 @@ mod code_language_detector;
 mod form_extractor;
 mod comment_extractor;
 mod link_extractor;
+mod heading_analyzer;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
@@ -183,6 +184,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                         "type": "boolean",
                         "description": "Extract and summarize all links in document (default: false)",
                         "default": false
+                    },
+                    "analyze_headings": {
+                        "type": "boolean",
+                        "description": "Analyze heading structure and hierarchy (default: false)",
+                        "default": false
                     }
                 },
                 "required": ["file_path"]
@@ -286,6 +292,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                     "extract_links": {
                         "type": "boolean",
                         "description": "Extract and summarize all links in document (default: false)",
+                        "default": false
+                    },
+                    "analyze_headings": {
+                        "type": "boolean",
+                        "description": "Analyze heading structure and hierarchy (default: false)",
                         "default": false
                     }
                 },
@@ -438,6 +449,10 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let analyze_headings = args.get("analyze_headings")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     let path = Path::new(file_path);
 
     // Get filename if needed
@@ -455,7 +470,7 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
 
     if is_html {
         // Handle HTML conversion
-        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level, extract_images, image_format, convert_tables, extract_forms, preserve_comments, extract_links);
+        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level, extract_images, image_format, convert_tables, extract_forms, preserve_comments, extract_links, analyze_headings);
     }
 
     // Read file
@@ -565,6 +580,10 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let analyze_headings = args.get("analyze_headings")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     // Parse source
     let source = SourceType::from_string(source_str)
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
@@ -606,10 +625,22 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
 
     // Check if this is HTML and should use HTML-specific conversion
     let mut markdown = if language == "html" || language == "htm" {
-        if extract_metadata || preserve_css_hints || extract_images || convert_tables || extract_forms || preserve_comments || extract_links {
+        if extract_metadata || preserve_css_hints || extract_images || convert_tables || extract_forms || preserve_comments || extract_links || analyze_headings {
             let mut html_content = content.clone();
             let mut comment_summary = String::new();
             let mut link_summary = String::new();
+            let mut heading_summary = String::new();
+
+            // Analyze headings if needed
+            if analyze_headings {
+                let headings = heading_analyzer::extract_headings_from_html(&html_content)
+                    .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+                if !headings.is_empty() {
+                    let stats = heading_analyzer::analyze_heading_structure(&headings);
+                    heading_summary.push_str(&heading_analyzer::generate_heading_summary(&stats));
+                    heading_summary.push_str(&heading_analyzer::generate_heading_tree(&headings));
+                }
+            }
 
             // Extract links if needed
             if extract_links {
@@ -652,9 +683,13 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
             let mut html_markdown = html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
                 .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
 
-            // Prepend summaries if present (links first, then comments)
-            if !link_summary.is_empty() || !comment_summary.is_empty() {
+            // Prepend summaries if present (headings first, links, then comments)
+            if !heading_summary.is_empty() || !link_summary.is_empty() || !comment_summary.is_empty() {
                 let mut prefixed = String::new();
+                if !heading_summary.is_empty() {
+                    prefixed.push_str(&heading_summary);
+                    prefixed.push('\n');
+                }
                 if !link_summary.is_empty() {
                     prefixed.push_str(&link_summary);
                     prefixed.push('\n');
@@ -746,6 +781,7 @@ fn handle_html_file_conversion(
     extract_forms: bool,
     preserve_comments: bool,
     extract_links: bool,
+    analyze_headings: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let path = Path::new(file_path);
     let extension = path.extension().and_then(|ext| ext.to_str());
@@ -769,6 +805,18 @@ fn handle_html_file_conversion(
             content
         }
     };
+
+    // Analyze headings if needed
+    let mut heading_summary = String::new();
+    if analyze_headings {
+        let headings = heading_analyzer::extract_headings_from_html(&html_content)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+        if !headings.is_empty() {
+            let stats = heading_analyzer::analyze_heading_structure(&headings);
+            heading_summary.push_str(&heading_analyzer::generate_heading_summary(&stats));
+            heading_summary.push_str(&heading_analyzer::generate_heading_tree(&headings));
+        }
+    }
 
     // Extract links if needed
     let mut link_summary = String::new();
@@ -826,7 +874,12 @@ fn handle_html_file_conversion(
         result.push_str(&format!("# {}\n\n", filename));
     }
 
-    // Add summaries if present (links first, then comments)
+    // Add summaries if present (headings first, links, then comments)
+    if !heading_summary.is_empty() {
+        result.push_str(&heading_summary);
+        result.push('\n');
+    }
+
     if !link_summary.is_empty() {
         result.push_str(&link_summary);
         result.push('\n');
