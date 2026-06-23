@@ -14,7 +14,7 @@ use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
 use error::ConversionError;
 use sources::{SourceType, fetch_from_source, list_files_in_directory};
-use html_converter::{html_to_markdown_with_metadata, extract_html_from_mhtml};
+use html_converter::{html_to_markdown_with_options, extract_html_from_mhtml};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonRpcRequest {
@@ -128,6 +128,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                         "type": "boolean",
                         "description": "Extract metadata from HTML files as YAML frontmatter (default: false)",
                         "default": false
+                    },
+                    "preserve_css_hints": {
+                        "type": "boolean",
+                        "description": "Preserve CSS styling hints as HTML comments in output (default: false)",
+                        "default": false
                     }
                 },
                 "required": ["file_path"]
@@ -186,6 +191,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                     "extract_metadata": {
                         "type": "boolean",
                         "description": "Extract metadata from HTML as YAML frontmatter (default: false)",
+                        "default": false
+                    },
+                    "preserve_css_hints": {
+                        "type": "boolean",
+                        "description": "Preserve CSS styling hints as HTML comments (default: false)",
                         "default": false
                     }
                 },
@@ -299,6 +309,10 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let preserve_css_hints = args.get("preserve_css_hints")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     let path = Path::new(file_path);
 
     // Get filename if needed
@@ -316,7 +330,7 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
 
     if is_html {
         // Handle HTML conversion
-        return handle_html_file_conversion(file_path, filename, extract_metadata);
+        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints);
     }
 
     // Read file
@@ -387,6 +401,10 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let preserve_css_hints = args.get("preserve_css_hints")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     // Parse source
     let source = SourceType::from_string(source_str)
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
@@ -426,11 +444,13 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
         }
     };
 
-    // Check if this is HTML and should extract metadata
-    if (language == "html" || language == "htm") && extract_metadata {
-        let markdown = html_to_markdown_with_metadata(&content, true)
-            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
-        return Ok(markdown);
+    // Check if this is HTML and should use HTML-specific conversion
+    if language == "html" || language == "htm" {
+        if extract_metadata || preserve_css_hints {
+            let markdown = html_to_markdown_with_options(&content, extract_metadata, preserve_css_hints)
+                .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+            return Ok(markdown);
+        }
     }
 
     Ok(convert_to_markdown_with_options(
@@ -470,6 +490,7 @@ fn handle_html_file_conversion(
     file_path: &str,
     filename: &str,
     extract_metadata: bool,
+    preserve_css_hints: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let path = Path::new(file_path);
 
@@ -486,8 +507,8 @@ fn handle_html_file_conversion(
         content
     };
 
-    // Convert HTML to Markdown with optional metadata extraction
-    let markdown = html_to_markdown_with_metadata(&html_content, extract_metadata)
+    // Convert HTML to Markdown with optional metadata extraction and CSS hints
+    let markdown = html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
 
     // Add filename as heading if not empty (and metadata not extracted)

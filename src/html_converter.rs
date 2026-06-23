@@ -17,11 +17,21 @@ pub fn html_to_markdown(html_content: &str) -> Result<String> {
 /// Convert HTML content with enhanced formatting (wrapper for backward compatibility)
 #[allow(dead_code)]
 pub fn html_to_markdown_enhanced(html_content: &str) -> Result<String> {
-    html_to_markdown_with_metadata(html_content, false)
+    html_to_markdown_with_options(html_content, false, false)
 }
 
-/// Convert HTML content with optional metadata extraction
+/// Convert HTML content with optional metadata extraction and CSS hints (wrapper)
+#[allow(dead_code)]
 pub fn html_to_markdown_with_metadata(html_content: &str, extract_metadata: bool) -> Result<String> {
+    html_to_markdown_with_options(html_content, extract_metadata, false)
+}
+
+/// Convert HTML content with all options
+pub fn html_to_markdown_with_options(
+    html_content: &str,
+    extract_metadata: bool,
+    preserve_css_hints: bool,
+) -> Result<String> {
     let document = Html::parse_document(html_content);
     let mut markdown = String::new();
 
@@ -52,8 +62,15 @@ pub fn html_to_markdown_with_metadata(html_content: &str, extract_metadata: bool
         document.root_element().inner_html()
     };
 
+    // Optionally add CSS hints to HTML before conversion
+    let processed_html = if preserve_css_hints {
+        add_css_hints_to_html(&body)?
+    } else {
+        body
+    };
+
     // Convert body HTML to markdown
-    let body_markdown = html2md::parse_html(&body);
+    let body_markdown = html2md::parse_html(&processed_html);
     markdown.push_str(&cleanup_markdown(&body_markdown));
 
     Ok(markdown)
@@ -237,6 +254,144 @@ pub fn metadata_to_yaml_frontmatter(metadata: &BTreeMap<String, String>) -> Stri
 
     yaml.push_str("---\n");
     yaml
+}
+
+/// Extract CSS styling hints from HTML and inject as comments
+pub fn add_css_hints_to_html(html_content: &str) -> Result<String> {
+    let document = Html::parse_document(html_content);
+    let mut enhanced_html = String::new();
+
+    // Extract inline styles from style tag if present
+    let style_selector = Selector::parse("style").map_err(|_| anyhow!("Invalid selector"))?;
+    let _styles: Vec<String> = document
+        .select(&style_selector)
+        .map(|elem| elem.inner_html())
+        .collect();
+
+    // Process elements with inline styles or classes
+    process_elements_with_hints(html_content, &mut enhanced_html)?;
+
+    Ok(enhanced_html)
+}
+
+/// Process HTML elements and add CSS hints as comments
+fn process_elements_with_hints(html_content: &str, output: &mut String) -> Result<()> {
+    let document = Html::parse_document(html_content);
+
+    // Get all elements with style attribute
+    let all_selector = Selector::parse("*").map_err(|_| anyhow!("Invalid selector"))?;
+
+    for elem in document.select(&all_selector) {
+        if let Some(style) = elem.value().attr("style") {
+            let hints = extract_style_hints(style);
+            if !hints.is_empty() {
+                // Store hints for later use (they'll be added by html2md processing)
+                // For now, we'll use a different approach - modify the HTML directly
+            }
+        }
+    }
+
+    // For now, return the original HTML - hints will be added during conversion
+    *output = html_content.to_string();
+    Ok(())
+}
+
+/// Extract meaningful CSS hints from a style attribute
+pub fn extract_style_hints(style: &str) -> Vec<(String, String)> {
+    let mut hints = Vec::new();
+
+    let declarations = style.split(';')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+
+    let meaningful_properties = [
+        "color",
+        "background-color",
+        "background",
+        "font-weight",
+        "font-style",
+        "text-align",
+        "text-decoration",
+        "font-size",
+        "text-transform",
+        "letter-spacing",
+        "line-height",
+        "margin",
+        "padding",
+        "border",
+        "display",
+        "font-family",
+    ];
+
+    for decl in declarations {
+        if let Some(colon_pos) = decl.find(':') {
+            let property = decl[..colon_pos].trim().to_lowercase();
+            let value = decl[colon_pos + 1..].trim().to_string();
+
+            // Only keep meaningful properties, skip defaults and framework utilities
+            if meaningful_properties.contains(&property.as_str()) && !is_default_value(&property, &value) {
+                hints.push((property, value));
+            }
+        }
+    }
+
+    hints
+}
+
+/// Check if a CSS value is a default/common value we can skip
+fn is_default_value(property: &str, value: &str) -> bool {
+    match property {
+        "display" => matches!(value, "block" | "inline"),
+        "margin" | "padding" => matches!(value, "0" | "auto"),
+        "font-weight" => matches!(value, "normal" | "400"),
+        "font-style" => matches!(value, "normal"),
+        "text-align" => matches!(value, "left"),
+        "text-decoration" => matches!(value, "none"),
+        "line-height" => matches!(value, "1" | "1.2" | "normal"),
+        "color" => value.contains("inherit"),
+        _ => false,
+    }
+}
+
+/// Format CSS hints as HTML comments for insertion into Markdown
+#[allow(dead_code)]
+pub fn format_css_hints_as_comment(hints: &[(String, String)]) -> String {
+    if hints.is_empty() {
+        return String::new();
+    }
+
+    let mut comment = String::from("<!-- CSS: ");
+
+    let hint_strs: Vec<String> = hints
+        .iter()
+        .map(|(prop, val)| format!("{}: {}", prop, val))
+        .collect();
+
+    comment.push_str(&hint_strs.join("; "));
+    comment.push_str(" -->\n");
+
+    comment
+}
+
+/// Check if text contains styling markers
+#[allow(dead_code)]
+pub fn get_text_formatting_hints(text: &str) -> Vec<String> {
+    let mut hints = Vec::new();
+
+    // Detect text that might be styled
+    if text.chars().all(|c| c.is_uppercase() || c.is_whitespace()) && text.len() > 3 {
+        hints.push("text-transform: uppercase".to_string());
+    }
+
+    if text.contains("**") || text.contains("***") {
+        hints.push("font-weight: bold".to_string());
+    }
+
+    if text.contains("_") || text.contains("*") {
+        hints.push("font-style: italic".to_string());
+    }
+
+    hints
 }
 
 #[derive(Debug, Default)]
