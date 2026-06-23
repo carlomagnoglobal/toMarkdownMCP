@@ -102,6 +102,7 @@ Converts a file to Markdown format. For HTML files, supports optional metadata e
 - `extract_metadata` (boolean, optional): Extract metadata from HTML as YAML frontmatter (default: false)
 - `preserve_css_hints` (boolean, optional): Preserve CSS styling hints as comments (default: false)
 - `convert_tables` (boolean, optional): Convert HTML tables to Markdown pipe tables (default: false)
+- `extract_forms` (boolean, optional): Extract HTML forms as Markdown tables (default: false)
 - `extract_images` (boolean, optional): Extract and process images (default: false)
 - `image_format` (string, optional): Image output format: "link" or "skip" (default: "link")
 - `generate_toc` (boolean, optional): Generate table of contents from headings (default: false)
@@ -161,6 +162,7 @@ Converts code or HTML from various sources (file, URL, stdin) to Markdown format
 - `extract_metadata` (boolean, optional): Extract metadata from HTML as YAML frontmatter (default: false)
 - `preserve_css_hints` (boolean, optional): Preserve CSS styling hints as comments (default: false)
 - `convert_tables` (boolean, optional): Convert HTML tables to Markdown pipe tables (default: false)
+- `extract_forms` (boolean, optional): Extract HTML forms as Markdown tables (default: false)
 - `extract_images` (boolean, optional): Extract and process images (default: false)
 - `image_format` (string, optional): Image output format: "link" or "skip" (default: "link")
 - `generate_toc` (boolean, optional): Generate table of contents from headings (default: false)
@@ -413,6 +415,7 @@ For detailed documentation on each feature:
 - [CSS_STYLING_HINTS.md](CSS_STYLING_HINTS.md) - Preserve CSS information
 - [IMAGE_EXTRACTION.md](IMAGE_EXTRACTION.md) - Control image handling
 - [TABLE_CONVERSION.md](TABLE_CONVERSION.md) - Convert HTML tables to Markdown
+- [FORM_EXTRACTION.md](FORM_EXTRACTION.md) - Extract and convert HTML forms
 - [CODE_LANGUAGE_DETECTION.md](CODE_LANGUAGE_DETECTION.md) - Auto-detect code block languages
 - [TOC_GENERATION.md](TOC_GENERATION.md) - Generate table of contents
 - [WEBARCHIVE_SUPPORT.md](WEBARCHIVE_SUPPORT.md) - Safari webarchive support
@@ -463,6 +466,58 @@ Convert HTML tables to clean Markdown pipe format:
 ```
 
 See [TABLE_CONVERSION.md](TABLE_CONVERSION.md) for complete documentation.
+
+## Form Extraction
+
+Extract HTML forms and convert them to readable Markdown tables:
+
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "contact.html",
+    "extract_forms": true
+  }
+}
+```
+
+**Features:**
+- Extracts all `<form>` elements from HTML
+- Converts to Markdown tables with field information
+- Captures field names, types, labels, and requirements
+- Supports input types: text, email, password, number, checkbox, radio, select, textarea, etc.
+- Preserves form attributes (method, action, enctype)
+- Useful for documentation and content migration
+
+**Example Input:**
+```html
+<form method="POST" action="/contact">
+  <label for="name">Name:</label>
+  <input type="text" id="name" name="name" required>
+  
+  <label for="email">Email:</label>
+  <input type="email" id="email" name="email" required>
+  
+  <button type="submit">Send</button>
+</form>
+```
+
+**Example Output:**
+```markdown
+### Form
+
+**Action:** /contact
+
+**Method:** POST
+
+| Field | Type | Required | Details |
+|-------|------|----------|---------|
+| name | text | ✓ | Label: *Name* |
+| email | email | ✓ | Label: *Email* |
+| | submit | | Label: Send |
+```
+
+See [FORM_EXTRACTION.md](FORM_EXTRACTION.md) for complete documentation.
 
 ## Webarchive Support
 
@@ -516,6 +571,7 @@ Pre-built examples are in the `examples/` directory:
 - `examples/images_demo.html` - Multiple image examples for testing image extraction
 - `examples/table_demo.html` - Various table types for testing table conversion
 - `examples/code_blocks_demo.html` - Code blocks in multiple languages for language detection testing
+- `examples/form_demo.html` - Various HTML forms for testing form extraction
 
 Or create your own test files:
 

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Form extraction examples for testing">
+    <title>Form Extraction Demo</title>
+</head>
+<body>
+    <h1>Form Extraction Demo</h1>
+
+    <h2>Simple Contact Form</h2>
+    <form id="contact-form" method="POST" action="/contact/submit">
+        <label for="name">Name:</label>
+        <input type="text" id="name" name="name" required placeholder="Enter your full name">
+
+        <label for="email">Email:</label>
+        <input type="email" id="email" name="email" required placeholder="your@email.com">
+
+        <label for="subject">Subject:</label>
+        <input type="text" id="subject" name="subject" placeholder="What is this about?">
+
+        <label for="message">Message:</label>
+        <textarea id="message" name="message" placeholder="Your message here..."></textarea>
+
+        <button type="submit">Send Message</button>
+    </form>
+
+    <h2>User Registration Form</h2>
+    <form id="register-form" method="POST" action="/register" enctype="multipart/form-data">
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required placeholder="Choose a username">
+
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required placeholder="Enter password">
+
+        <label for="confirm-password">Confirm Password:</label>
+        <input type="password" id="confirm-password" name="confirm_password" required placeholder="Confirm password">
+
+        <label for="age">Age:</label>
+        <input type="number" id="age" name="age" min="18" max="120">
+
+        <label for="country">Country:</label>
+        <select id="country" name="country" required>
+            <option value="">-- Select Country --</option>
+            <option value="us">United States</option>
+            <option value="uk">United Kingdom</option>
+            <option value="ca">Canada</option>
+            <option value="au">Australia</option>
+            <option value="other">Other</option>
+        </select>
+
+        <label for="terms">
+            <input type="checkbox" id="terms" name="terms" required>
+            I agree to the terms and conditions
+        </label>
+
+        <button type="submit">Register</button>
+        <button type="reset">Clear</button>
+    </form>
+
+    <h2>Product Inquiry Form</h2>
+    <form id="inquiry-form" method="POST" action="/inquiry">
+        <label>Interested Product:</label>
+        <label>
+            <input type="radio" name="product" value="product-a" required>
+            Product A - $99
+        </label>
+        <label>
+            <input type="radio" name="product" value="product-b">
+            Product B - $149
+        </label>
+        <label>
+            <input type="radio" name="product" value="product-c">
+            Product C - $199
+        </label>
+
+        <label>Additional Options:</label>
+        <label>
+            <input type="checkbox" name="options" value="insurance">
+            Extended Warranty (+$20)
+        </label>
+        <label>
+            <input type="checkbox" name="options" value="support">
+            Priority Support (+$10)
+        </label>
+        <label>
+            <input type="checkbox" name="options" value="training">
+            Training Sessions (+$50)
+        </label>
+
+        <label for="quantity">Quantity:</label>
+        <input type="number" id="quantity" name="quantity" value="1" min="1">
+
+        <label for="delivery-date">Preferred Delivery:</label>
+        <input type="date" id="delivery-date" name="delivery_date">
+
+        <button type="submit">Request Quote</button>
+    </form>
+
+    <h2>Feedback Form</h2>
+    <form id="feedback-form" method="POST" action="/feedback">
+        <label for="rating">How satisfied are you?</label>
+        <select id="rating" name="rating">
+            <option value="">-- Select Rating --</option>
+            <option value="5">Very Satisfied</option>
+            <option value="4">Satisfied</option>
+            <option value="3">Neutral</option>
+            <option value="2">Dissatisfied</option>
+            <option value="1">Very Dissatisfied</option>
+        </select>
+
+        <label for="feedback">Your Feedback:</label>
+        <textarea id="feedback" name="feedback" rows="5" placeholder="Tell us what you think..."></textarea>
+
+        <label for="allow-contact">
+            <input type="checkbox" id="allow-contact" name="allow_contact">
+            You may contact me about my feedback
+        </label>
+
+        <button type="submit">Submit Feedback</button>
+    </form>
+
+    <h2>Advanced Form with Various Input Types</h2>
+    <form id="advanced-form" method="POST" action="/advanced">
+        <label for="color">Favorite Color:</label>
+        <input type="color" id="color" name="color" value="#ff0000">
+
+        <label for="phone">Phone Number:</label>
+        <input type="tel" id="phone" name="phone" placeholder="(555) 123-4567">
+
+        <label for="website">Website URL:</label>
+        <input type="url" id="website" name="website" placeholder="https://example.com">
+
+        <label for="time">Preferred Contact Time:</label>
+        <input type="time" id="time" name="time">
+
+        <label for="volume">Volume:</label>
+        <input type="range" id="volume" name="volume" min="0" max="100" value="50">
+
+        <label for="file-upload">Upload Document:</label>
+        <input type="file" id="file-upload" name="file_upload" accept=".pdf,.doc,.docx">
+
+        <button type="submit">Submit</button>
+        <button type="reset">Reset</button>
+    </form>
+
+    <h2>Minimal Form</h2>
+    <form method="GET" action="/search">
+        <input type="text" name="q" placeholder="Search...">
+        <button type="submit">Search</button>
+    </form>
+
+</body>
+</html>

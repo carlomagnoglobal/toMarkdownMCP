@@ -14,6 +14,7 @@ mod image_extractor;
 mod webarchive_parser;
 mod table_converter;
 mod code_language_detector;
+mod form_extractor;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
@@ -165,6 +166,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                         "type": "boolean",
                         "description": "Convert HTML tables to Markdown pipe tables (default: false)",
                         "default": false
+                    },
+                    "extract_forms": {
+                        "type": "boolean",
+                        "description": "Extract HTML forms and convert to Markdown tables (default: false)",
+                        "default": false
                     }
                 },
                 "required": ["file_path"]
@@ -253,6 +259,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                     "convert_tables": {
                         "type": "boolean",
                         "description": "Convert HTML tables to Markdown pipe tables (default: false)",
+                        "default": false
+                    },
+                    "extract_forms": {
+                        "type": "boolean",
+                        "description": "Extract HTML forms and convert to Markdown tables (default: false)",
                         "default": false
                     }
                 },
@@ -393,6 +404,10 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let extract_forms = args.get("extract_forms")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     let path = Path::new(file_path);
 
     // Get filename if needed
@@ -410,7 +425,7 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
 
     if is_html {
         // Handle HTML conversion
-        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level, extract_images, image_format, convert_tables);
+        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level, extract_images, image_format, convert_tables, extract_forms);
     }
 
     // Read file
@@ -508,6 +523,10 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let extract_forms = args.get("extract_forms")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     // Parse source
     let source = SourceType::from_string(source_str)
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
@@ -549,8 +568,15 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
 
     // Check if this is HTML and should use HTML-specific conversion
     let mut markdown = if language == "html" || language == "htm" {
-        if extract_metadata || preserve_css_hints || extract_images || convert_tables {
+        if extract_metadata || preserve_css_hints || extract_images || convert_tables || extract_forms {
             let mut html_content = content.clone();
+
+            // Extract forms if needed
+            if extract_forms {
+                html_content = form_extractor::process_forms_in_html(&html_content)
+                    .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?
+                    .0;
+            }
 
             // Convert tables if needed
             if convert_tables {
@@ -641,6 +667,7 @@ fn handle_html_file_conversion(
     extract_images: bool,
     image_format: ImageFormat,
     convert_tables: bool,
+    extract_forms: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let path = Path::new(file_path);
     let extension = path.extension().and_then(|ext| ext.to_str());
@@ -664,6 +691,13 @@ fn handle_html_file_conversion(
             content
         }
     };
+
+    // Extract forms if needed
+    if extract_forms {
+        html_content = form_extractor::process_forms_in_html(&html_content)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?
+            .0;
+    }
 
     // Convert tables if needed
     if convert_tables {
