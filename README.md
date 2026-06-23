@@ -91,13 +91,19 @@ The server reads JSON-RPC 2.0 requests from stdin and writes responses to stdout
 ### Available Tools
 
 #### 1. `convert_file`
-Converts a file to Markdown format.
+Converts a file to Markdown format. For HTML files, supports optional metadata extraction, CSS hints, TOC generation, and image handling.
 
 **Parameters:**
 - `file_path` (string, required): Path to the file to convert
 - `include_filename` (boolean, optional): Include filename as heading (default: true)
 - `file_type` (string, optional): Explicitly specify language (overrides detection)
 - `add_line_numbers` (boolean, optional): Add line numbers to code block (default: false)
+- `extract_metadata` (boolean, optional): Extract metadata from HTML as YAML frontmatter (default: false)
+- `preserve_css_hints` (boolean, optional): Preserve CSS styling hints as comments (default: false)
+- `extract_images` (boolean, optional): Extract and process images (default: false)
+- `image_format` (string, optional): Image output format: "link" or "skip" (default: "link")
+- `generate_toc` (boolean, optional): Generate table of contents from headings (default: false)
+- `toc_max_level` (integer, optional): Maximum heading level in TOC, 1-6 (default: 3)
 
 **Example:**
 ```json
@@ -143,13 +149,19 @@ Converts plain text content to Markdown format.
 ```
 
 #### 3. `convert_from_source` (NEW)
-Converts code from various sources (file, URL, stdin) to Markdown format.
+Converts code or HTML from various sources (file, URL, stdin) to Markdown format. For HTML, supports optional metadata extraction, CSS hints, TOC generation, and image handling.
 
 **Parameters:**
 - `source` (string, required): File path, HTTP/HTTPS URL, or `-` for stdin
 - `file_type` (string, optional): Explicitly specify language (overrides detection)
 - `title` (string, optional): Title for the Markdown document
 - `add_line_numbers` (boolean, optional): Add line numbers to code block (default: false)
+- `extract_metadata` (boolean, optional): Extract metadata from HTML as YAML frontmatter (default: false)
+- `preserve_css_hints` (boolean, optional): Preserve CSS styling hints as comments (default: false)
+- `extract_images` (boolean, optional): Extract and process images (default: false)
+- `image_format` (string, optional): Image output format: "link" or "skip" (default: "link")
+- `generate_toc` (boolean, optional): Generate table of contents from headings (default: false)
+- `toc_max_level` (integer, optional): Maximum heading level in TOC, 1-6 (default: 3)
 
 **Example - From URL:**
 ```json
@@ -300,30 +312,87 @@ Key Features
 Learn more at [rust-lang.org](https://www.rust-lang.org/)
 ```
 
-### Advanced Options
+### Advanced HTML Conversion Options
 
-Convert HTML from a URL:
-```json
-{
-  "name": "convert_from_source",
-  "arguments": {
-    "source": "https://example.com/article.html"
-  }
-}
-```
-
-Convert without filename as heading:
+#### Metadata Extraction
+Extract document metadata (title, author, description) as YAML frontmatter:
 ```json
 {
   "name": "convert_file",
   "arguments": {
     "file_path": "page.html",
-    "include_filename": false
+    "extract_metadata": true
   }
 }
 ```
 
-For detailed HTML conversion documentation, see [HTML_SUPPORT.md](HTML_SUPPORT.md).
+#### CSS Styling Hints
+Preserve CSS styling information as HTML comments:
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "styled_page.html",
+    "preserve_css_hints": true
+  }
+}
+```
+
+#### Image Extraction
+Control how images are handled during conversion:
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "page_with_images.html",
+    "extract_images": true,
+    "image_format": "link"
+  }
+}
+```
+
+**Image format options:**
+- `"link"` (default) - Keep external image URLs in Markdown syntax
+- `"skip"` - Remove images, keep alt text only
+- `"embed"` (planned) - Convert images to base64 for embedding
+
+#### Table of Contents Generation
+Auto-generate a linked table of contents from headings:
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "long_article.html",
+    "generate_toc": true,
+    "toc_max_level": 3
+  }
+}
+```
+
+#### Combined Features
+All HTML features work together seamlessly:
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "article.html",
+    "extract_metadata": true,
+    "extract_images": true,
+    "image_format": "link",
+    "preserve_css_hints": true,
+    "generate_toc": true,
+    "toc_max_level": 3
+  }
+}
+```
+
+For detailed documentation on each feature:
+- [METADATA_EXTRACTION.md](METADATA_EXTRACTION.md) - Extract document metadata
+- [CSS_STYLING_HINTS.md](CSS_STYLING_HINTS.md) - Preserve CSS information
+- [IMAGE_EXTRACTION.md](IMAGE_EXTRACTION.md) - Control image handling
+- [TOC_GENERATION.md](TOC_GENERATION.md) - Generate table of contents
+
+For complete HTML conversion documentation, see [HTML_SUPPORT.md](HTML_SUPPORT.md).
 
 ## Testing
 
@@ -347,6 +416,10 @@ Pre-built examples are in the `examples/` directory:
 - `examples/sample.html` - Standard HTML document
 - `examples/sample.htm` - Legacy HTM format
 - `examples/sample.mhtml` - MHTML archive
+- `examples/sample_with_metadata.html` - HTML with rich metadata for testing metadata extraction
+- `examples/styled_page.html` - HTML with inline CSS styling for CSS hints testing
+- `examples/toc_demo.html` - Multi-level heading structure for TOC generation testing
+- `examples/images_demo.html` - Multiple image examples for testing image extraction
 
 Or create your own test files:
 
