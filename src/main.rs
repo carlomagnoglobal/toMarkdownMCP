@@ -8,11 +8,13 @@ mod converter;
 mod file_type;
 mod error;
 mod sources;
+mod html_converter;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
 use error::ConversionError;
 use sources::{SourceType, fetch_from_source, list_files_in_directory};
+use html_converter::{html_to_markdown_enhanced, extract_html_from_mhtml};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonRpcRequest {
@@ -285,6 +287,24 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
 
     let path = Path::new(file_path);
 
+    // Get filename if needed
+    let filename = if include_filename {
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("File")
+    } else {
+        ""
+    };
+
+    // Check if this is an HTML file
+    let extension = path.extension().and_then(|ext| ext.to_str());
+    let is_html = matches!(extension, Some("html" | "htm" | "mhtml"));
+
+    if is_html {
+        // Handle HTML conversion
+        return handle_html_file_conversion(file_path, filename);
+    }
+
     // Read file
     let content = std::fs::read_to_string(path)
         .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
@@ -301,15 +321,6 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         } else {
             detected
         }
-    };
-
-    // Get filename if needed
-    let filename = if include_filename {
-        path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("File")
-    } else {
-        ""
     };
 
     Ok(convert_to_markdown_with_options(
@@ -426,6 +437,39 @@ fn handle_list_directory_files(args: &Value) -> Result<String, Box<dyn std::erro
             result.push_str(&format!("- `{}`\n", path_str));
         }
     }
+
+    Ok(result)
+}
+
+fn handle_html_file_conversion(
+    file_path: &str,
+    filename: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let path = Path::new(file_path);
+
+    // Read file
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    // Check if this is an MHTML file
+    let extension = path.extension().and_then(|ext| ext.to_str());
+    let html_content = if extension == Some("mhtml") {
+        extract_html_from_mhtml(&content)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?
+    } else {
+        content
+    };
+
+    // Convert HTML to Markdown
+    let markdown = html_to_markdown_enhanced(&html_content)
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    // Add filename as heading if not empty
+    let mut result = String::new();
+    if !filename.is_empty() {
+        result.push_str(&format!("# {}\n\n", filename));
+    }
+    result.push_str(&markdown);
 
     Ok(result)
 }

@@ -1,0 +1,29 @@
+MIME-Version: 1.0
+Subject: Sample MHTML Document
+Date: Sun, 22 Jun 2024 12:00:00 +0000
+Content-Type: multipart/related; boundary="boundary123"
+
+--boundary123
+Content-Type: text/html; charset="UTF-8"
+Content-Location: https://example.com/page.html
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sample MHTML Page</title>
+</head>
+<body>
+    <h1>MHTML Example</h1>
+    <p>This is a sample MHTML file with embedded HTML content.</p>
+    <p>MHTML (MIME Encapsulation of Aggregate HTML Documents) is used to save complete web pages.</p>
+
+    <h2>Features</h2>
+    <ul>
+        <li>Stores HTML and resources in a single file</li>
+        <li>Preserves page formatting</li>
+        <li>Used by Internet Explorer and Edge browsers</li>
+    </ul>
+</body>
+</html>
+
+--boundary123--

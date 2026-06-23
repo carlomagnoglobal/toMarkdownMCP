@@ -14,3 +14,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 reqwest = "0.11"
 url = "2"
+html2md = "0.2"
+scraper = "0.17"
+mime_guess = "2"
