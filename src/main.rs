@@ -343,6 +343,122 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                 },
                 "required": ["directory"]
             }
+        },
+        {
+            "name": "get_file_summary",
+            "description": "Get a lightweight summary of a file including metadata, headings, and preview",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to the file to summarize"
+                    },
+                    "preview_length": {
+                        "type": "integer",
+                        "description": "Number of characters to include in preview (default: 300)",
+                        "default": 300
+                    }
+                },
+                "required": ["file_path"]
+            }
+        },
+        {
+            "name": "batch_convert_files",
+            "description": "Convert multiple files to Markdown in one call",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_paths": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "List of file paths to convert (up to 10)"
+                    },
+                    "extract_metadata": {
+                        "type": "boolean",
+                        "description": "Extract metadata from HTML files (default: false)",
+                        "default": false
+                    },
+                    "convert_tables": {
+                        "type": "boolean",
+                        "description": "Convert HTML tables to Markdown (default: false)",
+                        "default": false
+                    },
+                    "extract_images": {
+                        "type": "boolean",
+                        "description": "Extract images from HTML (default: false)",
+                        "default": false
+                    },
+                    "image_format": {
+                        "type": "string",
+                        "description": "Image format: 'link' (default), 'skip', or 'embed'",
+                        "default": "link"
+                    },
+                    "extract_forms": {
+                        "type": "boolean",
+                        "description": "Extract HTML forms (default: false)",
+                        "default": false
+                    },
+                    "extract_links": {
+                        "type": "boolean",
+                        "description": "Extract and summarize links (default: false)",
+                        "default": false
+                    }
+                },
+                "required": ["file_paths"]
+            }
+        },
+        {
+            "name": "search_files",
+            "description": "Search for text across files and return matching snippets",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directory": {
+                        "type": "string",
+                        "description": "Directory to search (recursively)"
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Text to search for (case-insensitive)"
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of files with matches (default: 5)",
+                        "default": 5
+                    },
+                    "context_chars": {
+                        "type": "integer",
+                        "description": "Characters of context around match (default: 150)",
+                        "default": 150
+                    }
+                },
+                "required": ["directory", "query"]
+            }
+        },
+        {
+            "name": "get_recently_modified_files",
+            "description": "List recently modified files in a directory",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directory": {
+                        "type": "string",
+                        "description": "Directory to scan"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of files to return (default: 10)",
+                        "default": 10
+                    },
+                    "recursive": {
+                        "type": "boolean",
+                        "description": "Recursively scan subdirectories (default: true)",
+                        "default": true
+                    }
+                },
+                "required": ["directory"]
+            }
         }
     ]);
 
@@ -371,6 +487,10 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
             }
         }
         Some("list_directory_files") => handle_list_directory_files(&arguments),
+        Some("get_file_summary") => handle_get_file_summary(&arguments),
+        Some("batch_convert_files") => handle_batch_convert_files(&arguments),
+        Some("search_files") => handle_search_files(&arguments),
+        Some("get_recently_modified_files") => handle_get_recently_modified_files(&arguments),
         _ => {
             return JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -971,6 +1091,381 @@ fn handle_html_file_conversion(
     }
 
     result.push_str(&markdown);
+
+    Ok(result)
+}
+
+fn handle_get_file_summary(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let file_path = args.get("file_path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("file_path".to_string())) as Box<dyn std::error::Error>)?;
+
+    let preview_length = args.get("preview_length")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(300) as usize;
+
+    let path = Path::new(file_path);
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    let extension = path.extension().and_then(|ext| ext.to_str());
+    let is_html = matches!(extension, Some("html" | "htm" | "mhtml" | "webarchive"));
+
+    let mut summary = String::new();
+
+    if is_html {
+        // Extract metadata from meta tags
+        summary.push_str("## Metadata\n\n");
+        let document = scraper::Html::parse_document(&content);
+
+        if let Ok(meta_sel) = scraper::Selector::parse("meta") {
+            let mut meta_count = 0;
+            for meta in document.select(&meta_sel) {
+                if let Some(name) = meta.value().attr("name") {
+                    if let Some(content_val) = meta.value().attr("content") {
+                        summary.push_str(&format!("- **{}**: {}\n", name, content_val));
+                        meta_count += 1;
+                    }
+                }
+                if meta_count >= 5 {
+                    break;
+                }
+            }
+
+            if meta_count == 0 {
+                summary.push_str("(No metadata found)\n");
+            }
+        }
+        summary.push('\n');
+
+        // Extract headings
+        summary.push_str("## Headings\n\n");
+        if let Ok(headings) = heading_analyzer::extract_headings_from_html(&content) {
+            if headings.is_empty() {
+                summary.push_str("(No headings found)\n");
+            } else {
+                for heading in headings.iter().take(10) {
+                    let indent = "  ".repeat(heading.level - 1);
+                    summary.push_str(&format!("{}H{}: {}\n", indent, heading.level, heading.text));
+                }
+                if headings.len() > 10 {
+                    summary.push_str(&format!("... and {} more headings\n", headings.len() - 10));
+                }
+            }
+        }
+        summary.push('\n');
+    }
+
+    // Add content preview
+    summary.push_str("## Preview\n\n");
+    let preview_text = if is_html {
+        // Strip HTML tags for preview - replace < and > with spaces
+        let mut cleaned = content.replace('<', " ").replace('>', " ");
+        let text_only = cleaned
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.trim())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        if text_only.len() > preview_length {
+            format!("{}...", &text_only[..preview_length])
+        } else {
+            text_only
+        }
+    } else {
+        // For non-HTML files, use raw content
+        if content.len() > preview_length {
+            format!("{}...", &content[..preview_length])
+        } else {
+            content.clone()
+        }
+    };
+
+    summary.push_str(&format!("```\n{}\n```\n", preview_text));
+
+    Ok(summary)
+}
+
+fn handle_batch_convert_files(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let file_paths = args.get("file_paths")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("file_paths".to_string())) as Box<dyn std::error::Error>)?;
+
+    if file_paths.is_empty() {
+        return Err(Box::new(ConversionError::ConversionFailed("file_paths array is empty".to_string())));
+    }
+
+    if file_paths.len() > 10 {
+        return Err(Box::new(ConversionError::ConversionFailed("Maximum 10 files allowed".to_string())));
+    }
+
+    let extract_metadata = args.get("extract_metadata")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let convert_tables = args.get("convert_tables")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let extract_images = args.get("extract_images")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let image_format_str = args.get("image_format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("link");
+
+    let image_format = ImageFormat::from_str(image_format_str)
+        .unwrap_or(ImageFormat::Link);
+
+    let extract_forms = args.get("extract_forms")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let extract_links = args.get("extract_links")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let mut result = String::new();
+
+    for (idx, path_val) in file_paths.iter().enumerate() {
+        if let Some(file_path) = path_val.as_str() {
+            // Add separator between files
+            if idx > 0 {
+                result.push_str("\n---\n\n");
+            }
+
+            // Add filename header
+            let path = Path::new(file_path);
+            if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                result.push_str(&format!("# {}\n\n", filename));
+            }
+
+            // Convert file
+            let content = match std::fs::read_to_string(file_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    result.push_str(&format!("**Error reading file**: {}\n", e));
+                    continue;
+                }
+            };
+
+            let extension = path.extension().and_then(|ext| ext.to_str());
+            let is_html = matches!(extension, Some("html" | "htm" | "mhtml" | "webarchive"));
+
+            let converted = if is_html && (extract_metadata || convert_tables || extract_forms || extract_images || extract_links) {
+                let mut html_content = content.clone();
+
+                if extract_links {
+                    if let Ok(links) = link_extractor::extract_links_from_html(&html_content) {
+                        if !links.is_empty() {
+                            result.push_str(&link_extractor::generate_link_summary(&links));
+                            result.push('\n');
+                        }
+                    }
+                }
+
+                if extract_forms {
+                    if let Ok((html, _)) = form_extractor::process_forms_in_html(&html_content) {
+                        html_content = html;
+                    }
+                }
+
+                if convert_tables {
+                    if let Ok(html) = table_converter::convert_tables_in_html(&html_content) {
+                        html_content = html;
+                    }
+                }
+
+                if extract_images {
+                    if let Ok(html) = image_extractor::process_images_in_html(&html_content, image_format) {
+                        html_content = html;
+                    }
+                }
+
+                html_to_markdown_with_options(&html_content, extract_metadata, false)
+                    .unwrap_or_else(|_| content.clone())
+            } else {
+                let language = detect_language(path);
+                convert_to_markdown_with_options(&content, if language.is_empty() { None } else { Some(&language) }, None, false)
+            };
+
+            result.push_str(&converted);
+        }
+    }
+
+    Ok(result)
+}
+
+fn handle_search_files(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let directory = args.get("directory")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("directory".to_string())) as Box<dyn std::error::Error>)?;
+
+    let query = args.get("query")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("query".to_string())) as Box<dyn std::error::Error>)?;
+
+    let max_results = args.get("max_results")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(5) as usize;
+
+    let context_chars = args.get("context_chars")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(150) as usize;
+
+    let query_lower = query.to_lowercase();
+    let query_str = query.to_string();
+    let mut matches = Vec::new();
+    let mut files_checked = 0;
+
+    // Walk directory recursively
+    fn search_dir(
+        dir: &Path,
+        query_lower: &str,
+        query_str: &str,
+        context_chars: usize,
+        matches: &mut Vec<(String, String)>,
+        files_checked: &mut usize,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                let _ = search_dir(&path, query_lower, query_str, context_chars, matches, files_checked);
+            } else {
+                *files_checked += 1;
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    let content_lower = content.to_lowercase();
+                    if let Some(pos) = content_lower.find(query_lower) {
+                        let start = if pos > context_chars { pos - context_chars } else { 0 };
+                        let end = (pos + query_lower.len() + context_chars).min(content.len());
+                        let snippet = &content[start..end];
+
+                        if let Some(path_str) = path.to_str() {
+                            let highlight_snippet = if start > 0 {
+                                format!("...{}...", snippet.replace(query_str, &format!("**{}**", query_str)))
+                            } else {
+                                snippet.replace(query_str, &format!("**{}**", query_str))
+                            };
+                            matches.push((path_str.to_string(), highlight_snippet));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let path = Path::new(directory);
+    let _ = search_dir(path, &query_lower, &query_str, context_chars, &mut matches, &mut files_checked);
+
+    let mut result = String::new();
+    result.push_str(&format!("# Search Results for: {}\n\n", query));
+    result.push_str(&format!("**Query:** `{}`  \n", query));
+    result.push_str(&format!("**Matches:** {} files (checked {} files)\n\n", matches.len().min(max_results), files_checked));
+
+    if matches.is_empty() {
+        result.push_str("No matches found.\n");
+    } else {
+        for (file_path, snippet) in matches.iter().take(max_results) {
+            result.push_str(&format!("## {}\n\n", file_path));
+            result.push_str(&format!("```\n{}\n```\n\n", snippet));
+        }
+
+        if matches.len() > max_results {
+            result.push_str(&format!("\n... and {} more matches (limited to {})\n", matches.len() - max_results, max_results));
+        }
+    }
+
+    Ok(result)
+}
+
+fn handle_get_recently_modified_files(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let directory = args.get("directory")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("directory".to_string())) as Box<dyn std::error::Error>)?;
+
+    let limit = args.get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10) as usize;
+
+    let recursive = args.get("recursive")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+
+    let mut files_info = Vec::new();
+
+    // Walk directory
+    fn collect_files(
+        dir: &Path,
+        recursive: bool,
+        files_info: &mut Vec<(String, u64, u64)>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() && recursive {
+                let _ = collect_files(&path, recursive, files_info);
+            } else if path.is_file() {
+                if let Ok(metadata) = std::fs::metadata(&path) {
+                    if let Ok(modified) = metadata.modified() {
+                        if let Ok(duration) = modified.elapsed() {
+                            let secs_ago = duration.as_secs();
+                            let size = metadata.len();
+                            if let Some(path_str) = path.to_str() {
+                                files_info.push((path_str.to_string(), secs_ago, size));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let path = Path::new(directory);
+    let _ = collect_files(path, recursive, &mut files_info);
+
+    // Sort by modification time (most recent first)
+    files_info.sort_by_key(|info| info.1);
+
+    let mut result = String::new();
+    result.push_str(&format!("# Recently Modified Files in: {}\n\n", directory));
+
+    result.push_str("| File | Modified | Size |\n");
+    result.push_str("|------|----------|------|\n");
+
+    for (file_path, secs_ago, size) in files_info.iter().take(limit) {
+        let time_str = if *secs_ago < 60 {
+            format!("{} sec ago", secs_ago)
+        } else if *secs_ago < 3600 {
+            format!("{} min ago", secs_ago / 60)
+        } else if *secs_ago < 86400 {
+            format!("{} hrs ago", secs_ago / 3600)
+        } else {
+            format!("{} days ago", secs_ago / 86400)
+        };
+
+        let size_str = if *size < 1024 {
+            format!("{} B", size)
+        } else if *size < 1024 * 1024 {
+            format!("{:.1} KB", *size as f64 / 1024.0)
+        } else {
+            format!("{:.1} MB", *size as f64 / (1024.0 * 1024.0))
+        };
+
+        result.push_str(&format!("| `{}` | {} | {} |\n", file_path, time_str, size_str));
+    }
+
+    if files_info.len() > limit {
+        result.push_str(&format!("\n**Total:** {} files (showing {} most recent)\n", files_info.len(), limit));
+    } else {
+        result.push_str(&format!("\n**Total:** {} files\n", files_info.len()));
+    }
 
     Ok(result)
 }
