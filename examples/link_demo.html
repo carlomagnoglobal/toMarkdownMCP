@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Link extraction examples for testing">
+    <title>Link Extraction Demo</title>
+</head>
+<body>
+    <h1>Link Extraction Demo</h1>
+
+    <h2>External Links</h2>
+    <p>Links that go to other websites:</p>
+    <ul>
+        <li><a href="https://www.google.com">Google Search</a></li>
+        <li><a href="https://github.com">GitHub</a></li>
+        <li><a href="https://stackoverflow.com" title="Q&A for Programmers">Stack Overflow</a></li>
+        <li><a href="//cdn.example.com/lib.js">CDN Library</a></li>
+        <li><a href="https://example.com" target="_blank">External (New Tab)</a></li>
+    </ul>
+
+    <h2>Internal Links</h2>
+    <p>Links within this site:</p>
+    <ul>
+        <li><a href="/about">About Us</a></li>
+        <li><a href="/products/laptops">Laptop Products</a></li>
+        <li><a href="/contact" title="Contact Form">Contact Page</a></li>
+        <li><a href="../index.html">Parent Directory</a></li>
+        <li><a href="/docs/guide.html" target="_self">Documentation</a></li>
+    </ul>
+
+    <h2>Links with Attributes</h2>
+    <p>Links with various HTML attributes:</p>
+    <ul>
+        <li><a href="https://example.com" rel="nofollow">No Follow Link</a></li>
+        <li><a href="https://sponsor.com" rel="sponsored">Sponsored Link</a></li>
+        <li><a href="https://social.com" rel="me">Profile Link</a></li>
+        <li><a href="https://external.com" target="_blank" rel="noopener noreferrer">Secure External Link</a></li>
+        <li><a href="/download" download="file.pdf">Download File</a></li>
+    </ul>
+
+    <h2>Anchor Links</h2>
+    <p>Links to sections within the page:</p>
+    <ul>
+        <li><a href="#section1">Jump to Section 1</a></li>
+        <li><a href="#section2">Jump to Section 2</a></li>
+        <li><a href="#top">Back to Top</a></li>
+    </ul>
+
+    <h2>Broken and Invalid Links</h2>
+    <p>These links are empty or invalid:</p>
+    <ul>
+        <li><a href="">Empty Link</a></li>
+        <li><a href="javascript:void(0)">JavaScript Link</a></li>
+        <li><a href="#">Hash Only Link</a></li>
+        <li><a>No href Attribute</a></li>
+    </ul>
+
+    <h2>Links in Navigation</h2>
+    <nav>
+        <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="/products">Products</a></li>
+            <li><a href="/services">Services</a></li>
+            <li><a href="/blog">Blog</a></li>
+            <li><a href="/contact">Contact</a></li>
+        </ul>
+    </nav>
+
+    <h2>Links in Content</h2>
+    <section>
+        <h3>Related Articles</h3>
+        <p>Check out our <a href="/articles/web-design">web design guide</a> and learn about <a href="/articles/seo">SEO best practices</a>.</p>
+
+        <h3>External Resources</h3>
+        <p>For more information, visit the <a href="https://www.w3.org/">W3C</a> or read <a href="https://developer.mozilla.org/">MDN Web Docs</a>.</p>
+    </section>
+
+    <h2>Links with Complex Text</h2>
+    <p>
+        <a href="https://example.com"><strong>Bold Link</strong></a> and
+        <a href="https://example.com"><em>Italic Link</em></a> and
+        <a href="https://example.com">Link with <code>inline code</code></a>
+    </p>
+
+    <h2>Links in Lists and Tables</h2>
+    <table>
+        <tr>
+            <th>Resource</th>
+            <th>Link</th>
+        </tr>
+        <tr>
+            <td>Documentation</td>
+            <td><a href="https://docs.example.com">Read Docs</a></td>
+        </tr>
+        <tr>
+            <td>API Reference</td>
+            <td><a href="/api/reference">API Docs</a></td>
+        </tr>
+        <tr>
+            <td>Support</td>
+            <td><a href="https://support.example.com" target="_blank">Get Support</a></td>
+        </tr>
+    </table>
+
+    <footer>
+        <p>
+            &copy; 2024 Company Name.
+            <a href="/privacy">Privacy Policy</a> |
+            <a href="/terms">Terms of Service</a> |
+            <a href="https://twitter.com/company">Follow us on Twitter</a>
+        </p>
+    </footer>
+</body>
+</html>

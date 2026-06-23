@@ -104,6 +104,7 @@ Converts a file to Markdown format. For HTML files, supports optional metadata e
 - `convert_tables` (boolean, optional): Convert HTML tables to Markdown pipe tables (default: false)
 - `extract_forms` (boolean, optional): Extract HTML forms as Markdown tables (default: false)
 - `preserve_comments` (boolean, optional): Preserve HTML comments in output (default: false)
+- `extract_links` (boolean, optional): Extract and summarize all links in document (default: false)
 - `extract_images` (boolean, optional): Extract and process images (default: false)
 - `image_format` (string, optional): Image output format: "link" or "skip" (default: "link")
 - `generate_toc` (boolean, optional): Generate table of contents from headings (default: false)
@@ -165,6 +166,7 @@ Converts code or HTML from various sources (file, URL, stdin) to Markdown format
 - `convert_tables` (boolean, optional): Convert HTML tables to Markdown pipe tables (default: false)
 - `extract_forms` (boolean, optional): Extract HTML forms as Markdown tables (default: false)
 - `preserve_comments` (boolean, optional): Preserve HTML comments in output (default: false)
+- `extract_links` (boolean, optional): Extract and summarize all links in document (default: false)
 - `extract_images` (boolean, optional): Extract and process images (default: false)
 - `image_format` (string, optional): Image output format: "link" or "skip" (default: "link")
 - `generate_toc` (boolean, optional): Generate table of contents from headings (default: false)
@@ -418,6 +420,7 @@ For detailed documentation on each feature:
 - [IMAGE_EXTRACTION.md](IMAGE_EXTRACTION.md) - Control image handling
 - [TABLE_CONVERSION.md](TABLE_CONVERSION.md) - Convert HTML tables to Markdown
 - [FORM_EXTRACTION.md](FORM_EXTRACTION.md) - Extract and convert HTML forms
+- [LINK_EXTRACTION.md](LINK_EXTRACTION.md) - Extract and summarize links
 - [COMMENT_PRESERVATION.md](COMMENT_PRESERVATION.md) - Preserve HTML comments
 - [CODE_LANGUAGE_DETECTION.md](CODE_LANGUAGE_DETECTION.md) - Auto-detect code block languages
 - [TOC_GENERATION.md](TOC_GENERATION.md) - Generate table of contents
@@ -574,6 +577,58 @@ Extract and preserve HTML comments during conversion:
 
 See [COMMENT_PRESERVATION.md](COMMENT_PRESERVATION.md) for complete documentation.
 
+## Link Extraction
+
+Extract and categorize all hyperlinks in a document:
+
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "page.html",
+    "extract_links": true
+  }
+}
+```
+
+**Features:**
+- Extracts all `<a>` links from HTML
+- Categorizes as external, internal, or broken
+- Captures link text, URL, title, target, and rel attributes
+- Generates summary with statistics and categorization
+- Identifies invalid links (empty href, anchors, javascript:)
+
+**Example Input:**
+```html
+<a href="https://example.com">External Link</a>
+<a href="/page">Internal Link</a>
+<a href="">Broken Link</a>
+<a href="#section">Anchor</a>
+```
+
+**Example Output:**
+```markdown
+## Links Found
+
+**Total:** 3 links
+
+**External:** 1 | **Internal:** 1 | **Broken:** 1
+
+### External Links
+
+1. [External Link](https://example.com)
+
+### Internal Links
+
+1. [Internal Link](/page)
+
+### Broken/Invalid Links
+
+1. `Broken Link`
+```
+
+See [LINK_EXTRACTION.md](LINK_EXTRACTION.md) for complete documentation.
+
 ## Webarchive Support
 
 Convert Safari web archives (`.webarchive`) to Markdown:
@@ -628,6 +683,7 @@ Pre-built examples are in the `examples/` directory:
 - `examples/code_blocks_demo.html` - Code blocks in multiple languages for language detection testing
 - `examples/form_demo.html` - Various HTML forms for testing form extraction
 - `examples/comment_demo.html` - HTML comments of various types for testing comment preservation
+- `examples/link_demo.html` - Various link types for testing link extraction
 
 Or create your own test files:
 
