@@ -13,6 +13,7 @@ mod toc_generator;
 mod image_extractor;
 mod webarchive_parser;
 mod table_converter;
+mod code_language_detector;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};

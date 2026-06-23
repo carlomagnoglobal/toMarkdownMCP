@@ -1,6 +1,60 @@
 use anyhow::{anyhow, Result};
 use scraper::{Html, Selector};
 use std::collections::BTreeMap;
+use crate::code_language_detector::LanguageDetector;
+
+/// Enhance HTML code blocks with detected language information
+pub fn enhance_code_blocks_with_language(html_content: &str) -> Result<String> {
+    let detector = LanguageDetector::new();
+    let mut result = html_content.to_string();
+
+    // Process code blocks iteratively to add language classes
+    loop {
+        // Find the next code block without language class
+        if let Some(start) = result.find("<code") {
+            // Find the closing > of the opening tag
+            if let Some(end_offset) = result[start..].find('>') {
+                let tag_end = start + end_offset + 1;
+                let tag = &result[start..tag_end];
+
+                // Check if already has language specification
+                if tag.contains("language-") || tag.contains("lang-") {
+                    // Skip this one, find the next
+                    result = result[tag_end..].to_string();
+                    continue;
+                }
+
+                // Find the closing </code> tag
+                if let Some(close_pos) = result[tag_end..].find("</code>") {
+                    let code_text = &result[tag_end..tag_end + close_pos];
+
+                    // Try to detect language
+                    if let Some(lang) = detector.detect_language(code_text) {
+                        // Construct new tag with language class
+                        let new_tag = if tag.ends_with('>') {
+                            format!(
+                                "{}class=\"language-{}\" ",
+                                &tag[..tag.len() - 1],
+                                lang
+                            ) + ">"
+                        } else {
+                            tag.to_string()
+                        };
+
+                        // Replace in result
+                        result = result[..start].to_string() + &new_tag + &result[tag_end..];
+                        continue; // Keep looking for more code blocks
+                    }
+                }
+            }
+        } else {
+            // No more code blocks without language class
+            break;
+        }
+    }
+
+    Ok(result)
+}
 
 /// Convert HTML content to Markdown (basic conversion)
 #[allow(dead_code)]
@@ -62,11 +116,14 @@ pub fn html_to_markdown_with_options(
         document.root_element().inner_html()
     };
 
+    // Enhance code blocks with language detection
+    let processed_html = enhance_code_blocks_with_language(&body)?;
+
     // Optionally add CSS hints to HTML before conversion
     let processed_html = if preserve_css_hints {
-        add_css_hints_to_html(&body)?
+        add_css_hints_to_html(&processed_html)?
     } else {
-        body
+        processed_html
     };
 
     // Convert body HTML to markdown

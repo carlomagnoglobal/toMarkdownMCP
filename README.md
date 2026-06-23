@@ -413,6 +413,7 @@ For detailed documentation on each feature:
 - [CSS_STYLING_HINTS.md](CSS_STYLING_HINTS.md) - Preserve CSS information
 - [IMAGE_EXTRACTION.md](IMAGE_EXTRACTION.md) - Control image handling
 - [TABLE_CONVERSION.md](TABLE_CONVERSION.md) - Convert HTML tables to Markdown
+- [CODE_LANGUAGE_DETECTION.md](CODE_LANGUAGE_DETECTION.md) - Auto-detect code block languages
 - [TOC_GENERATION.md](TOC_GENERATION.md) - Generate table of contents
 - [WEBARCHIVE_SUPPORT.md](WEBARCHIVE_SUPPORT.md) - Safari webarchive support
 
@@ -514,6 +515,7 @@ Pre-built examples are in the `examples/` directory:
 - `examples/toc_demo.html` - Multi-level heading structure for TOC generation testing
 - `examples/images_demo.html` - Multiple image examples for testing image extraction
 - `examples/table_demo.html` - Various table types for testing table conversion
+- `examples/code_blocks_demo.html` - Code blocks in multiple languages for language detection testing
 
 Or create your own test files:
 
