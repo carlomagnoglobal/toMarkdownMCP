@@ -1,27 +1,48 @@
 # toMarkdownMCP
 
-A Model Context Protocol (MCP) server written in Rust that converts plaintext and code files to Markdown format. Cross-platform compatible with Windows, Linux, and macOS.
+A Model Context Protocol (MCP) server written in Rust that converts code files, HTML documents, and text content to Markdown format. Cross-platform compatible with Windows, Linux, and macOS.
+
+Supports converting from multiple sources including local files, HTTP/HTTPS URLs, and stdin. Handles 60+ programming languages plus HTML/HTM/MHTML web formats.
 
 ## Features
 
-- **Convert code files** to Markdown format from multiple sources:
-  - File paths (local files)
+### Code & Web Content Conversion
+- **Convert code files** to Markdown from multiple sources:
+  - Local file paths
   - HTTP/HTTPS URLs
   - stdin
-  - Directory scanning with automatic code file detection
+  - Directory scanning with automatic detection
+- **Convert HTML documents** to clean Markdown:
+  - Standard HTML files (*.html)
+  - Legacy HTM files (*.htm)
+  - MHTML archives (*.mhtml) - single-file web archives
 - **Auto-detect 60+ programming languages** from file extensions and filenames
+- **Intelligent HTML parsing** - preserves structure, headings, lists, links, code blocks
+
+### Formatting & Output
 - **Line numbers** support for better code readability
 - **Code syntax highlighting** with proper Markdown code blocks
 - **Explicit language specification** for extension-less files
+- **Title extraction** from HTML documents and filenames
+- **Clean output** - removes excess whitespace and artifacts
+
+### Platform & Protocol
 - **Cross-platform** support (Windows, Linux, macOS)
 - **JSON-RPC 2.0** MCP protocol implementation
+- **Multiple file sources** - files, URLs, stdin, directories
 - **Zero external MCP dependencies** - pure Rust implementation
 
-## Supported Languages (60+)
+## Supported File Types (60+ Languages + HTML)
 
+### Web & Document Formats
+- **HTML Documents**: `*.html`, `*.htm` - Standard HTML with full conversion to Markdown
+- **MHTML Archives**: `*.mhtml` - MIME HTML archives (web page archives from browsers)
+- **HTML to Markdown** - Converts HTML structure (headings, lists, links, code blocks, etc.)
+
+### Programming Languages (60+)
 The server auto-detects and properly formats code for:
 
-- **Web**: HTML, CSS, SCSS, Sass, Less, JavaScript, JSX, TypeScript, TSX, Vue, Svelte, Astro
+- **Web**: CSS, SCSS, Sass, Less, JavaScript, JSX, TypeScript, TSX, Vue, Svelte, Astro
 - **Server-side**: Python, Ruby, PHP, Java, C#, C++, C, Rust, Go, Kotlin, Swift, Objective-C, Scala, Groovy, VB.NET, ASP
 - **Scripting**: Bash, PowerShell, Batch, Fish, Perl, AWK, Sed
 - **Data/Config**: JSON, YAML, XML, TOML, INI, Properties, SQL, GraphQL, Protocol Buffers
@@ -197,6 +218,113 @@ Found 12 files:
 ...
 ```
 
+## HTML to Markdown Conversion
+
+The server can convert HTML documents to clean, readable Markdown format. This includes standard HTML files, legacy HTM files, and MHTML archives.
+
+### Supported HTML Formats
+
+#### *.html - Standard HTML Files
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "page.html"
+  }
+}
+```
+
+#### *.htm - Legacy HTML Files
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "old_page.htm"
+  }
+}
+```
+
+#### *.mhtml - MIME HTML Archives
+Single-file web archives created by IE, Edge, and other browsers:
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "archived_page.mhtml"
+  }
+}
+```
+
+### What Gets Converted
+
+✓ **Structure** - Headings (h1-h6), paragraphs, line breaks
+✓ **Lists** - Unordered (ul) and ordered (ol) lists
+✓ **Formatting** - Bold, italic, strikethrough text
+✓ **Code** - Inline code and code blocks (pre/code)
+✓ **Links** - Hyperlinks with URL preservation
+✓ **Blockquotes** - Quoted text blocks
+✓ **Titles** - Document titles from `<title>` tags
+✓ **Nesting** - Proper hierarchy preservation
+
+### Example Conversion
+
+**Input HTML:**
+```html
+<h1>Getting Started with Rust</h1>
+<p>Rust is a systems programming language focused on safety.</p>
+<h2>Key Features</h2>
+<ul>
+  <li><strong>Memory Safety</strong> - No data races</li>
+  <li><strong>Performance</strong> - Zero-cost abstractions</li>
+  <li><strong>Concurrency</strong> - Safe parallel programming</li>
+</ul>
+<p>Learn more at <a href="https://www.rust-lang.org/">rust-lang.org</a></p>
+```
+
+**Output Markdown:**
+```markdown
+# Getting Started with Rust
+
+Getting Started with Rust
+==========
+
+Rust is a systems programming language focused on safety.
+
+Key Features
+----------
+
+* **Memory Safety** - No data races
+* **Performance** - Zero-cost abstractions
+* **Concurrency** - Safe parallel programming
+
+Learn more at [rust-lang.org](https://www.rust-lang.org/)
+```
+
+### Advanced Options
+
+Convert HTML from a URL:
+```json
+{
+  "name": "convert_from_source",
+  "arguments": {
+    "source": "https://example.com/article.html"
+  }
+}
+```
+
+Convert without filename as heading:
+```json
+{
+  "name": "convert_file",
+  "arguments": {
+    "file_path": "page.html",
+    "include_filename": false
+  }
+}
+```
+
+For detailed HTML conversion documentation, see [HTML_SUPPORT.md](HTML_SUPPORT.md).
+
 ## Testing
 
 Run the test suite:
@@ -207,7 +335,20 @@ cargo test
 
 ### Example Test Files
 
-Create test files to try it out:
+Pre-built examples are in the `examples/` directory:
+
+**Code Files:**
+- `examples/test.py` - Python example
+- `examples/test.rs` - Rust example
+- `examples/test.js` - JavaScript example
+- `examples/test.txt` - Text file
+
+**HTML/Web Examples:**
+- `examples/sample.html` - Standard HTML document
+- `examples/sample.htm` - Legacy HTM format
+- `examples/sample.mhtml` - MHTML archive
+
+Or create your own test files:
 
 ```bash
 # Create a test Python file
@@ -226,10 +367,18 @@ fn main() {
 }
 EOF
 
-# Create a test text file
-cat > test.txt << 'EOF'
-This is a simple text file.
-It can contain any plaintext content.
+# Create a test HTML file
+cat > test.html << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Page</title>
+</head>
+<body>
+    <h1>Hello World</h1>
+    <p>This is a test HTML page.</p>
+</body>
+</html>
 EOF
 ```
 
@@ -250,10 +399,28 @@ Response: Execution result with converted Markdown content
 
 ## Architecture
 
+### Core Modules
 - **main.rs**: MCP server implementation and request handling
-- **converter.rs**: Markdown conversion logic
-- **file_type.rs**: Programming language detection from file extensions
+- **converter.rs**: Markdown conversion logic for code files
+- **file_type.rs**: Programming language detection (60+ languages)
 - **error.rs**: Custom error types
+
+### Additional Modules
+- **html_converter.rs**: HTML/HTM/MHTML parsing and conversion to Markdown
+- **sources.rs**: Multi-source file handling (local files, URLs, stdin, directories)
+
+### Module Responsibilities
+- **HTML Conversion**: Parses HTML using CSS selectors, converts to clean Markdown
+- **Source Handling**: Detects file type (file, URL, stdin), fetches content
+- **File Discovery**: Directory scanning with auto-exclusion of common non-code directories
+- **Language Detection**: Extension-based and filename-based language identification
+
+## Documentation
+
+- **README.md** - This file, getting started guide
+- **HTML_SUPPORT.md** - Detailed HTML conversion documentation
+- **QUICK_START.md** - Quick reference guide
+- **ENHANCEMENTS.md** - Feature enhancements and advanced usage
 
 ## Performance
 
