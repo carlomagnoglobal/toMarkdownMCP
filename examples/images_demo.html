@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="author" content="Documentation Team">
+    <meta name="description" content="Image extraction demonstration with various image types">
+    <title>Image Extraction Demo</title>
+</head>
+<body>
+    <h1>Image Extraction Demo</h1>
+
+    <h2>Overview</h2>
+    <p>This document demonstrates how images are handled by the extraction system.</p>
+
+    <h2>External Images</h2>
+    <p>These images are referenced by external URLs:</p>
+
+    <h3>Web Image with Title</h3>
+    <img
+        src="https://example.com/images/landscape.jpg"
+        alt="Beautiful landscape"
+        title="Scenic mountain view"
+    >
+    <p>This image has a title that will be displayed as a caption.</p>
+
+    <h3>Web Image without Title</h3>
+    <img
+        src="https://cdn.example.com/photos/portrait.png"
+        alt="Portrait photo"
+    >
+
+    <h2>Local Images</h2>
+    <p>These images reference local files relative to the document:</p>
+
+    <h3>Local File with Alt Text</h3>
+    <img
+        src="./images/diagram.svg"
+        alt="System architecture diagram"
+        title="Architecture"
+    >
+    <p>Local SVG files are supported.</p>
+
+    <h3>Local PNG Image</h3>
+    <img
+        src="images/logo.png"
+        alt="Company logo"
+    >
+
+    <h2>Image Gallery</h2>
+    <p>Multiple images in sequence:</p>
+
+    <h3>Gallery Row 1</h3>
+    <img src="https://example.com/gallery/photo1.jpg" alt="Gallery photo 1">
+    <img src="https://example.com/gallery/photo2.jpg" alt="Gallery photo 2">
+    <img src="https://example.com/gallery/photo3.jpg" alt="Gallery photo 3">
+
+    <h2>Images with Special Characters in Alt Text</h2>
+    <p>Alt text can contain special characters and formatting:</p>
+
+    <img
+        src="chart.png"
+        alt="Q1 2024 Results: Revenue ↑ 25% YoY"
+        title="Quarterly Report"
+    >
+
+    <img
+        src="workflow.png"
+        alt="Process: Input → Processing → Output & Validation"
+    >
+
+    <h2>Missing Alt Text</h2>
+    <p>If alt text is missing, it defaults to 'Image':</p>
+
+    <img src="https://example.com/image-without-alt.jpg">
+
+    <h2>Data URL Image</h2>
+    <p>Inline embedded image (already base64):</p>
+
+    <img
+        src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        alt="Tiny test image"
+        title="Pixel dot"
+    >
+
+    <h2>Complex Scenarios</h2>
+
+    <h3>Image with Markdown in Alt Text</h3>
+    <img
+        src="formatted.png"
+        alt="Text with *emphasis* and **bold**"
+    >
+
+    <h3>Image with Code in Alt Text</h3>
+    <img
+        src="code-diagram.png"
+        alt="function(param) { return value; }"
+        title="Code Example"
+    >
+
+    <h3>Multiple Images in a Section</h3>
+    <p>
+        <img src="icon1.svg" alt="Icon 1">
+        <img src="icon2.svg" alt="Icon 2">
+        <img src="icon3.svg" alt="Icon 3">
+    </p>
+
+    <h2>Output Examples</h2>
+    <p>Depending on the image_format setting:</p>
+
+    <h3>Link Format (Default)</h3>
+    <p>All images become Markdown image syntax with clickable links:</p>
+    <pre><code>![Beautiful landscape](https://example.com/images/landscape.jpg)
+*Scenic mountain view*
+
+![Company logo](images/logo.png)</code></pre>
+
+    <h3>Skip Format</h3>
+    <p>All images are replaced with alt text placeholders:</p>
+    <pre><code>*[Image: Beautiful landscape]*
+
+*[Image: Company logo]*</code></pre>
+
+    <h2>Testing Instructions</h2>
+    <p>To test image extraction:</p>
+    <ol>
+        <li>Convert with <code>extract_images: false</code> to see original HTML behavior</li>
+        <li>Convert with <code>extract_images: true, image_format: "link"</code> to see linked images</li>
+        <li>Convert with <code>extract_images: true, image_format: "skip"</code> to see alt text only</li>
+        <li>Combine with <code>extract_metadata: true</code> to see full metadata extraction</li>
+    </ol>
+
+    <h2>Image Count</h2>
+    <p>This document contains 15+ test images covering:</p>
+    <ul>
+        <li>External URLs (HTTP/HTTPS)</li>
+        <li>Local file paths (relative)</li>
+        <li>Data URLs (base64)</li>
+        <li>Images with/without alt text</li>
+        <li>Images with/without titles</li>
+        <li>Special characters in alt text</li>
+        <li>Multiple formats (jpg, png, svg, gif)</li>
+    </ul>
+
+    <h2>Conclusion</h2>
+    <p>
+        <img
+            src="https://example.com/thumbs-up.png"
+            alt="Success!"
+            title="Great job testing"
+        >
+    </p>
+    <p>Image extraction is now complete. Use the appropriate format for your use case.</p>
+
+</body>
+</html>

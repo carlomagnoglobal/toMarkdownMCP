@@ -10,6 +10,7 @@ mod error;
 mod sources;
 mod html_converter;
 mod toc_generator;
+mod image_extractor;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
@@ -17,6 +18,7 @@ use error::ConversionError;
 use sources::{SourceType, fetch_from_source, list_files_in_directory};
 use html_converter::{html_to_markdown_with_options, extract_html_from_mhtml};
 use toc_generator::{generate_toc, format_toc};
+use image_extractor::ImageFormat;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonRpcRequest {
@@ -145,6 +147,16 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                         "type": "integer",
                         "description": "Maximum heading level to include in TOC (1-6, default: 3)",
                         "default": 3
+                    },
+                    "extract_images": {
+                        "type": "boolean",
+                        "description": "Extract and process images from HTML (default: false)",
+                        "default": false
+                    },
+                    "image_format": {
+                        "type": "string",
+                        "description": "Image output format: 'link' (external URLs), 'skip' (remove), or 'embed' (base64, default: 'link')",
+                        "default": "link"
                     }
                 },
                 "required": ["file_path"]
@@ -219,6 +231,16 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                         "type": "integer",
                         "description": "Maximum heading level to include in TOC (1-6, default: 3)",
                         "default": 3
+                    },
+                    "extract_images": {
+                        "type": "boolean",
+                        "description": "Extract and process images from HTML (default: false)",
+                        "default": false
+                    },
+                    "image_format": {
+                        "type": "string",
+                        "description": "Image output format: 'link' (external URLs), 'skip' (remove), or 'embed' (base64, default: 'link')",
+                        "default": "link"
                     }
                 },
                 "required": ["source"]
@@ -343,6 +365,17 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         .and_then(|v| v.as_u64())
         .unwrap_or(3) as usize;
 
+    let extract_images = args.get("extract_images")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let image_format_str = args.get("image_format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("link");
+
+    let image_format = ImageFormat::from_str(image_format_str)
+        .unwrap_or(ImageFormat::Link);
+
     let path = Path::new(file_path);
 
     // Get filename if needed
@@ -360,7 +393,7 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
 
     if is_html {
         // Handle HTML conversion
-        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level);
+        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level, extract_images, image_format);
     }
 
     // Read file
@@ -443,6 +476,17 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
         .and_then(|v| v.as_u64())
         .unwrap_or(3) as usize;
 
+    let extract_images = args.get("extract_images")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let image_format_str = args.get("image_format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("link");
+
+    let image_format = ImageFormat::from_str(image_format_str)
+        .unwrap_or(ImageFormat::Link);
+
     // Parse source
     let source = SourceType::from_string(source_str)
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
@@ -484,8 +528,16 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
 
     // Check if this is HTML and should use HTML-specific conversion
     let mut markdown = if language == "html" || language == "htm" {
-        if extract_metadata || preserve_css_hints {
-            html_to_markdown_with_options(&content, extract_metadata, preserve_css_hints)
+        if extract_metadata || preserve_css_hints || extract_images {
+            let mut html_content = content.clone();
+
+            // Process images if needed
+            if extract_images {
+                html_content = image_extractor::process_images_in_html(&html_content, image_format)
+                    .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+            }
+
+            html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
                 .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?
         } else {
             convert_to_markdown_with_options(
@@ -559,6 +611,8 @@ fn handle_html_file_conversion(
     preserve_css_hints: bool,
     generate_toc_flag: bool,
     toc_max_level: usize,
+    extract_images: bool,
+    image_format: ImageFormat,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let path = Path::new(file_path);
 
@@ -568,12 +622,18 @@ fn handle_html_file_conversion(
 
     // Check if this is an MHTML file
     let extension = path.extension().and_then(|ext| ext.to_str());
-    let html_content = if extension == Some("mhtml") {
+    let mut html_content = if extension == Some("mhtml") {
         extract_html_from_mhtml(&content)
             .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?
     } else {
         content
     };
+
+    // Process images if needed
+    if extract_images {
+        html_content = image_extractor::process_images_in_html(&html_content, image_format)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+    }
 
     // Convert HTML to Markdown with optional metadata extraction and CSS hints
     let mut markdown = html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
