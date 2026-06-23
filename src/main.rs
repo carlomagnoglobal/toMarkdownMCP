@@ -629,6 +629,127 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                 },
                 "required": []
             }
+        },
+        {
+            "name": "move_or_rename_file",
+            "description": "Move or rename a file or directory to a new path",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "old_path": {
+                        "type": "string",
+                        "description": "Current file or directory path"
+                    },
+                    "new_path": {
+                        "type": "string",
+                        "description": "Destination path (including new filename)"
+                    }
+                },
+                "required": ["old_path", "new_path"]
+            }
+        },
+        {
+            "name": "delete_file",
+            "description": "Permanently delete a file or directory (irreversible)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to file or directory to delete"
+                    },
+                    "recursive": {
+                        "type": "boolean",
+                        "description": "Required true to delete non-empty directories (default: false)",
+                        "default": false
+                    }
+                },
+                "required": ["path"]
+            }
+        },
+        {
+            "name": "batch_create_notes",
+            "description": "Create multiple new files in one call",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "notes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": {
+                                    "type": "string",
+                                    "description": "File path (parent directories auto-created)"
+                                },
+                                "content": {
+                                    "type": "string",
+                                    "description": "File content"
+                                }
+                            },
+                            "required": ["path", "content"]
+                        },
+                        "description": "Array of {path, content} objects (up to 20)"
+                    }
+                },
+                "required": ["notes"]
+            }
+        },
+        {
+            "name": "update_note_properties",
+            "description": "Update YAML frontmatter properties in a Markdown file without changing the body",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the Markdown file"
+                    },
+                    "properties": {
+                        "type": "object",
+                        "description": "Key-value pairs to set or update (set value to null to remove)"
+                    }
+                },
+                "required": ["path", "properties"]
+            }
+        },
+        {
+            "name": "find_note_by_alias_or_title",
+            "description": "Fuzzy lookup to find a file by name, filename snippet, or frontmatter alias",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "search_term": {
+                        "type": "string",
+                        "description": "Conceptual name, filename snippet, or alias to search for"
+                    },
+                    "directory": {
+                        "type": "string",
+                        "description": "Root directory to search (default: current directory)",
+                        "default": "."
+                    }
+                },
+                "required": ["search_term"]
+            }
+        },
+        {
+            "name": "get_graph_relationships",
+            "description": "Map wiki-link connections: outlinks (references this file makes) and backlinks (files that reference this file)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path to analyze"
+                    },
+                    "directory": {
+                        "type": "string",
+                        "description": "Root directory to scan for backlinks (default: current directory)",
+                        "default": "."
+                    }
+                },
+                "required": ["path"]
+            }
         }
     ]);
 
@@ -669,6 +790,12 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
         Some("read_file") => handle_read_file(&arguments),
         Some("create_or_append_file") => handle_create_or_append_file(&arguments),
         Some("get_tool_help") => handle_get_tool_help(&arguments),
+        Some("move_or_rename_file") => handle_move_or_rename_file(&arguments),
+        Some("delete_file") => handle_delete_file(&arguments),
+        Some("batch_create_notes") => handle_batch_create_notes(&arguments),
+        Some("update_note_properties") => handle_update_note_properties(&arguments),
+        Some("find_note_by_alias_or_title") => handle_find_note_by_alias_or_title(&arguments),
+        Some("get_graph_relationships") => handle_get_graph_relationships(&arguments),
         _ => {
             return JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -2216,6 +2343,59 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
                 help.push_str("| tool_name | string | no | - | Name of a specific tool (omit for full list) |\n\n");
                 help.push_str("**Example:**\n```json\n{\"tool_name\": \"read_file\"}\n```\n");
             }
+            "move_or_rename_file" => {
+                help.push_str("Move or rename a file or directory.\n\n");
+                help.push_str("**Parameters:**\n");
+                help.push_str("| Name | Type | Required | Description |\n");
+                help.push_str("|------|------|----------|-------------|\n");
+                help.push_str("| old_path | string | yes | Current path |\n");
+                help.push_str("| new_path | string | yes | Destination path |\n\n");
+                help.push_str("**Example:**\n```json\n{\"old_path\": \"notes/old.md\", \"new_path\": \"archive/new.md\"}\n```\n");
+            }
+            "delete_file" => {
+                help.push_str("Permanently delete a file or directory (irreversible).\n\n");
+                help.push_str("**Parameters:**\n");
+                help.push_str("| Name | Type | Required | Default | Description |\n");
+                help.push_str("|------|------|----------|---------|-------------|\n");
+                help.push_str("| path | string | yes | - | File or directory to delete |\n");
+                help.push_str("| recursive | bool | no | false | Required true for non-empty directories |\n\n");
+                help.push_str("**Example:**\n```json\n{\"path\": \"temp_file.txt\"}\n```\n");
+            }
+            "batch_create_notes" => {
+                help.push_str("Create multiple files in one call.\n\n");
+                help.push_str("**Parameters:**\n");
+                help.push_str("| Name | Type | Required | Description |\n");
+                help.push_str("|------|------|----------|-------------|\n");
+                help.push_str("| notes | array | yes | Array of {path, content} objects (up to 20) |\n\n");
+                help.push_str("**Example:**\n```json\n{\"notes\": [{\"path\": \"note1.md\", \"content\": \"# Title\"}, {\"path\": \"note2.md\", \"content\": \"# Note\"}]}\n```\n");
+            }
+            "update_note_properties" => {
+                help.push_str("Update YAML frontmatter properties without touching the file body.\n\n");
+                help.push_str("**Parameters:**\n");
+                help.push_str("| Name | Type | Required | Description |\n");
+                help.push_str("|------|------|----------|-------------|\n");
+                help.push_str("| path | string | yes | File path |\n");
+                help.push_str("| properties | object | yes | Key-value pairs (set to null to remove) |\n\n");
+                help.push_str("**Example:**\n```json\n{\"path\": \"note.md\", \"properties\": {\"status\": \"In Progress\", \"tags\": [\"ai\", \"test\"]}}\n```\n");
+            }
+            "find_note_by_alias_or_title" => {
+                help.push_str("Fuzzy lookup to find a file by name, filename, or alias.\n\n");
+                help.push_str("**Parameters:**\n");
+                help.push_str("| Name | Type | Required | Default | Description |\n");
+                help.push_str("|------|------|----------|---------|-------------|\n");
+                help.push_str("| search_term | string | yes | - | Name or snippet to search |\n");
+                help.push_str("| directory | string | no | . | Root directory |\n\n");
+                help.push_str("**Example:**\n```json\n{\"search_term\": \"Project Alpha\", \"directory\": \".\"}\n```\n");
+            }
+            "get_graph_relationships" => {
+                help.push_str("Map wiki-link connections for a file.\n\n");
+                help.push_str("**Parameters:**\n");
+                help.push_str("| Name | Type | Required | Default | Description |\n");
+                help.push_str("|------|------|----------|---------|-------------|\n");
+                help.push_str("| path | string | yes | - | File to analyze |\n");
+                help.push_str("| directory | string | no | . | Root directory to scan |\n\n");
+                help.push_str("**Example:**\n```json\n{\"path\": \"README.md\", \"directory\": \".\"}\n```\n");
+            }
             _ => {
                 help.push_str("Unknown tool. Use get_tool_help without tool_name to see all tools.\n");
             }
@@ -2240,9 +2420,363 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
         help.push_str("| upsert_markdown_table | Insert/overwrite Markdown table under heading |\n");
         help.push_str("| read_file | Read raw file content without conversion |\n");
         help.push_str("| create_or_append_file | Create or modify files |\n");
-        help.push_str("| get_tool_help | Get help on tools (you are here) |\n\n");
+        help.push_str("| get_tool_help | Get help on tools (you are here) |\n");
+        help.push_str("| move_or_rename_file | Move or rename files |\n");
+        help.push_str("| delete_file | Delete files or directories |\n");
+        help.push_str("| batch_create_notes | Create multiple files |\n");
+        help.push_str("| update_note_properties | Update YAML frontmatter |\n");
+        help.push_str("| find_note_by_alias_or_title | Fuzzy file lookup |\n");
+        help.push_str("| get_graph_relationships | Map wiki-link connections |\n\n");
         help.push_str("Use `get_tool_help` with a tool_name parameter for detailed help on a specific tool.\n");
     }
 
     Ok(help)
+}
+
+fn handle_move_or_rename_file(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let old_path = args.get("old_path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("old_path".to_string())) as Box<dyn std::error::Error>)?;
+
+    let new_path = args.get("new_path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("new_path".to_string())) as Box<dyn std::error::Error>)?;
+
+    let new_path_obj = Path::new(new_path);
+    if let Some(parent) = new_path_obj.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+        }
+    }
+
+    std::fs::rename(old_path, new_path)
+        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    Ok(format!("✓ Moved '{}' to '{}'", old_path, new_path))
+}
+
+fn handle_delete_file(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let path = args.get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("path".to_string())) as Box<dyn std::error::Error>)?;
+
+    let recursive = args.get("recursive")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let path_obj = Path::new(path);
+
+    if path_obj.is_dir() {
+        if !recursive {
+            if path_obj.read_dir()
+                .map(|mut d| d.next().is_some())
+                .unwrap_or(false)
+            {
+                return Err("Directory is not empty. Set recursive=true to delete non-empty directories".into());
+            }
+        }
+        std::fs::remove_dir_all(path)
+            .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+        Ok(format!("✓ Deleted directory '{}'", path))
+    } else {
+        std::fs::remove_file(path)
+            .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+        Ok(format!("✓ Deleted file '{}'", path))
+    }
+}
+
+fn handle_batch_create_notes(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let notes = args.get("notes")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("notes".to_string())) as Box<dyn std::error::Error>)?;
+
+    if notes.is_empty() {
+        return Err("notes array must not be empty".into());
+    }
+
+    if notes.len() > 20 {
+        return Err("notes array can contain at most 20 items".into());
+    }
+
+    let mut results = Vec::new();
+    let mut errors = Vec::new();
+
+    for (idx, note) in notes.iter().enumerate() {
+        let path = note.get("path")
+            .and_then(|v| v.as_str());
+        let content = note.get("content")
+            .and_then(|v| v.as_str());
+
+        match (path, content) {
+            (Some(p), Some(c)) => {
+                let path_obj = Path::new(p);
+                if let Some(parent) = path_obj.parent() {
+                    if !parent.as_os_str().is_empty() {
+                        if let Err(e) = std::fs::create_dir_all(parent) {
+                            errors.push(format!("Note {}: Failed to create parent dirs for '{}': {}", idx + 1, p, e));
+                            continue;
+                        }
+                    }
+                }
+
+                match std::fs::write(p, c) {
+                    Ok(_) => results.push(format!("Created '{}'", p)),
+                    Err(e) => errors.push(format!("Note {}: Failed to create '{}': {}", idx + 1, p, e)),
+                }
+            }
+            _ => errors.push(format!("Note {}: Missing 'path' or 'content'", idx + 1)),
+        }
+    }
+
+    let mut output = format!("✓ Created {} file(s)", results.len());
+    for r in results {
+        output.push('\n');
+        output.push_str(&r);
+    }
+
+    if !errors.is_empty() {
+        output.push_str("\n\n❌ Errors:\n");
+        for e in errors {
+            output.push('\n');
+            output.push_str(&e);
+        }
+    }
+
+    Ok(output)
+}
+
+fn handle_update_note_properties(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let path = args.get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("path".to_string())) as Box<dyn std::error::Error>)?;
+
+    let properties = args.get("properties")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("properties".to_string())) as Box<dyn std::error::Error>)?;
+
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    let lines: Vec<&str> = content.lines().collect();
+    let (yaml_start, yaml_end) = if lines.len() > 0 && lines[0] == "---" {
+        let mut end = 0;
+        for (i, line) in lines.iter().enumerate().skip(1) {
+            if *line == "---" {
+                end = i;
+                break;
+            }
+        }
+        if end > 0 {
+            (0, Some(end))
+        } else {
+            (0, None)
+        }
+    } else {
+        (0, None)
+    };
+
+    let mut yaml_lines = Vec::new();
+    if let Some(end) = yaml_end {
+        for i in 1..end {
+            yaml_lines.push(lines[i].to_string());
+        }
+    }
+
+    for (key, value) in properties.iter() {
+        if value.is_null() {
+            yaml_lines.retain(|line| !line.starts_with(&format!("{}: ", key)) && !line.starts_with(&format!("{}:", key)));
+        } else {
+            let value_str = if value.is_string() {
+                value.as_str().unwrap().to_string()
+            } else {
+                serde_json::to_string(value).unwrap_or_default()
+            };
+
+            let found = yaml_lines.iter_mut().any(|line| {
+                if line.starts_with(&format!("{}: ", key)) || line.starts_with(&format!("{}:", key)) {
+                    *line = format!("{}: {}", key, value_str);
+                    true
+                } else {
+                    false
+                }
+            });
+
+            if !found {
+                yaml_lines.push(format!("{}: {}", key, value_str));
+            }
+        }
+    }
+
+    let mut new_content = String::new();
+    new_content.push_str("---\n");
+    for line in yaml_lines {
+        new_content.push_str(&line);
+        new_content.push('\n');
+    }
+    new_content.push_str("---\n");
+
+    if let Some(end) = yaml_end {
+        for i in (end + 1)..lines.len() {
+            new_content.push_str(lines[i]);
+            new_content.push('\n');
+        }
+    } else if lines.len() > 0 {
+        for line in lines {
+            new_content.push_str(line);
+            new_content.push('\n');
+        }
+    }
+
+    std::fs::write(path, new_content)
+        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    Ok(format!("✓ Updated properties in '{}'", path))
+}
+
+fn handle_find_note_by_alias_or_title(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let search_term = args.get("search_term")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("search_term".to_string())) as Box<dyn std::error::Error>)?;
+
+    let directory = args.get("directory")
+        .and_then(|v| v.as_str())
+        .unwrap_or(".");
+
+    let search_lower = search_term.to_lowercase();
+    let mut results = Vec::new();
+
+    fn walk_dir(path: &Path, search_lower: &str, results: &mut Vec<(i32, String)>) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                let _ = walk_dir(&path, search_lower, results);
+            } else if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                let mut score = 0;
+                let file_name_lower = file_name.to_lowercase();
+
+                if file_name_lower == search_lower {
+                    score = 30;
+                } else if file_name_lower.contains(search_lower) {
+                    score = 20;
+                } else if let Ok(content) = std::fs::read_to_string(&path) {
+                    if content.to_lowercase().contains(search_lower) {
+                        if let Some(start) = content.to_lowercase().find("title:") {
+                            let title_section = &content[start..];
+                            if title_section.contains(search_lower) {
+                                score = 15;
+                            } else {
+                                score = 5;
+                            }
+                        }
+                    }
+                }
+
+                if score > 0 {
+                    results.push((score, path.to_string_lossy().to_string()));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    walk_dir(Path::new(directory), &search_lower, &mut results)?;
+
+    results.sort_by(|a, b| b.0.cmp(&a.0));
+    results.truncate(5);
+
+    let mut output = format!("# Search Results for: {}\n\n", search_term);
+    if results.is_empty() {
+        output.push_str("No matches found.\n");
+    } else {
+        output.push_str("| Path | Score |\n");
+        output.push_str("|------|-------|\n");
+        for (score, path) in results {
+            output.push_str(&format!("| `{}` | {} |\n", path, score));
+        }
+    }
+
+    Ok(output)
+}
+
+fn handle_get_graph_relationships(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let path = args.get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("path".to_string())) as Box<dyn std::error::Error>)?;
+
+    let directory = args.get("directory")
+        .and_then(|v| v.as_str())
+        .unwrap_or(".");
+
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    let file_name = Path::new(path)
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or(path);
+
+    let mut outlinks = Vec::new();
+    for line in content.lines() {
+        let mut temp = line.to_string();
+        while let Some(start) = temp.find("[[") {
+            if let Some(end) = temp[start..].find("]]") {
+                let link = &temp[start + 2..start + end];
+                if !link.is_empty() && !outlinks.contains(&link.to_string()) {
+                    outlinks.push(link.to_string());
+                }
+                temp = temp[start + end + 2..].to_string();
+            } else {
+                break;
+            }
+        }
+    }
+
+    let mut backlinks = Vec::new();
+    fn scan_backlinks(dir: &Path, target_name: &str, links: &mut Vec<String>) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                let _ = scan_backlinks(&path, target_name, links);
+            } else if let Ok(content) = std::fs::read_to_string(&path) {
+                if content.contains(&format!("[[{}]]", target_name)) {
+                    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                        if !links.contains(&file_name.to_string()) {
+                            links.push(file_name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    scan_backlinks(Path::new(directory), file_name, &mut backlinks)?;
+
+    let mut output = format!("# Graph Relationships: {}\n\n", path);
+
+    output.push_str("## Outlinks (references in this file)\n\n");
+    if outlinks.is_empty() {
+        output.push_str("No outlinks found.\n\n");
+    } else {
+        for link in &outlinks {
+            output.push_str(&format!("- [[{}]]\n", link));
+        }
+        output.push('\n');
+    }
+
+    output.push_str("## Backlinks (files that reference this file)\n\n");
+    if backlinks.is_empty() {
+        output.push_str("No backlinks found.\n");
+    } else {
+        for link in &backlinks {
+            output.push_str(&format!("- {}\n", link));
+        }
+    }
+
+    Ok(output)
 }
