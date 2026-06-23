@@ -18,6 +18,7 @@ mod form_extractor;
 mod comment_extractor;
 mod link_extractor;
 mod heading_analyzer;
+mod definition_list_converter;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
@@ -189,6 +190,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                         "type": "boolean",
                         "description": "Analyze heading structure and hierarchy (default: false)",
                         "default": false
+                    },
+                    "extract_definition_lists": {
+                        "type": "boolean",
+                        "description": "Extract and convert HTML definition lists (default: false)",
+                        "default": false
                     }
                 },
                 "required": ["file_path"]
@@ -297,6 +303,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                     "analyze_headings": {
                         "type": "boolean",
                         "description": "Analyze heading structure and hierarchy (default: false)",
+                        "default": false
+                    },
+                    "extract_definition_lists": {
+                        "type": "boolean",
+                        "description": "Extract and convert HTML definition lists (default: false)",
                         "default": false
                     }
                 },
@@ -453,6 +464,10 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let extract_definition_lists = args.get("extract_definition_lists")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     let path = Path::new(file_path);
 
     // Get filename if needed
@@ -470,7 +485,7 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
 
     if is_html {
         // Handle HTML conversion
-        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level, extract_images, image_format, convert_tables, extract_forms, preserve_comments, extract_links, analyze_headings);
+        return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level, extract_images, image_format, convert_tables, extract_forms, preserve_comments, extract_links, analyze_headings, extract_definition_lists);
     }
 
     // Read file
@@ -584,6 +599,10 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let extract_definition_lists = args.get("extract_definition_lists")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     // Parse source
     let source = SourceType::from_string(source_str)
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
@@ -625,11 +644,21 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
 
     // Check if this is HTML and should use HTML-specific conversion
     let mut markdown = if language == "html" || language == "htm" {
-        if extract_metadata || preserve_css_hints || extract_images || convert_tables || extract_forms || preserve_comments || extract_links || analyze_headings {
+        if extract_metadata || preserve_css_hints || extract_images || convert_tables || extract_forms || preserve_comments || extract_links || analyze_headings || extract_definition_lists {
             let mut html_content = content.clone();
             let mut comment_summary = String::new();
             let mut link_summary = String::new();
             let mut heading_summary = String::new();
+            let mut definition_list_summary = String::new();
+
+            // Extract definition lists if needed
+            if extract_definition_lists {
+                let lists = definition_list_converter::extract_definition_lists_from_html(&html_content)
+                    .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+                if !lists.is_empty() {
+                    definition_list_summary = definition_list_converter::generate_definition_list_summary(&lists);
+                }
+            }
 
             // Analyze headings if needed
             if analyze_headings {
@@ -683,9 +712,13 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
             let mut html_markdown = html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
                 .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
 
-            // Prepend summaries if present (headings first, links, then comments)
-            if !heading_summary.is_empty() || !link_summary.is_empty() || !comment_summary.is_empty() {
+            // Prepend summaries if present (definition lists, headings, links, comments)
+            if !definition_list_summary.is_empty() || !heading_summary.is_empty() || !link_summary.is_empty() || !comment_summary.is_empty() {
                 let mut prefixed = String::new();
+                if !definition_list_summary.is_empty() {
+                    prefixed.push_str(&definition_list_summary);
+                    prefixed.push('\n');
+                }
                 if !heading_summary.is_empty() {
                     prefixed.push_str(&heading_summary);
                     prefixed.push('\n');
@@ -782,6 +815,7 @@ fn handle_html_file_conversion(
     preserve_comments: bool,
     extract_links: bool,
     analyze_headings: bool,
+    extract_definition_lists: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let path = Path::new(file_path);
     let extension = path.extension().and_then(|ext| ext.to_str());
@@ -805,6 +839,16 @@ fn handle_html_file_conversion(
             content
         }
     };
+
+    // Extract definition lists if needed
+    let mut definition_list_summary = String::new();
+    if extract_definition_lists {
+        let lists = definition_list_converter::extract_definition_lists_from_html(&html_content)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+        if !lists.is_empty() {
+            definition_list_summary = definition_list_converter::generate_definition_list_summary(&lists);
+        }
+    }
 
     // Analyze headings if needed
     let mut heading_summary = String::new();
@@ -874,7 +918,12 @@ fn handle_html_file_conversion(
         result.push_str(&format!("# {}\n\n", filename));
     }
 
-    // Add summaries if present (headings first, links, then comments)
+    // Add summaries if present (definition lists, headings, links, comments)
+    if !definition_list_summary.is_empty() {
+        result.push_str(&definition_list_summary);
+        result.push('\n');
+    }
+
     if !heading_summary.is_empty() {
         result.push_str(&heading_summary);
         result.push('\n');
