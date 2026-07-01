@@ -42,3 +42,7 @@ totals, and a global distinct-word count, plus corpus-wide top words. `stopwords
 ## Shared tokenizer
 All of these (and the knowledge tools) share `rag::tokenize_words` and a common stopword list, so
 search ranking, statistics, and TF-IDF keyword extraction tokenize identically.
+
+## Related
+See `AI_TOOLS.md` for the retrieval step (`retrieve_context`), token budgeting (`count_tokens`),
+dedup/clustering, document intelligence, and the optional Claude-backed generative tools.

@@ -58,8 +58,13 @@ Turn any converted document into machine-consumable retrieval units (all support
   `get_text_statistics`, `get_corpus_statistics`
 - **Second brain**: `extract_tags`, `extract_keywords`, `find_related_notes`, `summarize_document`,
   `extract_qa_pairs`, `extract_entities`, `build_knowledge_index`
+- **Retrieval & budgeting**: `retrieve_context` (assemble context for a query), `count_tokens`
+- **Dedup & intelligence**: `find_duplicates`, `cluster_documents`, `analyze_readability`,
+  `detect_natural_language`, `classify_document`
+- **Claude-backed (optional, needs `ANTHROPIC_API_KEY`)**: `ai_summarize`, `ai_ask`, `ai_tag`,
+  `ai_translate`, `ai_classify` — degrade gracefully to a setup note when no key is set
 
-See `RAG_TOOLS.md` and `SECOND_BRAIN_TOOLS.md`.
+See `RAG_TOOLS.md`, `SECOND_BRAIN_TOOLS.md`, and `AI_TOOLS.md`.
 
 ### Programming Languages (60+)
 The server auto-detects and properly formats code for:

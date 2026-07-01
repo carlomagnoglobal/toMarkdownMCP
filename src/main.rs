@@ -30,6 +30,10 @@ mod feed_email_converter;
 mod markup_converter;
 mod rag;
 mod knowledge;
+mod retrieval;
+mod similarity;
+mod doc_intel;
+mod llm;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
@@ -931,6 +935,167 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                     "content": {"type": "string", "description": "Inline content instead of a file"}
                 }
             }
+        },
+        {
+            "name": "retrieve_context",
+            "description": "RAG retrieval: rank chunks across a directory (or file) against a query and assemble the top ones into one context block under a token budget, with citations. The retrieval step to feed an LLM. Dual output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The question/topic to retrieve context for"},
+                    "directory": {"type": "string", "description": "Directory to search (recursive)", "default": "."},
+                    "file_path": {"type": "string", "description": "Single file to retrieve from instead of a directory"},
+                    "max_tokens": {"type": "integer", "description": "Context token budget", "default": 2000},
+                    "top_k": {"type": "integer", "description": "Max number of chunks", "default": 8},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "count_tokens",
+            "description": "Estimate token count for a file/content and show whether it fits each model's context window (Opus 4.8, Sonnet 5, Haiku 4.5). Dual output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to measure (any supported format)"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "find_duplicates",
+            "description": "Detect near-duplicate documents across a directory using SimHash. Returns groups of similar files with a similarity score. Dual output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directory": {"type": "string", "description": "Directory to scan (recursive)", "default": "."},
+                    "threshold": {"type": "integer", "description": "Max differing bits (0-64); lower is stricter", "default": 3},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "cluster_documents",
+            "description": "Cluster documents in a directory by topic via cosine similarity over term vectors. Returns labeled groups with top terms. Dual output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directory": {"type": "string", "description": "Directory to cluster (recursive)", "default": "."},
+                    "min_similarity": {"type": "number", "description": "Minimum cosine similarity to join a cluster", "default": 0.2},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "analyze_readability",
+            "description": "Compute Flesch Reading Ease and Flesch-Kincaid grade level with word/sentence/syllable counts. Dual output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to analyze (any supported format)"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "detect_natural_language",
+            "description": "Detect the natural language of a document (English/Spanish/French/German/Portuguese/Italian) via function-word analysis. Dual output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to analyze (any supported format)"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "top_n": {"type": "integer", "default": 3},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "classify_document",
+            "description": "Heuristic topic/content-type classification (technical, finance, legal, correspondence, academic, marketing) via keyword signals. Dual output. See ai_classify for the LLM version.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to classify (any supported format)"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "ai_summarize",
+            "description": "Abstractive summary via the Claude API (requires ANTHROPIC_API_KEY; returns a setup note if absent). Local alternative: summarize_document.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to summarize (any supported format)"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "style": {"type": "string", "description": "Summary style, e.g. concise, detailed, bullet points", "default": "concise"},
+                    "model": {"type": "string", "description": "Override model (default claude-haiku-4-5)"},
+                    "max_tokens": {"type": "integer", "default": 600}
+                }
+            }
+        },
+        {
+            "name": "ai_ask",
+            "description": "RAG question-answering via the Claude API: retrieves relevant context across a directory/file, then answers grounded in it with citations (requires ANTHROPIC_API_KEY).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "The question to answer"},
+                    "directory": {"type": "string", "description": "Directory to retrieve context from", "default": "."},
+                    "file_path": {"type": "string", "description": "Single file to answer from instead of a directory"},
+                    "model": {"type": "string", "description": "Override model (default claude-haiku-4-5)"},
+                    "max_tokens": {"type": "integer", "default": 800},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                },
+                "required": ["question"]
+            }
+        },
+        {
+            "name": "ai_tag",
+            "description": "Suggest topical tags for a document via the Claude API (requires ANTHROPIC_API_KEY). Local alternative: extract_keywords.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to tag (any supported format)"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "max_tags": {"type": "integer", "default": 8},
+                    "model": {"type": "string", "description": "Override model (default claude-haiku-4-5)"}
+                }
+            }
+        },
+        {
+            "name": "ai_translate",
+            "description": "Translate a document to a target language via the Claude API, preserving Markdown (requires ANTHROPIC_API_KEY).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to translate (any supported format)"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "target_language": {"type": "string", "description": "Target language, e.g. Spanish, French"},
+                    "model": {"type": "string", "description": "Override model (default claude-haiku-4-5)"},
+                    "max_tokens": {"type": "integer", "default": 2000}
+                },
+                "required": ["target_language"]
+            }
+        },
+        {
+            "name": "ai_classify",
+            "description": "Classify a document into caller-provided labels via the Claude API (requires ANTHROPIC_API_KEY). Local alternative: classify_document.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to classify (any supported format)"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "labels": {"type": "array", "items": {"type": "string"}, "description": "Candidate labels"},
+                    "model": {"type": "string", "description": "Override model (default claude-haiku-4-5)"}
+                },
+                "required": ["labels"]
+            }
         }
     ]);
 
@@ -990,6 +1155,18 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
         Some("extract_qa_pairs") => handle_extract_qa_pairs(&arguments),
         Some("extract_entities") => handle_extract_entities(&arguments),
         Some("build_knowledge_index") => handle_build_knowledge_index(&arguments),
+        Some("retrieve_context") => handle_retrieve_context(&arguments),
+        Some("count_tokens") => handle_count_tokens(&arguments),
+        Some("find_duplicates") => handle_find_duplicates(&arguments),
+        Some("cluster_documents") => handle_cluster_documents(&arguments),
+        Some("analyze_readability") => handle_analyze_readability(&arguments),
+        Some("detect_natural_language") => handle_detect_natural_language(&arguments),
+        Some("classify_document") => handle_classify_document(&arguments),
+        Some("ai_summarize") => handle_ai_summarize(&arguments).await,
+        Some("ai_ask") => handle_ai_ask(&arguments).await,
+        Some("ai_tag") => handle_ai_tag(&arguments).await,
+        Some("ai_translate") => handle_ai_translate(&arguments).await,
+        Some("ai_classify") => handle_ai_classify(&arguments).await,
         _ => {
             return JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -2752,7 +2929,19 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
         help.push_str("| summarize_document | Extractive TL;DR (no LLM) |\n");
         help.push_str("| extract_qa_pairs | Mine Q/A pairs for flashcards / RAG ground-truth |\n");
         help.push_str("| extract_entities | URLs, emails, dates, names with counts |\n");
-        help.push_str("| build_knowledge_index | One JSON artifact: summary+outline+tags+keywords+chunks |\n\n");
+        help.push_str("| build_knowledge_index | One JSON artifact: summary+outline+tags+keywords+chunks |\n");
+        help.push_str("| retrieve_context | RAG retrieval: budgeted context block + citations for a query |\n");
+        help.push_str("| count_tokens | Estimate tokens and model context-window fit |\n");
+        help.push_str("| find_duplicates | Near-duplicate detection (SimHash) across a directory |\n");
+        help.push_str("| cluster_documents | Topic clustering by cosine similarity |\n");
+        help.push_str("| analyze_readability | Flesch reading ease / grade level |\n");
+        help.push_str("| detect_natural_language | Detect natural language (EN/ES/FR/DE/PT/IT) |\n");
+        help.push_str("| classify_document | Heuristic topic/content-type classification |\n");
+        help.push_str("| ai_summarize | Abstractive summary via Claude API (needs ANTHROPIC_API_KEY) |\n");
+        help.push_str("| ai_ask | RAG Q&A via Claude API with citations |\n");
+        help.push_str("| ai_tag | Suggest tags via Claude API |\n");
+        help.push_str("| ai_translate | Translate via Claude API |\n");
+        help.push_str("| ai_classify | Classify into given labels via Claude API |\n\n");
         help.push_str("Supported input formats: text/code, HTML/HTM/MHTML/webarchive, PDF, DOCX, DOC, RTF, ODT, XLSX/XLS/ODS/CSV, PPTX/ODP, EML, EPUB, MOBI, RSS/Atom, and markup (wiki, rst, adoc, org, tex, textile).\n\n");
         help.push_str("RAG/knowledge tools accept `output_format: \"json\"` for machine-readable output.\n\n");
         help.push_str("Use `get_tool_help` with a tool_name parameter for detailed help on a specific tool.\n");
@@ -3617,4 +3806,385 @@ fn handle_build_knowledge_index(args: &Value) -> Result<String, Box<dyn std::err
 
     // This tool is machine-oriented: always JSON.
     Ok(serde_json::to_string_pretty(&index)?)
+}
+
+// ============================================================================
+// AI functions — Phase A: local RAG retrieval + token budgeting
+// ============================================================================
+
+fn handle_retrieve_context(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let query = args.get("query").and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("query".to_string())) as Box<dyn std::error::Error>)?;
+    let max_tokens = args.get("max_tokens").and_then(|v| v.as_u64()).unwrap_or(2000) as usize;
+    let top_k = args.get("top_k").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
+
+    // Gather chunks from a single file or a whole directory.
+    let mut all_chunks: Vec<(String, rag::Chunk)> = Vec::new();
+    let sources: Vec<std::path::PathBuf> = if let Some(fp) = args.get("file_path").and_then(|v| v.as_str()) {
+        vec![std::path::PathBuf::from(fp)]
+    } else {
+        let dir = args.get("directory").and_then(|v| v.as_str()).unwrap_or(".");
+        collect_text_files(Path::new(dir))
+    };
+    for path in &sources {
+        let content = match convert_any_to_markdown(path) { Ok(c) => c, Err(_) => continue };
+        for c in rag::chunk_markdown(&content, 512, 64) {
+            all_chunks.push((path.display().to_string(), c));
+        }
+    }
+
+    let ranked = retrieval::rank_chunks(query, all_chunks);
+    let selected = retrieval::select_within_budget(ranked, max_tokens, top_k);
+    let context = retrieval::assemble_context(&selected);
+    let used_tokens: usize = selected.iter().map(|c| c.token_estimate).sum();
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!({
+            "query": query,
+            "used_tokens": used_tokens,
+            "context": context,
+            "chunks": selected.iter().enumerate().map(|(i, c)| json!({
+                "rank": i + 1,
+                "source": c.source,
+                "heading_path": c.heading_path,
+                "score": c.score,
+                "token_estimate": c.token_estimate,
+                "text": c.text,
+            })).collect::<Vec<_>>(),
+        }))?);
+    }
+
+    let mut out = format!("# Retrieved context for: `{}`\n\n", query);
+    out.push_str(&format!("**{} chunks, ~{} tokens** (budget {})\n\n", selected.len(), used_tokens, max_tokens));
+    if selected.is_empty() {
+        out.push_str("No relevant content found.\n");
+        return Ok(out);
+    }
+    out.push_str("## Context\n\n");
+    out.push_str(&context);
+    out.push_str("\n\n## Citations\n\n");
+    for (i, c) in selected.iter().enumerate() {
+        let loc = if c.heading_path.is_empty() { c.source.clone() } else { format!("{} › {}", c.source, c.heading_path.join(" › ")) };
+        out.push_str(&format!("{}. {} (score {:.2})\n", i + 1, loc, c.score));
+    }
+    Ok(out)
+}
+
+fn handle_count_tokens(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let (content, source) = resolve_content_arg(args)?;
+    let tokens = rag::estimate_tokens(&content);
+    let words = content.split_whitespace().count();
+    let chars = content.chars().count();
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!({
+            "source": source,
+            "estimated_tokens": tokens,
+            "words": words,
+            "chars": chars,
+            "models": retrieval::model_context_windows().iter().map(|(m, w)| json!({
+                "model": m,
+                "context_window": w,
+                "fits": tokens <= *w,
+                "pct_of_window": (tokens as f64 / *w as f64) * 100.0,
+            })).collect::<Vec<_>>(),
+        }))?);
+    }
+
+    let mut out = format!("# Token Estimate: {}\n\n", source);
+    out.push_str(&format!("- **Estimated tokens:** ~{}\n- **Words:** {}\n- **Characters:** {}\n\n", tokens, words, chars));
+    out.push_str("## Context-window fit\n\n| Model | Window | Fits | % of window |\n| --- | --- | --- | --- |\n");
+    for (m, w) in retrieval::model_context_windows() {
+        out.push_str(&format!("| {} | {} | {} | {:.2}% |\n", m, w, if tokens <= w { "✅" } else { "❌" }, (tokens as f64 / w as f64) * 100.0));
+    }
+    out.push_str("\n_Token counts are heuristic estimates (~words × 1.3), not exact tokenizer counts._\n");
+    Ok(out)
+}
+
+// ============================================================================
+// AI functions — Phase B: dedup & clustering
+// ============================================================================
+
+fn handle_find_duplicates(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let directory = args.get("directory").and_then(|v| v.as_str()).unwrap_or(".");
+    // Bits (out of 64) allowed to differ; lower = stricter. Default ~5% of bits.
+    let threshold = args.get("threshold").and_then(|v| v.as_u64()).unwrap_or(3) as u32;
+
+    let files = collect_text_files(Path::new(directory));
+    let mut prints: Vec<(String, u64)> = Vec::new();
+    for f in &files {
+        if let Ok(content) = convert_any_to_markdown(f) {
+            prints.push((f.display().to_string(), similarity::simhash(&content)));
+        }
+    }
+    let groups = similarity::group_near_duplicates(&prints, threshold);
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!(groups.iter().map(|g| {
+            json!(g.iter().map(|(p, s)| json!({"path": p, "similarity": s})).collect::<Vec<_>>())
+        }).collect::<Vec<_>>()))?);
+    }
+    let mut out = format!("# Near-duplicate groups in: {}\n\n**{} group(s)** (threshold {} bits, {} files scanned)\n\n", directory, groups.len(), threshold, prints.len());
+    if groups.is_empty() {
+        out.push_str("No near-duplicates found.\n");
+    }
+    for (i, g) in groups.iter().enumerate() {
+        out.push_str(&format!("## Group {}\n\n", i + 1));
+        for (p, s) in g {
+            out.push_str(&format!("- {} ({:.1}% similar)\n", p, s * 100.0));
+        }
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+fn handle_cluster_documents(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let directory = args.get("directory").and_then(|v| v.as_str()).unwrap_or(".");
+    let min_similarity = args.get("min_similarity").and_then(|v| v.as_f64()).unwrap_or(0.2);
+
+    let files = collect_text_files(Path::new(directory));
+    let mut docs: Vec<similarity::Document> = Vec::new();
+    for f in &files {
+        if let Ok(content) = convert_any_to_markdown(f) {
+            docs.push(similarity::Document::new(&f.display().to_string(), &content));
+        }
+    }
+    let clusters = similarity::cluster_documents(&docs, min_similarity);
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!(clusters.iter().map(|c| json!({
+            "label": c.label,
+            "members": c.members,
+            "top_terms": c.top_terms,
+        })).collect::<Vec<_>>()))?);
+    }
+    let mut out = format!("# Document clusters in: {}\n\n**{} cluster(s)** (min similarity {:.2})\n\n", directory, clusters.len(), min_similarity);
+    for c in &clusters {
+        out.push_str(&format!("## {} ({} docs)\n\nTop terms: {}\n\n", c.label, c.members.len(), c.top_terms.join(", ")));
+        for m in &c.members {
+            out.push_str(&format!("- {}\n", m));
+        }
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+// ============================================================================
+// AI functions — Phase C: document intelligence
+// ============================================================================
+
+fn handle_analyze_readability(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let (content, source) = resolve_content_arg(args)?;
+    let r = doc_intel::readability(&content);
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!({
+            "source": source,
+            "words": r.words,
+            "sentences": r.sentences,
+            "syllables": r.syllables,
+            "avg_sentence_length": r.avg_sentence_length,
+            "flesch_reading_ease": r.flesch_reading_ease,
+            "flesch_kincaid_grade": r.flesch_kincaid_grade,
+            "interpretation": doc_intel::flesch_interpretation(r.flesch_reading_ease),
+        }))?);
+    }
+    let mut out = format!("# Readability: {}\n\n", source);
+    out.push_str(&format!("- **Flesch Reading Ease:** {:.1} — {}\n", r.flesch_reading_ease, doc_intel::flesch_interpretation(r.flesch_reading_ease)));
+    out.push_str(&format!("- **Flesch-Kincaid Grade:** {:.1}\n", r.flesch_kincaid_grade));
+    out.push_str(&format!("- **Words:** {}\n- **Sentences:** {}\n- **Syllables:** {}\n- **Avg sentence length:** {:.1} words\n", r.words, r.sentences, r.syllables, r.avg_sentence_length));
+    Ok(out)
+}
+
+fn handle_detect_natural_language(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let (content, source) = resolve_content_arg(args)?;
+    let guesses = doc_intel::detect_language(&content);
+    let top_n = args.get("top_n").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
+    let top: Vec<_> = guesses.iter().take(top_n).collect();
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!({
+            "source": source,
+            "detected": top.first().map(|g| g.language),
+            "candidates": top.iter().map(|g| json!({"language": g.language, "confidence": g.confidence})).collect::<Vec<_>>(),
+        }))?);
+    }
+    let mut out = format!("# Language detection: {}\n\n", source);
+    if let Some(best) = top.first() {
+        out.push_str(&format!("**Detected:** {} (confidence {:.2})\n\n", best.language, best.confidence));
+    }
+    out.push_str("| Language | Confidence |\n| --- | --- |\n");
+    for g in &top {
+        out.push_str(&format!("| {} | {:.3} |\n", g.language, g.confidence));
+    }
+    Ok(out)
+}
+
+fn handle_classify_document(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let (content, source) = resolve_content_arg(args)?;
+    let scores = doc_intel::classify(&content);
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!({
+            "source": source,
+            "top_category": scores.first().map(|c| c.category),
+            "categories": scores.iter().map(|c| json!({"category": c.category, "score": c.score})).collect::<Vec<_>>(),
+        }))?);
+    }
+    let mut out = format!("# Classification: {}\n\n", source);
+    if let Some(top) = scores.first() {
+        out.push_str(&format!("**Top category:** {} ({:.2})\n\n", top.category, top.score));
+    } else {
+        out.push_str("No strong category signals found.\n\n");
+    }
+    out.push_str("| Category | Score |\n| --- | --- |\n");
+    for c in &scores {
+        out.push_str(&format!("| {} | {:.2} |\n", c.category, c.score));
+    }
+    Ok(out)
+}
+
+// ============================================================================
+// AI functions — Phase D: optional Claude-backed generative tools
+// ============================================================================
+
+/// Cap content length fed to the model to keep requests bounded.
+fn truncate_for_prompt(content: &str, max_chars: usize) -> String {
+    if content.len() <= max_chars {
+        return content.to_string();
+    }
+    let end = (0..=max_chars).rev().find(|&i| content.is_char_boundary(i)).unwrap_or(0);
+    format!("{}\n\n[...truncated...]", &content[..end])
+}
+
+async fn handle_ai_summarize(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    if llm::api_key().is_none() {
+        return Ok(llm::no_key_note("ai_summarize"));
+    }
+    let (content, _source) = resolve_content_arg(args)?;
+    let style = args.get("style").and_then(|v| v.as_str()).unwrap_or("concise");
+    let model = llm::resolve_model(args.get("model").and_then(|v| v.as_str()));
+    let max_tokens = args.get("max_tokens").and_then(|v| v.as_u64()).unwrap_or(600) as u32;
+
+    let prompt = format!(
+        "Summarize the following document in a {} style. Use Markdown.\n\n---\n{}",
+        style,
+        truncate_for_prompt(&content, 40_000)
+    );
+    llm::complete(&prompt, Some("You are a precise summarization assistant."), &model, max_tokens)
+        .await
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)
+}
+
+async fn handle_ai_ask(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    if llm::api_key().is_none() {
+        return Ok(llm::no_key_note("ai_ask"));
+    }
+    let question = args.get("question").and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("question".to_string())) as Box<dyn std::error::Error>)?;
+    let model = llm::resolve_model(args.get("model").and_then(|v| v.as_str()));
+    let max_tokens = args.get("max_tokens").and_then(|v| v.as_u64()).unwrap_or(800) as u32;
+
+    // Build retrieval context (reuse the same gathering as retrieve_context).
+    let mut retrieval_args = args.clone();
+    retrieval_args["query"] = json!(question);
+    if retrieval_args.get("max_tokens").is_none() {
+        retrieval_args["max_tokens"] = json!(3000);
+    }
+    retrieval_args["output_format"] = json!("json");
+    let ctx_json = handle_retrieve_context(&retrieval_args)?;
+    let parsed: Value = serde_json::from_str(&ctx_json)?;
+    let context = parsed.get("context").and_then(|v| v.as_str()).unwrap_or("");
+    let citations = parsed.get("chunks").cloned().unwrap_or(json!([]));
+
+    let prompt = format!(
+        "Answer the question using ONLY the context below. Cite sources by their [n] markers. \
+         If the context does not contain the answer, say so.\n\n## Context\n{}\n\n## Question\n{}",
+        context, question
+    );
+    let answer = llm::complete(&prompt, Some("You are a helpful research assistant that grounds answers in provided context."), &model, max_tokens)
+        .await
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!({
+            "question": question,
+            "answer": answer,
+            "citations": citations,
+        }))?);
+    }
+    let mut out = format!("# {}\n\n{}\n\n## Sources\n\n", question, answer);
+    if let Some(chunks) = citations.as_array() {
+        for c in chunks {
+            let src = c.get("source").and_then(|v| v.as_str()).unwrap_or("?");
+            let rank = c.get("rank").and_then(|v| v.as_u64()).unwrap_or(0);
+            out.push_str(&format!("{}. {}\n", rank, src));
+        }
+    }
+    Ok(out)
+}
+
+async fn handle_ai_tag(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    if llm::api_key().is_none() {
+        return Ok(llm::no_key_note("ai_tag"));
+    }
+    let (content, _source) = resolve_content_arg(args)?;
+    let max_tags = args.get("max_tags").and_then(|v| v.as_u64()).unwrap_or(8);
+    let model = llm::resolve_model(args.get("model").and_then(|v| v.as_str()));
+
+    let prompt = format!(
+        "Suggest up to {} concise topical tags (lowercase, hyphenated, no '#') for this document. \
+         Return ONLY a comma-separated list.\n\n---\n{}",
+        max_tags,
+        truncate_for_prompt(&content, 20_000)
+    );
+    llm::complete(&prompt, Some("You are a librarian that assigns consistent topical tags."), &model, 200)
+        .await
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)
+}
+
+async fn handle_ai_translate(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    if llm::api_key().is_none() {
+        return Ok(llm::no_key_note("ai_translate"));
+    }
+    let (content, _source) = resolve_content_arg(args)?;
+    let target = args.get("target_language").and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("target_language".to_string())) as Box<dyn std::error::Error>)?;
+    let model = llm::resolve_model(args.get("model").and_then(|v| v.as_str()));
+    let max_tokens = args.get("max_tokens").and_then(|v| v.as_u64()).unwrap_or(2000) as u32;
+
+    let prompt = format!(
+        "Translate the following document into {}. Preserve Markdown formatting. Output only the \
+         translation.\n\n---\n{}",
+        target,
+        truncate_for_prompt(&content, 30_000)
+    );
+    llm::complete(&prompt, Some("You are a professional translator."), &model, max_tokens)
+        .await
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)
+}
+
+async fn handle_ai_classify(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    if llm::api_key().is_none() {
+        return Ok(llm::no_key_note("ai_classify"));
+    }
+    let (content, _source) = resolve_content_arg(args)?;
+    let labels: Vec<String> = args.get("labels")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    if labels.is_empty() {
+        return Err(Box::new(ConversionError::MissingParameter("labels (array)".to_string())) as Box<dyn std::error::Error>);
+    }
+    let model = llm::resolve_model(args.get("model").and_then(|v| v.as_str()));
+
+    let prompt = format!(
+        "Classify the following document into exactly one of these labels: {}. Respond with the \
+         label and a one-sentence justification.\n\n---\n{}",
+        labels.join(", "),
+        truncate_for_prompt(&content, 20_000)
+    );
+    llm::complete(&prompt, Some("You are a precise document classifier."), &model, 200)
+        .await
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)
 }
