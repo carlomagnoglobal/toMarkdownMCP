@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server written in Rust that converts code files, HTML documents, and text content to Markdown format. Cross-platform compatible with Windows, Linux, and macOS.
 
-Supports converting from multiple sources including local files, HTTP/HTTPS URLs, and stdin. Handles 60+ programming languages plus HTML/HTM/MHTML web formats.
+Supports converting from multiple sources including local files, HTTP/HTTPS URLs, and stdin. Handles 60+ programming languages, HTML/HTM/MHTML web formats, office/document formats (PDF, DOCX, XLSX, PPTX, …), email, ebooks, feeds, and markup — and exposes **47 tools** in total, including an AI/RAG toolkit and optional Claude-backed generation.
 
 ## Features
 
@@ -116,6 +116,10 @@ cargo build --release --target x86_64-apple-darwin
 The server reads JSON-RPC 2.0 requests from stdin and writes responses to stdout.
 
 ### Available Tools
+
+The server exposes **47 tools** — format conversion, file/vault operations, an AI/RAG toolkit, and
+optional Claude-backed generation. Call `get_tool_help` (no arguments) for the full list, or with a
+`tool_name` for detailed help on one tool. A selection is documented below.
 
 #### 1. `convert_file`
 Converts a file to Markdown format. For HTML files, supports optional metadata extraction, CSS hints, TOC generation, and image handling.
