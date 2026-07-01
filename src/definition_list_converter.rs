@@ -40,8 +40,8 @@ pub fn extract_definition_lists_from_html(html_content: &str) -> Result<Vec<Defi
 
 /// Parse a single definition list element
 pub fn parse_definition_list(dl_elem: &scraper::element_ref::ElementRef) -> Result<DefinitionList> {
-    let dt_selector = Selector::parse("dt").map_err(|_| anyhow!("Invalid selector"))?;
-    let dd_selector = Selector::parse("dd").map_err(|_| anyhow!("Invalid selector"))?;
+    let _dt_selector = Selector::parse("dt").map_err(|_| anyhow!("Invalid selector"))?;
+    let _dd_selector = Selector::parse("dd").map_err(|_| anyhow!("Invalid selector"))?;
 
     let mut definitions = Vec::new();
     let mut current_terms: Vec<String> = Vec::new();
@@ -178,7 +178,7 @@ pub fn convert_definition_lists_in_html(html_content: &str) -> Result<String> {
         // Find and replace each <dl>...</dl> with Markdown version
         if let Some(dl_start) = result.find("<dl") {
             if let Some(dl_end) = result[dl_start..].find("</dl>") {
-                let actual_end = dl_start + dl_end + 5; // +5 for "</dl>"
+                let _actual_end = dl_start + dl_end + 5; // +5 for "</dl>"
                 // For now, we just remove the tags and let the content flow
                 // A more sophisticated implementation would parse and reconstruct
                 result.drain(dl_start..dl_start + result[dl_start..].find('>').unwrap_or(0) + 1);

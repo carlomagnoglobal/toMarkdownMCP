@@ -411,8 +411,8 @@ pub fn process_forms_in_html(html_content: &str) -> Result<(String, Vec<Form>)> 
     }
 
     let mut result = html_content.to_string();
-    let document = Html::parse_document(&result);
-    let form_selector = Selector::parse("form")
+    let _document = Html::parse_document(&result);
+    let _form_selector = Selector::parse("form")
         .map_err(|_| anyhow!("Invalid selector"))?;
 
     // Replace forms with markdown-safe div wrappers

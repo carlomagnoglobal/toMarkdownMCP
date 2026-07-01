@@ -54,7 +54,7 @@ pub fn parse_html_table(table_elem: &scraper::element_ref::ElementRef) -> Result
 
     let mut headers = Vec::new();
     let mut rows = Vec::new();
-    let mut align: Vec<TableAlignment>;
+    let align: Vec<TableAlignment>;
     let mut first_data_row = true;
 
     // Process all rows

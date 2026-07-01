@@ -1,3 +1,7 @@
+#![recursion_limit = "512"]
+// Several modules intentionally expose ready-to-use helper APIs (alternate
+// output formats, extraction utilities) that aren't all wired into a tool yet.
+#![allow(dead_code)]
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -20,6 +24,12 @@ mod link_extractor;
 mod heading_analyzer;
 mod blockquote_extractor;
 mod definition_list_converter;
+mod document_converter;
+mod office_converter;
+mod feed_email_converter;
+mod markup_converter;
+mod rag;
+mod knowledge;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
@@ -115,7 +125,7 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
     let tools = json!([
         {
             "name": "convert_file",
-            "description": "Convert a text, code, or HTML file to Markdown format",
+            "description": "Convert a text, code, HTML, or document file to Markdown format. Supports HTML/HTM/MHTML/webarchive; documents PDF, DOCX, DOC, RTF, ODT; spreadsheets XLSX, XLS, ODS, CSV; presentations PPTX, ODP; email EML; ebooks EPUB, MOBI; RSS/Atom feeds; and markup WIKI, RST, ADOC, ORG, TEX, TEXTILE.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -750,6 +760,177 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                 },
                 "required": ["path"]
             }
+        },
+        {
+            "name": "chunk_markdown",
+            "description": "Split a Markdown/document file into heading-aware, token-bounded chunks for RAG/embeddings. Dual output: readable Markdown or structured JSON (output_format=json).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to chunk (any supported format). Provide this or 'content'."},
+                    "content": {"type": "string", "description": "Inline Markdown/text to chunk instead of a file."},
+                    "max_tokens": {"type": "integer", "description": "Max approximate tokens per chunk", "default": 512},
+                    "overlap": {"type": "integer", "description": "Word overlap between adjacent chunks", "default": 64},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "extract_chunks_for_rag",
+            "description": "Convert any supported file to Markdown then chunk it into JSON records ({id, text, metadata}) ready for embedding. Primary ingestion entry point for RAG pipelines.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to ingest (any supported format)."},
+                    "content": {"type": "string", "description": "Inline content instead of a file."},
+                    "max_tokens": {"type": "integer", "default": 512},
+                    "overlap": {"type": "integer", "default": 64},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "json"}
+                }
+            }
+        },
+        {
+            "name": "get_document_outline",
+            "description": "Extract a nested heading outline (level/title/anchor/children) from a document. Dual output: Markdown list or JSON tree.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to outline (any supported format)."},
+                    "content": {"type": "string", "description": "Inline content instead of a file."},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "search_content",
+            "description": "Search inside converted document content across a directory, ranked by term frequency. Returns ranked snippets with source and score. Dual output: Markdown or JSON.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directory": {"type": "string", "description": "Directory to search (recursive)", "default": "."},
+                    "query": {"type": "string", "description": "Search terms"},
+                    "max_results": {"type": "integer", "default": 10},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "get_text_statistics",
+            "description": "Word/vocabulary statistics for a file: total words, distinct words, vocabulary richness, sentence/paragraph counts, and a per-word frequency table. Dual output: Markdown or JSON.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to analyze (any supported format)."},
+                    "content": {"type": "string", "description": "Inline content instead of a file."},
+                    "top_n": {"type": "integer", "description": "Number of top words to report", "default": 25},
+                    "min_length": {"type": "integer", "description": "Ignore words shorter than this", "default": 1},
+                    "stopwords": {"type": "boolean", "description": "Exclude common English stopwords", "default": false},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "get_corpus_statistics",
+            "description": "Aggregate word statistics across a directory: per-document word/distinct counts plus corpus totals and global distinct-word count. Dual output: Markdown or JSON.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directory": {"type": "string", "description": "Directory to analyze (recursive)", "default": "."},
+                    "top_n": {"type": "integer", "default": 25},
+                    "stopwords": {"type": "boolean", "description": "Exclude common English stopwords", "default": true},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "extract_tags",
+            "description": "Extract #tags and frontmatter tags. With 'directory' builds a vault-wide tag index {tag, count, files}; with 'file_path'/'content' returns tags for one note. Dual output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "directory": {"type": "string", "description": "Vault directory to build a tag index from"},
+                    "file_path": {"type": "string", "description": "Single file to extract tags from"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "extract_keywords",
+            "description": "Salient terms for a document via TF-IDF (pass 'directory' to use the vault as the IDF corpus). Answers 'what is this note about'. Dual output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to analyze"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "directory": {"type": "string", "description": "Optional corpus directory for IDF weighting"},
+                    "top_n": {"type": "integer", "default": 10},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "find_related_notes",
+            "description": "Find notes similar to a given note via cosine similarity over TF vectors, boosted by shared tags/links. Powers 'see also' and RAG neighbor expansion. Dual output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "The note to find neighbors for"},
+                    "directory": {"type": "string", "description": "Vault directory to search", "default": "."},
+                    "max_results": {"type": "integer", "default": 5},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                },
+                "required": ["file_path"]
+            }
+        },
+        {
+            "name": "summarize_document",
+            "description": "Extractive TL;DR: rank sentences by keyword density and position and return the top ones. Deterministic, no LLM. Dual output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to summarize"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "sentences": {"type": "integer", "description": "Number of sentences to return", "default": 3},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "extract_qa_pairs",
+            "description": "Mine Q:/A: lines and '?'-terminated headings into {question, answer, source} pairs — flashcards, eval sets, or RAG ground-truth. Dual output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to mine"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "extract_entities",
+            "description": "Lightweight entity extraction: URLs, emails, dates, and capitalized name phrases, aggregated with counts. Dual output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to analyze"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"},
+                    "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+                }
+            }
+        },
+        {
+            "name": "build_knowledge_index",
+            "description": "Flagship 'second brain' export: one JSON artifact bundling summary, outline, tags, keywords, stats, and RAG chunks for a document — a single object an AI agent or vector DB can ingest to 'know' the note. Always JSON.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "File to index (any supported format)"},
+                    "content": {"type": "string", "description": "Inline content instead of a file"}
+                }
+            }
         }
     ]);
 
@@ -796,6 +977,19 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
         Some("update_note_properties") => handle_update_note_properties(&arguments),
         Some("find_note_by_alias_or_title") => handle_find_note_by_alias_or_title(&arguments),
         Some("get_graph_relationships") => handle_get_graph_relationships(&arguments),
+        Some("chunk_markdown") => handle_chunk_markdown(&arguments),
+        Some("extract_chunks_for_rag") => handle_extract_chunks_for_rag(&arguments),
+        Some("get_document_outline") => handle_get_document_outline(&arguments),
+        Some("search_content") => handle_search_content(&arguments),
+        Some("get_text_statistics") => handle_get_text_statistics(&arguments),
+        Some("get_corpus_statistics") => handle_get_corpus_statistics(&arguments),
+        Some("extract_tags") => handle_extract_tags(&arguments),
+        Some("extract_keywords") => handle_extract_keywords(&arguments),
+        Some("find_related_notes") => handle_find_related_notes(&arguments),
+        Some("summarize_document") => handle_summarize_document(&arguments),
+        Some("extract_qa_pairs") => handle_extract_qa_pairs(&arguments),
+        Some("extract_entities") => handle_extract_entities(&arguments),
+        Some("build_knowledge_index") => handle_build_knowledge_index(&arguments),
         _ => {
             return JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -834,6 +1028,64 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
                 data: Some(json!(e.to_string())),
             }),
         },
+    }
+}
+
+/// If the extension is a binary/office document format, convert it to Markdown.
+/// Returns None for formats handled by the normal text pipeline.
+fn try_convert_binary_document(path: &Path) -> Option<Result<String, Box<dyn std::error::Error>>> {
+    let ext = path.extension().and_then(|e| e.to_str())?;
+    let map_err = |e: anyhow::Error| {
+        Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>
+    };
+    if document_converter::is_document_extension(ext) {
+        Some(document_converter::convert_document(path).map_err(map_err))
+    } else if office_converter::is_office_extension(ext) {
+        Some(office_converter::convert_office(path).map_err(map_err))
+    } else if feed_email_converter::is_feed_email_extension(ext) {
+        Some(feed_email_converter::convert_feed_email(path).map_err(map_err))
+    } else {
+        None
+    }
+}
+
+/// Convert any supported file to Markdown/plain text for RAG/analysis. Unlike
+/// `handle_convert_file`, code/text files are returned as-is (no code fence).
+fn convert_any_to_markdown(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    if let Some(conv) = try_convert_binary_document(path) {
+        return conv;
+    }
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if markup_converter::is_markup_extension(ext) {
+            return Ok(markup_converter::convert_markup(ext, &content));
+        }
+    }
+    Ok(content)
+}
+
+/// Resolve text content from either an inline `content` arg or a `file_path`
+/// arg (which is converted to Markdown). Used by the RAG/knowledge tools.
+fn resolve_content_arg(args: &Value) -> Result<(String, String), Box<dyn std::error::Error>> {
+    if let Some(content) = args.get("content").and_then(|v| v.as_str()) {
+        return Ok((content.to_string(), "inline".to_string()));
+    }
+    if let Some(file_path) = args.get("file_path").and_then(|v| v.as_str()) {
+        let md = convert_any_to_markdown(Path::new(file_path))?;
+        return Ok((md, file_path.to_string()));
+    }
+    Err(Box::new(ConversionError::MissingParameter(
+        "file_path or content".to_string(),
+    )) as Box<dyn std::error::Error>)
+}
+
+/// Prepend a `# filename` heading to converted content when a filename is given.
+fn prepend_filename_heading(filename: &str, body: String) -> String {
+    if filename.is_empty() {
+        body
+    } else {
+        format!("# {}\n\n{}", filename, body)
     }
 }
 
@@ -928,9 +1180,24 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
         return handle_html_file_conversion(file_path, filename, extract_metadata, preserve_css_hints, generate_toc_flag, toc_max_level, extract_images, image_format, convert_tables, extract_forms, preserve_comments, extract_links, analyze_headings, extract_definition_lists, extract_blockquotes);
     }
 
+    // Handle binary/office/document/feed/email formats (routed before the text
+    // read below, since these are binary and would fail read_to_string).
+    if let Some(conv) = try_convert_binary_document(path) {
+        return Ok(prepend_filename_heading(filename, conv?));
+    }
+
     // Read file
     let content = std::fs::read_to_string(path)
         .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    // Lightweight-markup text formats (wiki, rST, AsciiDoc, Org, LaTeX, Textile)
+    // convert to real Markdown instead of being wrapped in a code fence.
+    if let Some(ext) = extension {
+        if markup_converter::is_markup_extension(ext) {
+            let md = markup_converter::convert_markup(ext, &content);
+            return Ok(prepend_filename_heading(filename, md));
+        }
+    }
 
     // Detect language from file extension or use explicit type
     let language = if let Some(explicit) = explicit_file_type {
@@ -1052,6 +1319,21 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
         .await
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
 
+    // RSS/Atom feeds: detect by content sniffing (or explicit file_type) and
+    // route to the feed converter regardless of source (URL, file, or stdin).
+    let looks_like_feed = matches!(explicit_file_type, Some("rss" | "atom" | "feed"))
+        || {
+            let head = content.trim_start();
+            let head = head.strip_prefix("\u{feff}").unwrap_or(head); // BOM
+            let lower = head.get(..512.min(head.len())).unwrap_or(head).to_lowercase();
+            lower.contains("<rss") || lower.contains("<feed") || lower.contains("<rdf:rdf")
+        };
+    if looks_like_feed {
+        if let Ok(md) = feed_email_converter::feed_bytes_to_markdown(content.as_bytes()) {
+            return Ok(md);
+        }
+    }
+
     // Detect language
     let language = if let Some(explicit) = explicit_file_type {
         explicit.to_string()
@@ -1149,7 +1431,7 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
                     .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
             }
 
-            let mut html_markdown = html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
+            let html_markdown = html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
                 .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
 
             // Prepend summaries if present (definition lists, headings, links, comments)
@@ -1410,10 +1692,35 @@ fn handle_get_file_summary(args: &Value) -> Result<String, Box<dyn std::error::E
         .unwrap_or(300) as usize;
 
     let path = Path::new(file_path);
+    let extension = path.extension().and_then(|ext| ext.to_str());
+
+    // Binary/office documents: convert first, then summarize the resulting Markdown.
+    if let Some(conv) = try_convert_binary_document(path) {
+        let md = conv?;
+        let mut summary = String::new();
+        summary.push_str("## Headings\n\n");
+        let heads: Vec<&str> = md.lines().filter(|l| l.trim_start().starts_with('#')).take(10).collect();
+        if heads.is_empty() {
+            summary.push_str("(No headings found)\n");
+        } else {
+            for h in &heads {
+                summary.push_str(&format!("{}\n", h.trim()));
+            }
+        }
+        summary.push_str("\n## Preview\n\n");
+        let preview = if md.len() > preview_length {
+            let end = (0..=preview_length).rev().find(|&i| md.is_char_boundary(i)).unwrap_or(0);
+            format!("{}...", &md[..end])
+        } else {
+            md.clone()
+        };
+        summary.push_str(&format!("```\n{}\n```\n", preview));
+        return Ok(summary);
+    }
+
     let content = std::fs::read_to_string(path)
         .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
 
-    let extension = path.extension().and_then(|ext| ext.to_str());
     let is_html = matches!(extension, Some("html" | "htm" | "mhtml" | "webarchive"));
 
     let mut summary = String::new();
@@ -1465,7 +1772,7 @@ fn handle_get_file_summary(args: &Value) -> Result<String, Box<dyn std::error::E
     summary.push_str("## Preview\n\n");
     let preview_text = if is_html {
         // Strip HTML tags for preview - replace < and > with spaces
-        let mut cleaned = content.replace('<', " ").replace('>', " ");
+        let cleaned = content.replace('<', " ").replace('>', " ");
         let text_only = cleaned
             .lines()
             .filter(|line| !line.trim().is_empty())
@@ -1545,6 +1852,15 @@ fn handle_batch_convert_files(args: &Value) -> Result<String, Box<dyn std::error
             let path = Path::new(file_path);
             if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
                 result.push_str(&format!("# {}\n\n", filename));
+            }
+
+            // Binary/office documents: convert before the text read below.
+            if let Some(conv) = try_convert_binary_document(path) {
+                match conv {
+                    Ok(md) => result.push_str(&md),
+                    Err(e) => result.push_str(&format!("**Error converting file**: {}\n", e)),
+                }
+                continue;
             }
 
             // Convert file
@@ -2165,7 +2481,6 @@ fn handle_upsert_markdown_table(args: &Value) -> Result<String, Box<dyn std::err
         }
 
         if let Some(h_idx) = heading_idx {
-            let mut found_table = false;
             for idx in (h_idx + 1)..lines.len() {
                 if lines[idx].starts_with('|') {
                     let table_start = idx;
@@ -2173,7 +2488,6 @@ fn handle_upsert_markdown_table(args: &Value) -> Result<String, Box<dyn std::err
                     while table_end < lines.len() && lines[table_end].starts_with('|') {
                         table_end += 1;
                     }
-                    found_table = true;
 
                     let mut new_lines = lines[..table_start].to_vec();
                     new_lines.push(&table);
@@ -2191,14 +2505,13 @@ fn handle_upsert_markdown_table(args: &Value) -> Result<String, Box<dyn std::err
                 }
             }
 
-            if !found_table {
-                let mut new_lines = lines.clone();
-                new_lines.insert(h_idx + 1, "");
-                new_lines.insert(h_idx + 2, &table);
-                std::fs::write(file_path, new_lines.join("\n"))
-                    .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
-                return Ok(success_msg);
-            }
+            // No existing table under the heading: insert one after it.
+            let mut new_lines = lines.clone();
+            new_lines.insert(h_idx + 1, "");
+            new_lines.insert(h_idx + 2, &table);
+            std::fs::write(file_path, new_lines.join("\n"))
+                .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+            return Ok(success_msg);
         } else {
             let mut new_content = current.clone();
             if !new_content.ends_with('\n') {
@@ -2426,7 +2739,22 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
         help.push_str("| batch_create_notes | Create multiple files |\n");
         help.push_str("| update_note_properties | Update YAML frontmatter |\n");
         help.push_str("| find_note_by_alias_or_title | Fuzzy file lookup |\n");
-        help.push_str("| get_graph_relationships | Map wiki-link connections |\n\n");
+        help.push_str("| get_graph_relationships | Map wiki-link connections |\n");
+        help.push_str("| chunk_markdown | Heading-aware, token-bounded chunks for RAG |\n");
+        help.push_str("| extract_chunks_for_rag | Convert any file then chunk to JSON for embeddings |\n");
+        help.push_str("| get_document_outline | Nested heading outline (Markdown or JSON tree) |\n");
+        help.push_str("| search_content | Ranked search inside converted document content |\n");
+        help.push_str("| get_text_statistics | Word counts, distinct words, per-word frequency |\n");
+        help.push_str("| get_corpus_statistics | Per-document + corpus-wide word statistics |\n");
+        help.push_str("| extract_tags | Tag index (#tags + frontmatter) for a note or vault |\n");
+        help.push_str("| extract_keywords | Salient terms via TF-IDF |\n");
+        help.push_str("| find_related_notes | Similar notes via cosine similarity |\n");
+        help.push_str("| summarize_document | Extractive TL;DR (no LLM) |\n");
+        help.push_str("| extract_qa_pairs | Mine Q/A pairs for flashcards / RAG ground-truth |\n");
+        help.push_str("| extract_entities | URLs, emails, dates, names with counts |\n");
+        help.push_str("| build_knowledge_index | One JSON artifact: summary+outline+tags+keywords+chunks |\n\n");
+        help.push_str("Supported input formats: text/code, HTML/HTM/MHTML/webarchive, PDF, DOCX, DOC, RTF, ODT, XLSX/XLS/ODS/CSV, PPTX/ODP, EML, EPUB, MOBI, RSS/Atom, and markup (wiki, rst, adoc, org, tex, textile).\n\n");
+        help.push_str("RAG/knowledge tools accept `output_format: \"json\"` for machine-readable output.\n\n");
         help.push_str("Use `get_tool_help` with a tool_name parameter for detailed help on a specific tool.\n");
     }
 
@@ -2559,7 +2887,7 @@ fn handle_update_note_properties(args: &Value) -> Result<String, Box<dyn std::er
         .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
 
     let lines: Vec<&str> = content.lines().collect();
-    let (yaml_start, yaml_end) = if lines.len() > 0 && lines[0] == "---" {
+    let (_yaml_start, yaml_end) = if lines.len() > 0 && lines[0] == "---" {
         let mut end = 0;
         for (i, line) in lines.iter().enumerate().skip(1) {
             if *line == "---" {
@@ -2779,4 +3107,514 @@ fn handle_get_graph_relationships(args: &Value) -> Result<String, Box<dyn std::e
     }
 
     Ok(output)
+}
+
+// ============================================================================
+// Phase 4: AI/RAG toolkit
+// ============================================================================
+
+fn output_is_json(args: &Value) -> bool {
+    args.get("output_format")
+        .and_then(|v| v.as_str())
+        .map(|f| f.eq_ignore_ascii_case("json"))
+        .unwrap_or(false)
+}
+
+/// Build the JSON representation of chunks for a given source.
+fn chunks_to_json(chunks: &[rag::Chunk], source: &str) -> Value {
+    let arr: Vec<Value> = chunks
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            json!({
+                "id": format!("{}#{}", source, i),
+                "text": c.text,
+                "metadata": {
+                    "source": source,
+                    "heading_path": c.heading_path,
+                    "chunk_index": i,
+                    "token_estimate": c.token_estimate,
+                }
+            })
+        })
+        .collect();
+    json!(arr)
+}
+
+fn handle_chunk_markdown(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let (content, source) = resolve_content_arg(args)?;
+    let max_tokens = args.get("max_tokens").and_then(|v| v.as_u64()).unwrap_or(512) as usize;
+    let overlap = args.get("overlap").and_then(|v| v.as_u64()).unwrap_or(64) as usize;
+
+    let chunks = rag::chunk_markdown(&content, max_tokens, overlap);
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&chunks_to_json(&chunks, &source))?);
+    }
+
+    let mut out = format!("# Chunks for: {}\n\n**{} chunks** (max_tokens={}, overlap={})\n\n", source, chunks.len(), max_tokens, overlap);
+    for (i, c) in chunks.iter().enumerate() {
+        let path = if c.heading_path.is_empty() { "(root)".to_string() } else { c.heading_path.join(" > ") };
+        out.push_str(&format!("## Chunk {} — {} (~{} tokens)\n\n{}\n\n---\n\n", i, path, c.token_estimate, c.text));
+    }
+    Ok(out)
+}
+
+fn handle_extract_chunks_for_rag(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    // Same as chunk_markdown but defaults to JSON output for ingestion pipelines.
+    let mut args = args.clone();
+    if args.get("output_format").is_none() {
+        args["output_format"] = json!("json");
+    }
+    handle_chunk_markdown(&args)
+}
+
+fn outline_to_json(nodes: &[rag::OutlineNode]) -> Value {
+    let arr: Vec<Value> = nodes
+        .iter()
+        .map(|n| {
+            json!({
+                "level": n.level,
+                "title": n.title,
+                "anchor": n.anchor,
+                "children": outline_to_json(&n.children),
+            })
+        })
+        .collect();
+    json!(arr)
+}
+
+fn outline_to_markdown(nodes: &[rag::OutlineNode], out: &mut String) {
+    for n in nodes {
+        out.push_str(&format!("{}- [{}](#{})\n", "  ".repeat(n.level.saturating_sub(1)), n.title, n.anchor));
+        outline_to_markdown(&n.children, out);
+    }
+}
+
+fn handle_get_document_outline(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let (content, source) = resolve_content_arg(args)?;
+    let outline = rag::build_outline(&content);
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&outline_to_json(&outline))?);
+    }
+    let mut out = format!("# Outline for: {}\n\n", source);
+    if outline.is_empty() {
+        out.push_str("(No headings found)\n");
+    } else {
+        outline_to_markdown(&outline, &mut out);
+    }
+    Ok(out)
+}
+
+fn handle_get_text_statistics(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let (content, source) = resolve_content_arg(args)?;
+    let top_n = args.get("top_n").and_then(|v| v.as_u64()).unwrap_or(25) as usize;
+    let min_length = args.get("min_length").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
+    let exclude_stopwords = args.get("stopwords").and_then(|v| v.as_bool()).unwrap_or(false);
+
+    let stats = rag::text_statistics(&content, exclude_stopwords, min_length);
+    let richness = if stats.total_words > 0 {
+        stats.distinct_words as f64 / stats.total_words as f64
+    } else {
+        0.0
+    };
+    let top: Vec<_> = stats.frequencies.iter().take(top_n).collect();
+
+    if output_is_json(args) {
+        let words: Vec<Value> = top
+            .iter()
+            .map(|(w, c)| json!({"word": w, "count": c, "pct": (*c as f64 / stats.total_words.max(1) as f64) * 100.0}))
+            .collect();
+        return Ok(serde_json::to_string_pretty(&json!({
+            "source": source,
+            "totals": {
+                "total_words": stats.total_words,
+                "distinct_words": stats.distinct_words,
+                "vocabulary_richness": richness,
+                "char_count": stats.char_count,
+                "sentence_count": stats.sentence_count,
+                "paragraph_count": stats.paragraph_count,
+                "avg_words_per_sentence": stats.total_words as f64 / stats.sentence_count as f64,
+            },
+            "words": words,
+        }))?);
+    }
+
+    let mut out = format!("# Text Statistics: {}\n\n", source);
+    out.push_str(&format!("- **Total words:** {}\n", stats.total_words));
+    out.push_str(&format!("- **Distinct words:** {}\n", stats.distinct_words));
+    out.push_str(&format!("- **Vocabulary richness:** {:.3}\n", richness));
+    out.push_str(&format!("- **Characters:** {}\n", stats.char_count));
+    out.push_str(&format!("- **Sentences:** {}\n", stats.sentence_count));
+    out.push_str(&format!("- **Paragraphs:** {}\n", stats.paragraph_count));
+    out.push_str(&format!("- **Avg words/sentence:** {:.1}\n\n", stats.total_words as f64 / stats.sentence_count as f64));
+    out.push_str("## Word Frequencies\n\n| Word | Count | % |\n| --- | --- | --- |\n");
+    for (w, c) in top {
+        out.push_str(&format!("| {} | {} | {:.2}% |\n", w, c, (*c as f64 / stats.total_words.max(1) as f64) * 100.0));
+    }
+    Ok(out)
+}
+
+fn handle_get_corpus_statistics(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let directory = args.get("directory").and_then(|v| v.as_str()).unwrap_or(".");
+    let exclude_stopwords = args.get("stopwords").and_then(|v| v.as_bool()).unwrap_or(true);
+    let top_n = args.get("top_n").and_then(|v| v.as_u64()).unwrap_or(25) as usize;
+
+    let files = collect_text_files(Path::new(directory));
+    let mut global_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut per_doc: Vec<(String, usize, usize)> = Vec::new(); // (path, total, distinct)
+    let mut corpus_total = 0usize;
+
+    for file in &files {
+        let content = match convert_any_to_markdown(file) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let stats = rag::text_statistics(&content, exclude_stopwords, 1);
+        corpus_total += stats.total_words;
+        for (w, c) in &stats.frequencies {
+            *global_counts.entry(w.clone()).or_insert(0) += c;
+        }
+        per_doc.push((file.display().to_string(), stats.total_words, stats.distinct_words));
+    }
+
+    let global_distinct = global_counts.len();
+    let mut top: Vec<(String, usize)> = global_counts.into_iter().collect();
+    top.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    top.truncate(top_n);
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!({
+            "directory": directory,
+            "corpus": {
+                "documents": per_doc.len(),
+                "total_words": corpus_total,
+                "global_distinct_words": global_distinct,
+            },
+            "documents": per_doc.iter().map(|(p, t, d)| json!({"path": p, "total_words": t, "distinct_words": d})).collect::<Vec<_>>(),
+            "top_words": top.iter().map(|(w, c)| json!({"word": w, "count": c})).collect::<Vec<_>>(),
+        }))?);
+    }
+
+    let mut out = format!("# Corpus Statistics: {}\n\n", directory);
+    out.push_str(&format!("- **Documents:** {}\n- **Total words:** {}\n- **Global distinct words:** {}\n\n", per_doc.len(), corpus_total, global_distinct));
+    out.push_str("## Per-document\n\n| File | Words | Distinct |\n| --- | --- | --- |\n");
+    for (p, t, d) in &per_doc {
+        out.push_str(&format!("| {} | {} | {} |\n", p, t, d));
+    }
+    out.push_str("\n## Top words (corpus-wide)\n\n| Word | Count |\n| --- | --- |\n");
+    for (w, c) in &top {
+        out.push_str(&format!("| {} | {} |\n", w, c));
+    }
+    Ok(out)
+}
+
+fn handle_search_content(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let directory = args.get("directory").and_then(|v| v.as_str()).unwrap_or(".");
+    let query = args.get("query").and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("query".to_string())) as Box<dyn std::error::Error>)?;
+    let max_results = args.get("max_results").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+
+    let query_terms = rag::tokenize_words(query);
+    let files = collect_text_files(Path::new(directory));
+
+    let mut hits: Vec<(String, usize, String)> = Vec::new(); // (path, score, snippet)
+    for file in &files {
+        let content = match convert_any_to_markdown(file) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let lower = content.to_lowercase();
+        let score: usize = query_terms.iter().map(|t| lower.matches(t.as_str()).count()).sum();
+        if score == 0 {
+            continue;
+        }
+        let snippet = first_match_snippet(&content, &query_terms, 200);
+        hits.push((file.display().to_string(), score, snippet));
+    }
+    hits.sort_by(|a, b| b.1.cmp(&a.1));
+    hits.truncate(max_results);
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!(hits.iter()
+            .map(|(p, s, snip)| json!({"source": p, "score": s, "snippet": snip}))
+            .collect::<Vec<_>>()))?);
+    }
+
+    let mut out = format!("# Content Search: `{}`\n\n**{} matching documents** in `{}`\n\n", query, hits.len(), directory);
+    for (p, s, snip) in &hits {
+        out.push_str(&format!("## {} (score {})\n\n{}\n\n", p, s, snip));
+    }
+    if hits.is_empty() {
+        out.push_str("No matches found.\n");
+    }
+    Ok(out)
+}
+
+/// Find the first occurrence of any query term and return surrounding context.
+fn first_match_snippet(content: &str, terms: &[String], window: usize) -> String {
+    let lower = content.to_lowercase();
+    let mut best: Option<usize> = None;
+    for t in terms {
+        if let Some(pos) = lower.find(t.as_str()) {
+            best = Some(best.map_or(pos, |b| b.min(pos)));
+        }
+    }
+    let Some(pos) = best else {
+        return content.chars().take(window).collect();
+    };
+    let start = pos.saturating_sub(window / 2);
+    let start = (0..=start).rev().find(|&i| content.is_char_boundary(i)).unwrap_or(0);
+    let end = (pos + window / 2).min(content.len());
+    let end = (end..=content.len()).find(|&i| content.is_char_boundary(i)).unwrap_or(content.len());
+    let prefix = if start > 0 { "…" } else { "" };
+    let suffix = if end < content.len() { "…" } else { "" };
+    format!("{}{}{}", prefix, content[start..end].replace('\n', " ").trim(), suffix)
+}
+
+/// Recursively collect readable text/document files under a directory.
+fn collect_text_files(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    collect_text_files_inner(dir, &mut files, 0);
+    files
+}
+
+fn collect_text_files_inner(dir: &Path, files: &mut Vec<std::path::PathBuf>, depth: usize) {
+    if depth > 20 || files.len() > 10_000 {
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name.starts_with('.') || name == "target" || name == "node_modules" {
+                continue;
+            }
+            collect_text_files_inner(&path, files, depth + 1);
+        } else {
+            files.push(path);
+        }
+    }
+}
+
+// ============================================================================
+// Phase 5: "Second brain" knowledge tools
+// ============================================================================
+
+/// Collect only Markdown-like note files under a directory (for vault scans).
+fn collect_note_files(dir: &Path) -> Vec<std::path::PathBuf> {
+    collect_text_files(dir)
+        .into_iter()
+        .filter(|p| {
+            matches!(
+                p.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).as_deref(),
+                Some("md" | "markdown" | "mdown" | "txt")
+            )
+        })
+        .collect()
+}
+
+fn handle_extract_tags(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    // Directory scan (vault-wide tag index) or single file/content.
+    if let Some(directory) = args.get("directory").and_then(|v| v.as_str()) {
+        let files = collect_note_files(Path::new(directory));
+        let mut tag_files: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        for f in &files {
+            if let Ok(content) = std::fs::read_to_string(f) {
+                for tag in knowledge::extract_tags(&content) {
+                    tag_files.entry(tag).or_default().push(f.display().to_string());
+                }
+            }
+        }
+        let mut index: Vec<(String, Vec<String>)> = tag_files.into_iter().collect();
+        index.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
+
+        if output_is_json(args) {
+            return Ok(serde_json::to_string_pretty(&json!(index.iter().map(|(t, fs)| {
+                let mut fs = fs.clone(); fs.sort(); fs.dedup();
+                json!({"tag": t, "count": fs.len(), "files": fs})
+            }).collect::<Vec<_>>()))?);
+        }
+        let mut out = format!("# Tag Index: {}\n\n| Tag | Count | Files |\n| --- | --- | --- |\n", directory);
+        for (t, fs) in &index {
+            let mut fs = fs.clone(); fs.sort(); fs.dedup();
+            out.push_str(&format!("| #{} | {} | {} |\n", t, fs.len(), fs.join(", ")));
+        }
+        return Ok(out);
+    }
+
+    let (content, source) = resolve_content_arg(args)?;
+    let ranked = knowledge::count_and_rank(knowledge::extract_tags(&content));
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!(ranked.iter()
+            .map(|(t, c)| json!({"tag": t, "count": c})).collect::<Vec<_>>()))?);
+    }
+    let mut out = format!("# Tags in: {}\n\n", source);
+    if ranked.is_empty() { out.push_str("(No tags found)\n"); }
+    for (t, c) in &ranked { out.push_str(&format!("- #{} ({})\n", t, c)); }
+    Ok(out)
+}
+
+/// Build corpus document-frequency map over note files in a directory.
+fn corpus_doc_freq(files: &[std::path::PathBuf]) -> (std::collections::HashMap<String, usize>, usize) {
+    let mut df: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut n = 0;
+    for f in files {
+        if let Ok(content) = convert_any_to_markdown(f) {
+            n += 1;
+            for term in knowledge::term_frequencies(&content).keys() {
+                *df.entry(term.clone()).or_insert(0) += 1;
+            }
+        }
+    }
+    (df, n)
+}
+
+fn handle_extract_keywords(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let (content, source) = resolve_content_arg(args)?;
+    let top_n = args.get("top_n").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+
+    let tf = knowledge::term_frequencies(&content);
+    // Use the surrounding directory as the corpus for IDF when available.
+    let (df, num_docs) = if let Some(directory) = args.get("directory").and_then(|v| v.as_str()) {
+        corpus_doc_freq(&collect_note_files(Path::new(directory)))
+    } else {
+        (std::collections::HashMap::new(), 1)
+    };
+    let mut scores = knowledge::tf_idf(&tf, &df, num_docs);
+    scores.truncate(top_n);
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!(scores.iter()
+            .map(|(t, s)| json!({"term": t, "score": s})).collect::<Vec<_>>()))?);
+    }
+    let mut out = format!("# Keywords in: {}\n\n", source);
+    for (t, s) in &scores { out.push_str(&format!("- **{}** ({:.2})\n", t, s)); }
+    Ok(out)
+}
+
+fn handle_find_related_notes(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let file_path = args.get("file_path").and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("file_path".to_string())) as Box<dyn std::error::Error>)?;
+    let directory = args.get("directory").and_then(|v| v.as_str()).unwrap_or(".");
+    let max_results = args.get("max_results").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
+
+    let target_content = convert_any_to_markdown(Path::new(file_path))?;
+    let target_tf = knowledge::term_frequencies(&target_content);
+    let target_tags: std::collections::HashSet<String> = knowledge::extract_tags(&target_content).into_iter().collect();
+
+    let target_canon = std::fs::canonicalize(file_path).ok();
+    let mut results: Vec<(String, f64, Vec<String>, Vec<String>)> = Vec::new();
+    for f in collect_note_files(Path::new(directory)) {
+        if std::fs::canonicalize(&f).ok() == target_canon {
+            continue;
+        }
+        let content = match convert_any_to_markdown(&f) { Ok(c) => c, Err(_) => continue };
+        let tf = knowledge::term_frequencies(&content);
+        let mut score = knowledge::cosine_similarity(&target_tf, &tf);
+        let tags: std::collections::HashSet<String> = knowledge::extract_tags(&content).into_iter().collect();
+        let shared_tags: Vec<String> = target_tags.intersection(&tags).cloned().collect();
+        score += 0.05 * shared_tags.len() as f64; // small boost for shared tags
+        if score <= 0.0 { continue; }
+        let shared = knowledge::shared_terms(&target_tf, &tf);
+        results.push((f.display().to_string(), score, shared, shared_tags));
+    }
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(max_results);
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!(results.iter().map(|(p, s, terms, tags)| {
+            json!({"path": p, "score": s, "shared_terms": terms.iter().take(10).collect::<Vec<_>>(), "shared_tags": tags})
+        }).collect::<Vec<_>>()))?);
+    }
+    let mut out = format!("# Notes related to: {}\n\n", file_path);
+    if results.is_empty() { out.push_str("No related notes found.\n"); }
+    for (p, s, terms, _tags) in &results {
+        out.push_str(&format!("## {} (similarity {:.3})\n\nShared terms: {}\n\n", p, s, terms.iter().take(8).cloned().collect::<Vec<_>>().join(", ")));
+    }
+    Ok(out)
+}
+
+fn handle_summarize_document(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let (content, source) = resolve_content_arg(args)?;
+    let n = args.get("sentences").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
+    let summary = knowledge::summarize(&content, n);
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!({"source": source, "summary": summary}))?);
+    }
+    let mut out = format!("# Summary: {}\n\n", source);
+    for s in &summary { out.push_str(&format!("- {}\n", s)); }
+    Ok(out)
+}
+
+fn handle_extract_qa_pairs(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let (content, source) = resolve_content_arg(args)?;
+    let pairs = knowledge::extract_qa_pairs(&content);
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!(pairs.iter()
+            .map(|(q, a)| json!({"question": q, "answer": a, "source": source}))
+            .collect::<Vec<_>>()))?);
+    }
+    let mut out = format!("# Q&A Pairs: {}\n\n", source);
+    if pairs.is_empty() { out.push_str("(No Q&A pairs found)\n"); }
+    for (q, a) in &pairs {
+        out.push_str(&format!("**Q:** {}\n\n**A:** {}\n\n---\n\n", q, if a.is_empty() { "_(no answer found)_" } else { a }));
+    }
+    Ok(out)
+}
+
+fn handle_extract_entities(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let (content, source) = resolve_content_arg(args)?;
+    let entities = knowledge::extract_entities(&content);
+
+    // Aggregate by (value, kind) with counts.
+    let mut counts: std::collections::HashMap<(String, &'static str), usize> = std::collections::HashMap::new();
+    for e in &entities { *counts.entry((e.value.clone(), e.kind)).or_insert(0) += 1; }
+    let mut ranked: Vec<((String, &'static str), usize)> = counts.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.0.cmp(&b.0.0)));
+
+    if output_is_json(args) {
+        return Ok(serde_json::to_string_pretty(&json!(ranked.iter()
+            .map(|((v, k), c)| json!({"entity": v, "type": k, "count": c}))
+            .collect::<Vec<_>>()))?);
+    }
+    let mut out = format!("# Entities: {}\n\n| Entity | Type | Count |\n| --- | --- | --- |\n", source);
+    for ((v, k), c) in &ranked { out.push_str(&format!("| {} | {} | {} |\n", v, k, c)); }
+    Ok(out)
+}
+
+fn handle_build_knowledge_index(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let (content, source) = resolve_content_arg(args)?;
+
+    // Compose the sub-analyses into one JSON knowledge artifact.
+    let outline = rag::build_outline(&content);
+    let chunks = rag::chunk_markdown(&content, 512, 64);
+    let stats = rag::text_statistics(&content, true, 3);
+    let tf = knowledge::term_frequencies(&content);
+    let keywords = knowledge::tf_idf(&tf, &std::collections::HashMap::new(), 1);
+    let tags = knowledge::count_and_rank(knowledge::extract_tags(&content));
+    let summary = knowledge::summarize(&content, 3);
+
+    let index = json!({
+        "source": source,
+        "summary": summary,
+        "outline": outline_to_json(&outline),
+        "tags": tags.iter().map(|(t, c)| json!({"tag": t, "count": c})).collect::<Vec<_>>(),
+        "keywords": keywords.iter().take(15).map(|(t, s)| json!({"term": t, "score": s})).collect::<Vec<_>>(),
+        "stats": {
+            "total_words": stats.total_words,
+            "distinct_words": stats.distinct_words,
+        },
+        "chunks": chunks_to_json(&chunks, &source),
+    });
+
+    // This tool is machine-oriented: always JSON.
+    Ok(serde_json::to_string_pretty(&index)?)
 }

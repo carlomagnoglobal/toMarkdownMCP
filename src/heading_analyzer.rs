@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
-use scraper::{Html, Selector, element_ref::ElementRef};
+use anyhow::Result;
+use scraper::Html;
 use std::collections::BTreeMap;
 
 /// Represents a heading in the document

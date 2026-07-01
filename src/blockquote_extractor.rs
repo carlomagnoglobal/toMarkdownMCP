@@ -19,7 +19,7 @@ pub fn extract_blockquotes_from_html(html_content: &str) -> Result<Vec<Blockquot
     let bq_selector = Selector::parse("blockquote")
         .map_err(|_| anyhow!("Invalid selector for blockquote"))?;
 
-    for (index, bq_elem) in document.select(&bq_selector).enumerate() {
+    for (_index, bq_elem) in document.select(&bq_selector).enumerate() {
         if let Ok(blockquote) = extract_blockquote(&bq_elem, 1) {
             blockquotes.push(blockquote);
         }

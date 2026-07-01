@@ -1,5 +1,4 @@
-use anyhow::{anyhow, Result};
-use scraper::Html;
+use anyhow::Result;
 
 /// Represents an HTML comment
 #[derive(Debug, Clone, PartialEq, Eq)]

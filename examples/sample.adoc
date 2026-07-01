@@ -1,0 +1,8 @@
+= Guide
+
+== Setup
+
+NOTE: read carefully
+
+* first
+* second

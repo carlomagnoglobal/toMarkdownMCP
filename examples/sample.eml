@@ -1,0 +1,7 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Project Update
+Date: Mon, 30 Jun 2026 10:00:00 +0000
+Content-Type: text/html
+
+<html><body><h1>Status</h1><p>The project is <b>on track</b>.</p></body></html>

@@ -40,6 +40,27 @@ Supports converting from multiple sources including local files, HTTP/HTTPS URLs
 - **Webarchive**: `*.webarchive` - Safari/Apple webarchive format (macOS/iOS web archives)
 - **HTML to Markdown** - Converts HTML structure (headings, lists, links, code blocks, etc.)
 
+### Office & Document Formats
+- **Documents**: `*.pdf`, `*.docx`, `*.doc`, `*.rtf`, `*.odt`
+- **Spreadsheets**: `*.xlsx`, `*.xls`, `*.ods`, `*.csv` → Markdown tables (one section per sheet)
+- **Presentations**: `*.pptx`, `*.odp` → per-slide headings and bullets
+- **Email**: `*.eml` → headers as YAML frontmatter + converted body
+- **Ebooks**: `*.epub`, `*.mobi` → chapters converted to Markdown
+- **Feeds**: `*.rss`, `*.atom` → per-item headings, links, dates, content
+- **Markup**: `*.wiki`/`*.mediawiki`, `*.rst`, `*.adoc`, `*.org`, `*.tex`, `*.textile` → real Markdown
+
+See `DOCUMENT_CONVERSION.md` and `MARKUP_CONVERSION.md` for details and per-format behavior.
+
+### AI / RAG / Knowledge Tools
+Turn any converted document into machine-consumable retrieval units (all support
+`output_format: "json"`):
+- **RAG**: `chunk_markdown`, `extract_chunks_for_rag`, `get_document_outline`, `search_content`,
+  `get_text_statistics`, `get_corpus_statistics`
+- **Second brain**: `extract_tags`, `extract_keywords`, `find_related_notes`, `summarize_document`,
+  `extract_qa_pairs`, `extract_entities`, `build_knowledge_index`
+
+See `RAG_TOOLS.md` and `SECOND_BRAIN_TOOLS.md`.
+
 ### Programming Languages (60+)
 The server auto-detects and properly formats code for:
 
