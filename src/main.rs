@@ -2893,6 +2893,7 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
     } else {
         // Summary of all tools
         help.push_str("# Available Tools\n\n");
+        help.push_str("**47 tools** across format conversion, file/vault operations, an AI/RAG toolkit, and optional Claude-backed generation.\n\n");
         help.push_str("| Tool | Description |\n");
         help.push_str("|------|-------------|\n");
         help.push_str("| convert_file | Convert file to Markdown with HTML processing options |\n");
