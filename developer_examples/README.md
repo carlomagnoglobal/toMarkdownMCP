@@ -12,7 +12,7 @@ Build the binary once, then drive it over JSON-RPC/stdio:
 ```bash
 cd /Users/elisjmendez/Documents/toMarkdownMCP
 cargo build
-python3 developerExample/capture_url.py https://example.com/some-article developerExample/output.md
+python3 developer_examples/capture_url.py https://example.com/some-article developer_examples/output.md
 ```
 
 See [`capture_url.py`](capture_url.py). It opens headless Chromium, renders
@@ -24,7 +24,7 @@ DOM to Markdown via the same pipeline `convert_from_source` uses.
 Interactively (recommended — just run it yourself):
 
 ```bash
-./target/debug/to_markdown_mcp tui developerExample/output.md
+./target/debug/to_markdown_mcp tui developer_examples/output.md
 ```
 
 Keys: `Tab` switch pane, `j`/`k` or arrows to scroll/move, `Enter` open/follow
@@ -39,7 +39,7 @@ interprets the ANSI output into plain text.
 ```bash
 python3 -m venv /tmp/tui-test-venv
 /tmp/tui-test-venv/bin/pip install --quiet pyte
-/tmp/tui-test-venv/bin/python3 developerExample/capture_tui.py developerExample/output.md
+/tmp/tui-test-venv/bin/python3 developer_examples/capture_tui.py developer_examples/output.md
 ```
 
 See [`capture_tui.py`](capture_tui.py) for the full script.
