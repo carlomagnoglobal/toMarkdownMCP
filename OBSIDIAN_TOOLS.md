@@ -1,0 +1,64 @@
+# Obsidian Vault Tools
+
+Eleven `obsidian_*` tools give the server first-class understanding of Obsidian
+vaults: real wikilink parsing (`[[target|alias]]`, `[[note#heading]]`,
+`[[note#^block]]`, `![[embeds]]`), YAML frontmatter with `aliases`/`tags`,
+Obsidian's shortest-path link resolution, backlinks, tasks, callouts,
+`.canvas` files, Dataview inline fields, `.obsidian` config, templates, and
+link-preserving renames. All are read-only except `obsidian_rename_note`
+(dry-run by default) and `obsidian_create_note_from_template`.
+
+The vault index is cached per vault and automatically invalidated whenever any
+file's path, mtime, or size changes — safe to use while Obsidian is open.
+
+## Tools
+
+| Tool | Purpose |
+|------|---------|
+| `obsidian_vault_index` | Vault summary: note/attachment counts, tag frequencies, aliases, broken and ambiguous links, orphans (`include_orphans: true`) |
+| `obsidian_get_note` | One note by path/stem/alias: parsed frontmatter, tags (frontmatter + inline), headings, outgoing links, backlink count, content. `inline_embeds: true` transcludes `![[embeds]]` (depth `max_embed_depth`, default 3) |
+| `obsidian_resolve_link` | Resolve any link string using shortest-path rules; reports `Resolved`/`Ambiguous`/`Broken`, heading existence, block line. `from_note` enables same-folder disambiguation |
+| `obsidian_get_backlinks` | All inbound links — including alias/heading/block/embed forms — with source line context |
+| `obsidian_search` | `mode`: `tag` (nested prefix: `status` matches `status/active`), `alias`, `field` (`key` or `key=value` in frontmatter), `text` |
+| `obsidian_list_tasks` | Checkbox tasks in vault or note; states `[ ]`/`[x]`/`[/]`/`[-]`/`[>]` etc., nesting, #tags, Tasks-plugin dates (📅 ✅ ⏳ 🛫 🔁). Filter with `status` |
+| `obsidian_get_vault_config` | `.obsidian/` settings: attachment folder, new-link format, daily-notes folder/format/template, templates folder, core plugins |
+| `obsidian_create_note_from_template` | New note from a template with `{{title}}`, `{{date}}`, `{{time}}`, `{{date:FORMAT}}`; `daily: true` uses daily-notes settings. Never overwrites |
+| `obsidian_rename_note` | Rename/move a note and rewrite every inbound wikilink preserving `|alias`, `#heading`, `#^block`. **`dry_run` defaults to true** |
+| `obsidian_convert_canvas` | `.canvas` (JsonCanvas) → structured Markdown: groups with members, nodes in reading order, edge list |
+| `obsidian_extract_dataview_fields` | Dataview inline fields (`key:: value`, `[key:: value]`, `(key:: value)`) plus frontmatter properties, optionally filtered by `field` |
+
+Every tool takes `vault_path` (vault root); notes are addressable by
+vault-relative path (`folder/Note.md`), filename stem (`Note`), or frontmatter
+alias.
+
+## Example
+
+```json
+{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{
+  "name": "obsidian_rename_note",
+  "arguments": {"vault_path": "/path/to/vault", "note": "Old Name", "new_name": "New Name", "dry_run": true}
+}}
+```
+
+Returns the planned `link_rewrites` per file; run again with `"dry_run": false` to apply.
+
+## TUI viewer
+
+The same binary ships an interactive terminal viewer:
+
+```bash
+to_markdown_mcp tui /path/to/vault    # or a single .md file
+```
+
+Keys: `Tab` switch pane · `↑/↓` or `j/k` move · `Enter` open file / follow the
+`[[wikilink]]` on the cursor line · `Backspace` back · `/` filename search ·
+`q` quit. Headings, bold/italic, code, checkboxes (colored by state), callouts,
+and wikilinks are styled.
+
+## Implementation
+
+`src/obsidian/`: `wikilink.rs` (grammar + code-fence awareness), `vault.rs`
+(walker, `VaultIndex`, shortest-path resolution, mtime-fingerprint cache),
+`frontmatter.rs` (serde_yaml), `tasks.rs`, `callout.rs`, `canvas.rs`,
+`dataview.rs`, `config.rs`, `template.rs`. TUI in `src/tui/`. Fixture vault
+for tests: `tests/fixtures/mini_vault/`.

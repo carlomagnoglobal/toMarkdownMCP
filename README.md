@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server written in Rust that converts code files, HTML documents, and text content to Markdown format. Cross-platform compatible with Windows, Linux, and macOS.
 
-Supports converting from multiple sources including local files, HTTP/HTTPS URLs, and stdin. Handles 60+ programming languages, HTML/HTM/MHTML web formats, office/document formats (PDF, DOCX, XLSX, PPTX, …), email, ebooks, feeds, and markup — and exposes **50 tools** in total, including Chromium-based web page capture, an AI/RAG toolkit, and optional Claude-backed generation.
+Supports converting from multiple sources including local files, HTTP/HTTPS URLs, and stdin. Handles 60+ programming languages, HTML/HTM/MHTML web formats, office/document formats (PDF, DOCX, XLSX, PPTX, …), email, ebooks, feeds, and markup — and exposes **61 tools** in total, including Chromium-based web page capture, full Obsidian vault support (wikilinks, backlinks, canvas, dataview, templates), an AI/RAG toolkit, and optional Claude-backed generation. The same binary doubles as a terminal Markdown viewer (`to_markdown_mcp tui <vault>`).
 
 ## Features
 
@@ -117,11 +117,15 @@ The server reads JSON-RPC 2.0 requests from stdin and writes responses to stdout
 
 ### Available Tools
 
-The server exposes **50 tools** — format conversion, browser-based web capture (Chromium, with
+The server exposes **61 tools** — format conversion, browser-based web capture (Chromium, with
 human-in-the-loop support for CAPTCHAs/logins — see [BROWSER_TOOLS.md](BROWSER_TOOLS.md)),
-file/vault operations, an AI/RAG toolkit, and optional Claude-backed generation. Call
-`get_tool_help` (no arguments) for the full list, or with a `tool_name` for detailed help on one
-tool. A selection is documented below.
+Obsidian vault support (wikilink/backlink graph, tasks, canvas, dataview, templates — see
+[OBSIDIAN_TOOLS.md](OBSIDIAN_TOOLS.md)), file/vault operations, an AI/RAG toolkit, and optional
+Claude-backed generation. Call `get_tool_help` (no arguments) for the full list, or with a
+`tool_name` for detailed help on one tool. A selection is documented below.
+
+Run `to_markdown_mcp tui [PATH]` for an interactive terminal Markdown viewer over a vault or
+file: file tree, styled rendering, `[[wikilink]]` following, and filename search.
 
 #### 1. `convert_file`
 Converts a file to Markdown format. For HTML files, supports optional metadata extraction, CSS hints, TOC generation, and image handling.

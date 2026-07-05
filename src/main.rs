@@ -35,6 +35,8 @@ mod similarity;
 mod doc_intel;
 mod llm;
 mod browser;
+mod obsidian;
+mod tui;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
@@ -69,6 +71,29 @@ struct JsonRpcError {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // CLI dispatch: no args = MCP stdio server (unchanged default);
+    // `tui <path>` = interactive Markdown/vault viewer.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(|s| s.as_str()) {
+        None => {}
+        Some("tui") => {
+            let path = args.get(1).map(String::as_str).unwrap_or(".");
+            return tui::run(Path::new(path));
+        }
+        Some("--help") | Some("-h") => {
+            println!("to_markdown_mcp — Markdown conversion MCP server + vault viewer\n");
+            println!("USAGE:");
+            println!("  to_markdown_mcp              Run the MCP server (JSON-RPC over stdio)");
+            println!("  to_markdown_mcp tui [PATH]   Open the TUI Markdown viewer on a vault dir or file (default: .)");
+            println!("  to_markdown_mcp --help       Show this help");
+            return Ok(());
+        }
+        Some(other) => {
+            eprintln!("Unknown argument '{}'. Try --help.", other);
+            std::process::exit(2);
+        }
+    }
+
     // Log to stderr: stdout is reserved for the JSON-RPC stream.
     tracing_subscriber::fmt()
         .with_env_filter("info")
@@ -1223,6 +1248,147 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                 "type": "object",
                 "properties": {}
             }
+        },
+        {
+            "name": "obsidian_vault_index",
+            "description": "Index an Obsidian vault: note/attachment counts, tag frequencies, aliases, broken and ambiguous wikilinks, and optionally orphan notes. Understands [[link|alias]], [[note#heading]], [[note#^block]], ![[embeds]] and frontmatter aliases.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "include_orphans": {"type": "boolean", "description": "List notes with no inbound links (default: false)", "default": false}
+                },
+                "required": ["vault_path"]
+            }
+        },
+        {
+            "name": "obsidian_get_note",
+            "description": "Get a note by path, filename stem, or frontmatter alias: parsed YAML frontmatter, aliases, tags (frontmatter + inline #tags), headings, outgoing wikilinks, backlink count, and content. Optionally transclude ![[embeds]] recursively.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "note": {"type": "string", "description": "Note path, stem, or alias"},
+                    "inline_embeds": {"type": "boolean", "description": "Replace ![[embeds]] with the embedded note content (default: false)", "default": false},
+                    "max_embed_depth": {"type": "integer", "description": "Maximum transclusion recursion depth (default: 3)", "default": 3}
+                },
+                "required": ["vault_path", "note"]
+            }
+        },
+        {
+            "name": "obsidian_resolve_link",
+            "description": "Resolve a wikilink string ([[target#heading|alias]], alias, path, or ^block form) using Obsidian's shortest-path rules. Reports Resolved/Ambiguous/Broken, whether the heading exists, and the block anchor line.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "link": {"type": "string", "description": "Link text, with or without [[ ]]"},
+                    "from_note": {"type": "string", "description": "Source note for same-folder disambiguation (optional)"}
+                },
+                "required": ["vault_path", "link"]
+            }
+        },
+        {
+            "name": "obsidian_get_backlinks",
+            "description": "List all inbound wikilinks to a note — including alias, heading, block, and embed forms — with the linking note and the source line as context.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "note": {"type": "string", "description": "Note path, stem, or alias"}
+                },
+                "required": ["vault_path", "note"]
+            }
+        },
+        {
+            "name": "obsidian_search",
+            "description": "Search an Obsidian vault by tag (with nested-tag prefix matching), alias, frontmatter field (key or key=value), or full text.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "query": {"type": "string", "description": "Search query; for field mode use 'key' or 'key=value'"},
+                    "mode": {"type": "string", "description": "One of: tag, alias, field, text", "enum": ["tag", "alias", "field", "text"]},
+                    "limit": {"type": "integer", "description": "Maximum hits (default: 50)", "default": 50}
+                },
+                "required": ["vault_path", "query", "mode"]
+            }
+        },
+        {
+            "name": "obsidian_list_tasks",
+            "description": "List checkbox tasks across the vault or one note, with all states ([ ] open, [x] done, [/] in progress, [-] cancelled, [>] forwarded, ...), nesting depth, #tags, and Tasks-plugin dates (📅 due, ✅ done, ⏳ scheduled, 🛫 start, 🔁 recurrence).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "status": {"type": "string", "description": "Filter: open, done, in_progress, cancelled, forwarded, or a raw state char"},
+                    "note": {"type": "string", "description": "Limit to one note (path, stem, or alias)"}
+                },
+                "required": ["vault_path"]
+            }
+        },
+        {
+            "name": "obsidian_get_vault_config",
+            "description": "Read the vault's .obsidian configuration: attachment folder, new-link format, daily-notes folder/format/template, templates folder, and enabled core plugins.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory"}
+                },
+                "required": ["vault_path"]
+            }
+        },
+        {
+            "name": "obsidian_create_note_from_template",
+            "description": "Create a note (or today's daily note per .obsidian/daily-notes.json) from a template, substituting {{title}}, {{date}}, {{time}}, and {{date:FORMAT}}. Refuses to overwrite existing notes.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "title": {"type": "string", "description": "Note title, optionally with folder ('projects/New Idea'). Required unless daily=true"},
+                    "template": {"type": "string", "description": "Vault-relative template path (default: daily-notes template when daily=true)"},
+                    "daily": {"type": "boolean", "description": "Create today's daily note using the vault's daily-notes settings (default: false)", "default": false}
+                },
+                "required": ["vault_path"]
+            }
+        },
+        {
+            "name": "obsidian_rename_note",
+            "description": "Rename or move a note and rewrite every inbound wikilink (preserving |alias, #heading, and #^block fragments), like Obsidian's own rename. dry_run defaults to true — pass dry_run=false to apply.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "note": {"type": "string", "description": "Note to rename (path, stem, or alias)"},
+                    "new_name": {"type": "string", "description": "New stem (same folder) or vault-relative path"},
+                    "dry_run": {"type": "boolean", "description": "Preview changes without writing (default: true)", "default": true}
+                },
+                "required": ["vault_path", "note", "new_name"]
+            }
+        },
+        {
+            "name": "obsidian_convert_canvas",
+            "description": "Convert an Obsidian .canvas file (JsonCanvas: text/file/link/group nodes and edges) to structured Markdown with groups, nodes in reading order, and connections.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "canvas_path": {"type": "string", "description": "Path to the .canvas file"}
+                },
+                "required": ["canvas_path"]
+            }
+        },
+        {
+            "name": "obsidian_extract_dataview_fields",
+            "description": "Extract Dataview fields — inline 'key:: value' (line, [bracketed], (parenthesized) forms) and frontmatter properties — across the vault or one note, optionally filtered by field name.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "note": {"type": "string", "description": "Limit to one note (path, stem, or alias)"},
+                    "field": {"type": "string", "description": "Only this field name (case-insensitive)"}
+                },
+                "required": ["vault_path"]
+            }
         }
     ]);
 
@@ -1297,6 +1463,17 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
         Some("browser_open_url") => handle_browser_open_url(&arguments).await,
         Some("browser_capture_markdown") => handle_browser_capture_markdown(&arguments).await,
         Some("browser_close") => handle_browser_close(&arguments).await,
+        Some("obsidian_vault_index") => handle_obsidian_vault_index(&arguments),
+        Some("obsidian_get_note") => handle_obsidian_get_note(&arguments),
+        Some("obsidian_resolve_link") => handle_obsidian_resolve_link(&arguments),
+        Some("obsidian_get_backlinks") => handle_obsidian_get_backlinks(&arguments),
+        Some("obsidian_search") => handle_obsidian_search(&arguments),
+        Some("obsidian_list_tasks") => handle_obsidian_list_tasks(&arguments),
+        Some("obsidian_get_vault_config") => handle_obsidian_get_vault_config(&arguments),
+        Some("obsidian_create_note_from_template") => handle_obsidian_create_note_from_template(&arguments),
+        Some("obsidian_rename_note") => handle_obsidian_rename_note(&arguments),
+        Some("obsidian_convert_canvas") => handle_obsidian_convert_canvas(&arguments),
+        Some("obsidian_extract_dataview_fields") => handle_obsidian_extract_dataview_fields(&arguments),
         _ => {
             return JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -1891,6 +2068,92 @@ async fn handle_browser_close(_args: &Value) -> Result<String, Box<dyn std::erro
     } else {
         Ok("No browser session was open.".to_string())
     }
+}
+
+fn obsidian_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, Box<dyn std::error::Error>> {
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter(key.to_string())) as Box<dyn std::error::Error>)
+}
+
+fn obsidian_result(value: Result<serde_json::Value, anyhow::Error>) -> Result<String, Box<dyn std::error::Error>> {
+    let v = value.map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+    Ok(serde_json::to_string_pretty(&v)?)
+}
+
+fn handle_obsidian_vault_index(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let vault = obsidian_arg(args, "vault_path")?;
+    let include_orphans = args.get("include_orphans").and_then(|v| v.as_bool()).unwrap_or(false);
+    obsidian_result(obsidian::tools::vault_index(Path::new(vault), include_orphans))
+}
+
+fn handle_obsidian_get_note(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let vault = obsidian_arg(args, "vault_path")?;
+    let note = obsidian_arg(args, "note")?;
+    let inline_embeds = args.get("inline_embeds").and_then(|v| v.as_bool()).unwrap_or(false);
+    let depth = args.get("max_embed_depth").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
+    obsidian_result(obsidian::tools::get_note(Path::new(vault), note, inline_embeds, depth))
+}
+
+fn handle_obsidian_resolve_link(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let vault = obsidian_arg(args, "vault_path")?;
+    let link = obsidian_arg(args, "link")?;
+    let from = args.get("from_note").and_then(|v| v.as_str());
+    obsidian_result(obsidian::tools::resolve_link(Path::new(vault), link, from))
+}
+
+fn handle_obsidian_get_backlinks(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let vault = obsidian_arg(args, "vault_path")?;
+    let note = obsidian_arg(args, "note")?;
+    obsidian_result(obsidian::tools::get_backlinks(Path::new(vault), note))
+}
+
+fn handle_obsidian_search(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let vault = obsidian_arg(args, "vault_path")?;
+    let query = obsidian_arg(args, "query")?;
+    let mode = obsidian_arg(args, "mode")?;
+    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+    obsidian_result(obsidian::tools::search(Path::new(vault), query, mode, limit))
+}
+
+fn handle_obsidian_list_tasks(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let vault = obsidian_arg(args, "vault_path")?;
+    let status = args.get("status").and_then(|v| v.as_str());
+    let note = args.get("note").and_then(|v| v.as_str());
+    obsidian_result(obsidian::tools::list_tasks(Path::new(vault), status, note))
+}
+
+fn handle_obsidian_get_vault_config(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let vault = obsidian_arg(args, "vault_path")?;
+    obsidian_result(obsidian::tools::get_vault_config(Path::new(vault)))
+}
+
+fn handle_obsidian_create_note_from_template(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let vault = obsidian_arg(args, "vault_path")?;
+    let title = args.get("title").and_then(|v| v.as_str());
+    let template = args.get("template").and_then(|v| v.as_str());
+    let daily = args.get("daily").and_then(|v| v.as_bool()).unwrap_or(false);
+    obsidian_result(obsidian::tools::create_note_from_template(Path::new(vault), title, template, daily))
+}
+
+fn handle_obsidian_rename_note(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let vault = obsidian_arg(args, "vault_path")?;
+    let note = obsidian_arg(args, "note")?;
+    let new_name = obsidian_arg(args, "new_name")?;
+    let dry_run = args.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(true);
+    obsidian_result(obsidian::tools::rename_note(Path::new(vault), note, new_name, dry_run))
+}
+
+fn handle_obsidian_convert_canvas(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let path = obsidian_arg(args, "canvas_path")?;
+    obsidian_result(obsidian::tools::convert_canvas(Path::new(path)))
+}
+
+fn handle_obsidian_extract_dataview_fields(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let vault = obsidian_arg(args, "vault_path")?;
+    let note = args.get("note").and_then(|v| v.as_str());
+    let field = args.get("field").and_then(|v| v.as_str());
+    obsidian_result(obsidian::tools::extract_dataview_fields(Path::new(vault), note, field))
 }
 
 fn handle_list_directory_files(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
@@ -3125,7 +3388,7 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
     } else {
         // Summary of all tools
         help.push_str("# Available Tools\n\n");
-        help.push_str("**50 tools** across format conversion, browser-based web capture, file/vault operations, an AI/RAG toolkit, and optional Claude-backed generation.\n\n");
+        help.push_str("**61 tools** across format conversion, browser-based web capture, file/vault operations, Obsidian vault support, an AI/RAG toolkit, and optional Claude-backed generation.\n\n");
         help.push_str("| Tool | Description |\n");
         help.push_str("|------|-------------|\n");
         help.push_str("| convert_file | Convert file to Markdown with HTML processing options |\n");
@@ -3177,7 +3440,19 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
         help.push_str("| ai_classify | Classify into given labels via Claude API |\n");
         help.push_str("| browser_open_url | Open a URL in Chromium (headless or visible for CAPTCHA/login) |\n");
         help.push_str("| browser_capture_markdown | Convert the rendered page in the browser session to Markdown |\n");
-        help.push_str("| browser_close | Close the Chromium browser session |\n\n");
+        help.push_str("| browser_close | Close the Chromium browser session |\n");
+        help.push_str("| obsidian_vault_index | Vault summary: tags, aliases, broken/ambiguous links, orphans |\n");
+        help.push_str("| obsidian_get_note | Note with parsed frontmatter, links, tags; optional embed transclusion |\n");
+        help.push_str("| obsidian_resolve_link | Resolve [[wikilink]] (alias/#heading/#^block) shortest-path style |\n");
+        help.push_str("| obsidian_get_backlinks | Inbound links in all forms with context |\n");
+        help.push_str("| obsidian_search | Search by tag, alias, frontmatter field, or text |\n");
+        help.push_str("| obsidian_list_tasks | Checkbox tasks (all states) with Tasks-plugin dates |\n");
+        help.push_str("| obsidian_get_vault_config | .obsidian settings: daily notes, templates, attachments |\n");
+        help.push_str("| obsidian_create_note_from_template | New note or daily note with {{date}}/{{title}} |\n");
+        help.push_str("| obsidian_rename_note | Rename note + rewrite inbound links (dry-run default) |\n");
+        help.push_str("| obsidian_convert_canvas | .canvas file to structured Markdown |\n");
+        help.push_str("| obsidian_extract_dataview_fields | Inline key:: value + frontmatter fields |\n\n");
+        help.push_str("Run the binary as `to_markdown_mcp tui [PATH]` for an interactive terminal Markdown/vault viewer.\n\n");
         help.push_str("Supported input formats: text/code, HTML/HTM/MHTML/webarchive, PDF, DOCX, DOC, RTF, ODT, XLSX/XLS/ODS/CSV, PPTX/ODP, EML, EPUB, MOBI, RSS/Atom, and markup (wiki, rst, adoc, org, tex, textile).\n\n");
         help.push_str("RAG/knowledge tools accept `output_format: \"json\"` for machine-readable output.\n\n");
         help.push_str("Use `get_tool_help` with a tool_name parameter for detailed help on a specific tool.\n");
