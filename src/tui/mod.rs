@@ -51,6 +51,7 @@ pub fn run(path: &Path) -> Result<()> {
     let mut terminal = ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(std::io::stdout()))?;
 
     while !app.quit {
+        app.maybe_reload();
         terminal.draw(|f| draw(f, &mut app))?;
         if event::poll(std::time::Duration::from_millis(250))? {
             if let Event::Key(key) = event::read()? {
@@ -96,39 +97,65 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         }
         (KeyCode::Backspace, _) => app.back(),
         _ => match app.focus {
-            Focus::Tree => match code {
-                KeyCode::Up | KeyCode::Char('k') => app.selected = app.selected.saturating_sub(1),
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if app.selected + 1 < app.filtered.len() {
-                        app.selected += 1;
+            Focus::Tree => {
+                let page = 10usize;
+                let last = app.filtered.len().saturating_sub(1);
+                match (code, mods) {
+                    (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                        app.selected = app.selected.saturating_sub(1);
                     }
-                }
-                KeyCode::Enter => {
-                    if let Some(rel) = app.selected_file().cloned() {
-                        app.open(&rel, true);
+                    (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                        if app.selected + 1 < app.filtered.len() {
+                            app.selected += 1;
+                        }
                     }
-                }
-                _ => {}
-            },
-            Focus::Content => match code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    app.cursor = app.cursor.saturating_sub(1);
-                    app.scroll = app.scroll.min(app.cursor as u16);
-                    if (app.cursor as u16) < app.scroll {
-                        app.scroll = app.cursor as u16;
+                    (KeyCode::Char('g'), KeyModifiers::NONE) | (KeyCode::Home, _) => app.selected = 0,
+                    (KeyCode::Char('G'), _) | (KeyCode::End, _) => app.selected = last,
+                    (KeyCode::PageDown, _) | (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+                        app.selected = (app.selected + page).min(last);
                     }
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    let max = app.content.lines().count().saturating_sub(1);
-                    if app.cursor < max {
-                        app.cursor += 1;
+                    (KeyCode::PageUp, _) | (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
+                        app.selected = app.selected.saturating_sub(page);
                     }
+                    (KeyCode::Enter, _) => {
+                        if let Some(rel) = app.selected_file().cloned() {
+                            app.open(&rel, true);
+                        }
+                    }
+                    _ => {}
                 }
-                KeyCode::PageDown => app.cursor = (app.cursor + 20).min(app.content.lines().count().saturating_sub(1)),
-                KeyCode::PageUp => app.cursor = app.cursor.saturating_sub(20),
-                KeyCode::Enter => app.follow_link(),
-                _ => {}
-            },
+            }
+            Focus::Content => {
+                let page = app.view_height.max(1);
+                let half = (page / 2).max(1);
+                let max_line = app.content.lines().count().saturating_sub(1);
+                match (code, mods) {
+                    (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                        app.cursor = app.cursor.saturating_sub(1);
+                    }
+                    (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                        if app.cursor < max_line {
+                            app.cursor += 1;
+                        }
+                    }
+                    (KeyCode::PageDown, _) | (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+                        app.cursor = (app.cursor + page).min(max_line);
+                    }
+                    (KeyCode::PageUp, _) | (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
+                        app.cursor = app.cursor.saturating_sub(page);
+                    }
+                    (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                        app.cursor = (app.cursor + half).min(max_line);
+                    }
+                    (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                        app.cursor = app.cursor.saturating_sub(half);
+                    }
+                    (KeyCode::Char('g'), KeyModifiers::NONE) | (KeyCode::Home, _) => app.cursor = 0,
+                    (KeyCode::Char('G'), _) | (KeyCode::End, _) => app.cursor = max_line,
+                    (KeyCode::Enter, _) => app.follow_link(),
+                    _ => {}
+                }
+            }
         },
     }
 }
@@ -175,13 +202,24 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     }
     // Keep cursor visible
     let view_height = panes[1].height.saturating_sub(2);
+    app.view_height = view_height as usize;
     if (app.cursor as u16) >= app.scroll + view_height {
         app.scroll = app.cursor as u16 - view_height + 1;
     }
     if (app.cursor as u16) < app.scroll {
         app.scroll = app.cursor as u16;
     }
-    let content_title = format!(" {} ", app.current.as_deref().unwrap_or("(no note)"));
+    let content_title = match &app.current {
+        Some(rel) => {
+            let tags = if app.current_tags.is_empty() {
+                String::new()
+            } else {
+                format!(" · #{}", app.current_tags.join(" #"))
+            };
+            format!(" {}{} · {} backlinks ", rel, tags, app.current_backlink_count)
+        }
+        None => " (no note) ".to_string(),
+    };
     let content_style = if app.focus == Focus::Content {
         Style::default().fg(Color::Cyan)
     } else {

@@ -1,13 +1,61 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
+use std::collections::HashMap;
+
+/// Per-line callout styling, keyed by 0-indexed line number.
+enum CalloutLine {
+    Header { color: Color, label: String },
+    Body { color: Color },
+}
+
+fn callout_style_for(kind: &str) -> (Color, &'static str) {
+    match kind {
+        "note" | "info" => (Color::Blue, "📝"),
+        "tip" | "hint" | "success" | "check" | "done" => (Color::Green, "💡"),
+        "warning" | "caution" | "attention" => (Color::Yellow, "⚠️"),
+        "danger" | "error" | "bug" | "fail" | "failure" => (Color::Red, "🚫"),
+        "important" => (Color::Magenta, "❗"),
+        "question" | "help" | "faq" => (Color::Cyan, "❓"),
+        "quote" | "cite" => (Color::Gray, "💬"),
+        "example" => (Color::LightMagenta, "🧪"),
+        _ => (Color::Yellow, "📌"),
+    }
+}
+
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// Map every line covered by a callout (header + body) to its styling.
+fn build_callout_map(md: &str) -> HashMap<usize, CalloutLine> {
+    let mut map = HashMap::new();
+    for c in crate::obsidian::callout::parse_callouts(md) {
+        let (color, icon) = callout_style_for(&c.kind);
+        let label = match &c.title {
+            Some(t) => format!("{} {}: {}", icon, capitalize(&c.kind), t),
+            None => format!("{} {}", icon, capitalize(&c.kind)),
+        };
+        let header_idx = c.line - 1; // 0-indexed
+        map.insert(header_idx, CalloutLine::Header { color, label });
+        for j in 0..c.body.lines().count() {
+            map.insert(header_idx + 1 + j, CalloutLine::Body { color });
+        }
+    }
+    map
+}
 
 /// Render a Markdown document as styled ratatui Text. Pure function so it can
 /// be unit-tested without a terminal.
 pub fn markdown_to_text(md: &str) -> Text<'static> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut in_fence = false;
+    let callouts = build_callout_map(md);
 
-    for raw in md.lines() {
+    for (i, raw) in md.lines().enumerate() {
         let trimmed = raw.trim_start();
 
         if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
@@ -38,14 +86,29 @@ pub fn markdown_to_text(md: &str) -> Text<'static> {
             continue;
         }
 
-        // Callout header / blockquote
+        // Callouts (styled box: icon + kind + title, colored body bar)
+        if let Some(info) = callouts.get(&i) {
+            match info {
+                CalloutLine::Header { color, label } => {
+                    lines.push(Line::from(Span::styled(
+                        label.clone(),
+                        Style::default().fg(*color).add_modifier(Modifier::BOLD),
+                    )));
+                }
+                CalloutLine::Body { color } => {
+                    let body_text = trimmed.strip_prefix('>').unwrap_or(trimmed).trim_start();
+                    lines.push(Line::from(vec![
+                        Span::styled("┃ ", Style::default().fg(*color)),
+                        Span::styled(body_text.to_string(), Style::default().fg(*color)),
+                    ]));
+                }
+            }
+            continue;
+        }
+
+        // Plain blockquote (not a callout)
         if trimmed.starts_with('>') {
-            let style = if trimmed.contains("[!") {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::Yellow)
-            };
-            lines.push(Line::from(Span::styled(raw.to_string(), style)));
+            lines.push(Line::from(Span::styled(raw.to_string(), Style::default().fg(Color::Yellow))));
             continue;
         }
 
@@ -53,6 +116,17 @@ pub fn markdown_to_text(md: &str) -> Text<'static> {
     }
 
     Text::from(lines)
+}
+
+fn link_target_base(s: &str) -> &str {
+    s.split(['|', '#']).next().unwrap_or(s)
+}
+
+fn is_image_ext(target: &str) -> bool {
+    let lower = target.to_lowercase();
+    [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".avif"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
 }
 
 /// Inline styling: **bold**, *italic*, `code`, [[wikilinks]], checkboxes.
@@ -83,6 +157,49 @@ fn render_inline(line: &str) -> Line<'static> {
     }
 
     while i < chars.len() {
+        // ![[embed]] — image embeds get a distinct placeholder, other
+        // embeds (notes) render like normal wikilinks including the '!'.
+        if chars[i] == '!' && i + 2 < chars.len() && chars[i + 1] == '[' && chars[i + 2] == '[' {
+            if let Some(end) = find_seq(&chars, i + 3, "]]") {
+                flush(&mut buf, &mut spans);
+                let inner: String = chars[i + 3..end].iter().collect();
+                if is_image_ext(link_target_base(&inner)) {
+                    spans.push(Span::styled(
+                        format!("🖼 {}", link_target_base(&inner)),
+                        Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC),
+                    ));
+                } else {
+                    let whole: String = chars[i..end + 2].iter().collect();
+                    spans.push(Span::styled(
+                        whole,
+                        Style::default().fg(Color::LightBlue).add_modifier(Modifier::UNDERLINED),
+                    ));
+                }
+                i = end + 2;
+                continue;
+            }
+        }
+        // ![alt](url) — standard Markdown image syntax.
+        if chars[i] == '!' && i + 1 < chars.len() && chars[i + 1] == '[' {
+            if let Some(alt_end_rel) = chars[i + 2..].iter().position(|&c| c == ']') {
+                let alt_end = i + 2 + alt_end_rel;
+                if chars.get(alt_end + 1) == Some(&'(') {
+                    if let Some(paren_end_rel) = chars[alt_end + 2..].iter().position(|&c| c == ')') {
+                        let paren_end = alt_end + 2 + paren_end_rel;
+                        flush(&mut buf, &mut spans);
+                        let alt: String = chars[i + 2..alt_end].iter().collect();
+                        let url: String = chars[alt_end + 2..paren_end].iter().collect();
+                        let label = if alt.is_empty() { url } else { alt };
+                        spans.push(Span::styled(
+                            format!("🖼 {}", label),
+                            Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC),
+                        ));
+                        i = paren_end + 1;
+                        continue;
+                    }
+                }
+            }
+        }
         // [[wikilink]]
         if chars[i] == '[' && i + 1 < chars.len() && chars[i + 1] == '[' {
             if let Some(end) = find_seq(&chars, i + 2, "]]") {
@@ -184,5 +301,49 @@ mod tests {
     #[test]
     fn links_in_line() {
         assert_eq!(wikilinks_in_line("a [[X]] b [[Y|y]]"), vec!["X", "Y"]);
+    }
+
+    #[test]
+    fn callout_header_and_body_styled() {
+        let md = "> [!warning] Careful\n> body line";
+        let text = markdown_to_text(md);
+        let header = &text.lines[0].spans[0];
+        assert!(header.content.contains("Warning: Careful"));
+        assert!(header.style.add_modifier.contains(Modifier::BOLD));
+        assert_eq!(header.style.fg, Some(Color::Yellow));
+
+        let body = &text.lines[1];
+        assert_eq!(body.spans[0].content.as_ref(), "┃ ");
+        assert_eq!(body.spans[1].content.as_ref(), "body line");
+        assert_eq!(body.spans[1].style.fg, Some(Color::Yellow));
+    }
+
+    #[test]
+    fn plain_blockquote_not_treated_as_callout() {
+        let text = markdown_to_text("> just a quote");
+        assert_eq!(text.lines[0].spans[0].content.as_ref(), "> just a quote");
+    }
+
+    #[test]
+    fn image_embed_placeholder() {
+        let text = markdown_to_text("before ![[photo.png]] after");
+        let spans = &text.lines[0].spans;
+        assert!(spans.iter().any(|s| s.content.as_ref() == "🖼 photo.png"
+            && s.style.fg == Some(Color::Magenta)));
+    }
+
+    #[test]
+    fn non_image_embed_keeps_wikilink_style() {
+        let text = markdown_to_text("![[Some Note]]");
+        let spans = &text.lines[0].spans;
+        assert!(spans.iter().any(|s| s.content.as_ref() == "![[Some Note]]"
+            && s.style.add_modifier.contains(Modifier::UNDERLINED)));
+    }
+
+    #[test]
+    fn markdown_image_placeholder() {
+        let text = markdown_to_text("see ![a cat](cat.jpg) here");
+        let spans = &text.lines[0].spans;
+        assert!(spans.iter().any(|s| s.content.as_ref() == "🖼 a cat"));
     }
 }

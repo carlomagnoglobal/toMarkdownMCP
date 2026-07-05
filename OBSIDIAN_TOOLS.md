@@ -50,10 +50,19 @@ The same binary ships an interactive terminal viewer:
 to_markdown_mcp tui /path/to/vault    # or a single .md file
 ```
 
-Keys: `Tab` switch pane · `↑/↓` or `j/k` move · `Enter` open file / follow the
-`[[wikilink]]` on the cursor line · `Backspace` back · `/` filename search ·
-`q` quit. Headings, bold/italic, code, checkboxes (colored by state), callouts,
-and wikilinks are styled.
+Keys: `Tab` switch pane · `↑/↓` or `j/k` move · `g`/`G` or `Home`/`End` jump to
+top/bottom · `Ctrl+f`/`Ctrl+b` page down/up · `Ctrl+d`/`Ctrl+u` half-page ·
+`Enter` open file / follow the `[[wikilink]]` on the cursor line ·
+`Backspace` back · `/` filename search · `q` quit.
+
+Headings, bold/italic, inline/fenced code, and checkboxes (colored by state)
+are styled. Callouts (`> [!warning] ...`) render as a colored, icon-labeled
+box rather than a plain blockquote. Image references — `![[photo.png]]` and
+`![alt](cat.jpg)` — show as a `🖼` placeholder (no image rendering is
+attempted; the terminal can't display it). The content pane title shows the
+open note's tags and backlink count. If the open file changes on disk (e.g.
+edited in Obsidian while the viewer is open), it's reloaded automatically on
+the next tick.
 
 ## Implementation
 
