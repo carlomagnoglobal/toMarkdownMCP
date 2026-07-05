@@ -374,8 +374,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    fn app_with_content(content: &str) -> App {
-        let dir = scratch_dir("search");
+    // `tag` must be unique per test: tests run in parallel and a shared dir
+    // races (one test's cleanup deletes another's fixture mid-run).
+    fn app_with_content(tag: &str, content: &str) -> App {
+        let dir = scratch_dir(tag);
         std::fs::write(dir.join("A.md"), content).unwrap();
         let mut app = App::new(dir, vec!["A.md".into()]);
         app.open("A.md", false);
@@ -384,7 +386,7 @@ mod tests {
 
     #[test]
     fn content_search_jumps_and_wraps() {
-        let mut app = app_with_content("alpha\nbeta\nalpha again\nbeta again\nalpha third");
+        let mut app = app_with_content("search_wrap", "alpha\nbeta\nalpha again\nbeta again\nalpha third");
         app.cursor = 0;
         app.begin_search();
         assert_eq!(app.search_target, SearchTarget::Content);
@@ -414,7 +416,7 @@ mod tests {
 
     #[test]
     fn cancel_search_restores_cursor_and_clears_matches() {
-        let mut app = app_with_content("one\ntwo\nthree\ntwo again");
+        let mut app = app_with_content("search_cancel", "one\ntwo\nthree\ntwo again");
         app.cursor = 0;
         app.begin_search();
         app.type_search_char('t');

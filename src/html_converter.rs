@@ -6,53 +6,39 @@ use crate::code_language_detector::LanguageDetector;
 /// Enhance HTML code blocks with detected language information
 pub fn enhance_code_blocks_with_language(html_content: &str) -> Result<String> {
     let detector = LanguageDetector::new();
-    let mut result = html_content.to_string();
+    let mut result = String::with_capacity(html_content.len());
+    let mut rest = html_content;
 
-    // Process code blocks iteratively to add language classes
-    loop {
-        // Find the next code block without language class
-        if let Some(start) = result.find("<code") {
-            // Find the closing > of the opening tag
-            if let Some(end_offset) = result[start..].find('>') {
-                let tag_end = start + end_offset + 1;
-                let tag = &result[start..tag_end];
+    while let Some(start) = rest.find("<code") {
+        let Some(end_offset) = rest[start..].find('>') else {
+            break; // malformed trailing tag: emit as-is below
+        };
+        let tag_end = start + end_offset + 1;
+        let tag = &rest[start..tag_end];
 
-                // Check if already has language specification
-                if tag.contains("language-") || tag.contains("lang-") {
-                    // Skip this one, find the next
-                    result = result[tag_end..].to_string();
-                    continue;
-                }
-
-                // Find the closing </code> tag
-                if let Some(close_pos) = result[tag_end..].find("</code>") {
-                    let code_text = &result[tag_end..tag_end + close_pos];
-
-                    // Try to detect language
-                    if let Some(lang) = detector.detect_language(code_text) {
-                        // Construct new tag with language class
-                        let new_tag = if tag.ends_with('>') {
-                            format!(
-                                "{}class=\"language-{}\" ",
-                                &tag[..tag.len() - 1],
-                                lang
-                            ) + ">"
-                        } else {
-                            tag.to_string()
-                        };
-
-                        // Replace in result
-                        result = result[..start].to_string() + &new_tag + &result[tag_end..];
-                        continue; // Keep looking for more code blocks
-                    }
-                }
-            }
-        } else {
-            // No more code blocks without language class
-            break;
+        // Already has a language specification: emit unchanged and move on.
+        if tag.contains("language-") || tag.contains("lang-") {
+            result.push_str(&rest[..tag_end]);
+            rest = &rest[tag_end..];
+            continue;
         }
+
+        let detected = rest[tag_end..].find("</code>").and_then(|close_pos| {
+            detector.detect_language(&rest[tag_end..tag_end + close_pos])
+        });
+
+        match detected {
+            Some(lang) => {
+                result.push_str(&rest[..start]);
+                result.push_str(&tag[..tag.len() - 1]);
+                result.push_str(&format!(" class=\"language-{}\">", lang));
+            }
+            None => result.push_str(&rest[..tag_end]),
+        }
+        rest = &rest[tag_end..];
     }
 
+    result.push_str(rest);
     Ok(result)
 }
 
@@ -570,6 +556,36 @@ pub fn extract_html_from_mhtml(mhtml_content: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_enhance_code_blocks_keeps_content_before_classed_code() {
+        // Regression: content preceding a <code> tag that already has a
+        // language class must not be discarded.
+        let html = r#"<p>Intro paragraph that must survive.</p><code class="language-rust">fn x() {}</code><p>Middle text.</p><code class="lang-js">let y;</code><p>Tail.</p>"#;
+        let out = enhance_code_blocks_with_language(html).unwrap();
+        assert!(out.contains("Intro paragraph that must survive."));
+        assert!(out.contains("Middle text."));
+        assert!(out.contains("Tail."));
+    }
+
+    #[test]
+    fn test_enhance_code_blocks_no_language_detected_terminates() {
+        // Regression: a code block whose language can't be detected must not
+        // loop forever or lose surrounding content.
+        let html = "<p>before</p><code>zzz qqq</code><p>after</p>";
+        let out = enhance_code_blocks_with_language(html).unwrap();
+        assert!(out.contains("before"));
+        assert!(out.contains("zzz qqq"));
+        assert!(out.contains("after"));
+    }
+
+    #[test]
+    fn test_enhance_code_blocks_adds_language_class() {
+        let html = r#"<code>fn main() { println!("hi"); }</code>"#;
+        let out = enhance_code_blocks_with_language(html).unwrap();
+        assert!(out.contains("language-"), "expected a language class: {}", out);
+        assert!(out.contains("<code class="), "class joined to tag name: {}", out);
+    }
 
     #[test]
     fn test_strip_non_content_tags() {
