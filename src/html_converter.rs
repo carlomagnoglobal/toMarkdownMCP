@@ -56,6 +56,65 @@ pub fn enhance_code_blocks_with_language(html_content: &str) -> Result<String> {
     Ok(result)
 }
 
+/// Remove non-content elements (script, style, noscript, template) whose
+/// text would otherwise leak into the Markdown output. Used for
+/// browser-captured pages, which always carry inline scripts.
+pub fn strip_non_content_tags(html: &str) -> String {
+    let mut result = String::with_capacity(html.len());
+    // ASCII-only lowercasing keeps byte offsets aligned with `html`.
+    let lower = {
+        let mut s = html.to_string();
+        s.make_ascii_lowercase();
+        s
+    };
+    let tags = ["script", "style", "noscript", "template"];
+    let mut pos = 0;
+
+    while pos < html.len() {
+        // Find the nearest opening tag of interest at or after `pos`.
+        let next = tags
+            .iter()
+            .filter_map(|tag| {
+                lower[pos..].find(&format!("<{}", tag)).and_then(|rel| {
+                    let start = pos + rel;
+                    // Ensure it's a real tag boundary: "<script>" / "<script " / "<script/"
+                    let after = lower.as_bytes().get(start + 1 + tag.len());
+                    match after {
+                        Some(b'>') | Some(b' ') | Some(b'/') | Some(b'\t') | Some(b'\n') => {
+                            Some((start, *tag))
+                        }
+                        _ => None,
+                    }
+                })
+            })
+            .min_by_key(|(start, _)| *start);
+
+        match next {
+            Some((start, tag)) => {
+                result.push_str(&html[pos..start]);
+                let close = format!("</{}", tag);
+                match lower[start..].find(&close) {
+                    Some(rel) => {
+                        let close_start = start + rel;
+                        // Skip past the closing '>'
+                        pos = match lower[close_start..].find('>') {
+                            Some(gt) => close_start + gt + 1,
+                            None => html.len(),
+                        };
+                    }
+                    None => pos = html.len(), // unterminated: drop the rest
+                }
+            }
+            None => {
+                result.push_str(&html[pos..]);
+                break;
+            }
+        }
+    }
+
+    result
+}
+
 /// Convert HTML content to Markdown (basic conversion)
 #[allow(dead_code)]
 pub fn html_to_markdown(html_content: &str) -> Result<String> {
@@ -511,6 +570,30 @@ pub fn extract_html_from_mhtml(mhtml_content: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_strip_non_content_tags() {
+        let html = r#"<html><head><style>.x{color:red}</style><SCRIPT src="a.js"></SCRIPT></head><body><p>Hello</p><script>var data = [1,2,3];</script><noscript>enable js</noscript></body></html>"#;
+        let stripped = strip_non_content_tags(html);
+        assert!(stripped.contains("<p>Hello</p>"));
+        assert!(!stripped.contains("var data"));
+        assert!(!stripped.contains("color:red"));
+        assert!(!stripped.contains("enable js"));
+    }
+
+    #[test]
+    fn test_strip_non_content_tags_no_false_positives() {
+        // "scriptable" is not a <script> tag; unrelated tags survive.
+        let html = "<p>scriptable <scripted>x</scripted> style guide</p>";
+        assert_eq!(strip_non_content_tags(html), html);
+    }
+
+    #[test]
+    fn test_strip_non_content_tags_unterminated() {
+        let html = "<p>Keep</p><script>var x = 1;";
+        let stripped = strip_non_content_tags(html);
+        assert_eq!(stripped, "<p>Keep</p>");
+    }
 
     #[test]
     fn test_html_to_markdown_simple() {

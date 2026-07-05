@@ -34,6 +34,7 @@ mod retrieval;
 mod similarity;
 mod doc_intel;
 mod llm;
+mod browser;
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
@@ -68,8 +69,10 @@ struct JsonRpcError {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Log to stderr: stdout is reserved for the JSON-RPC stream.
     tracing_subscriber::fmt()
         .with_env_filter("info")
+        .with_writer(std::io::stderr)
         .init();
 
     let stdin = std::io::stdin();
@@ -1096,6 +1099,130 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
                 },
                 "required": ["labels"]
             }
+        },
+        {
+            "name": "browser_open_url",
+            "description": "Open a URL in a real Chromium browser (executes JavaScript, keeps cookies/session). Headless by default; set visible=true to show the window so a human can solve CAPTCHAs, log in, or dismiss banners. The session stays open across tool calls — follow up with browser_capture_markdown to convert the rendered page, and browser_close when done.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL to open (http:// or https://)"
+                    },
+                    "visible": {
+                        "type": "boolean",
+                        "description": "Show the browser window for human interaction (default: false = headless)",
+                        "default": false
+                    },
+                    "wait_seconds": {
+                        "type": "integer",
+                        "description": "Extra seconds to wait after page load for JS-rendered content to settle (default: 0)",
+                        "default": 0
+                    },
+                    "timeout_seconds": {
+                        "type": "integer",
+                        "description": "Navigation timeout in seconds (default: 30)",
+                        "default": 30
+                    },
+                    "user_agent": {
+                        "type": "string",
+                        "description": "Optional custom User-Agent string"
+                    }
+                },
+                "required": ["url"]
+            }
+        },
+        {
+            "name": "browser_capture_markdown",
+            "description": "Capture the rendered HTML of the page currently open in the browser session (after any human interaction) and convert it to Markdown. Optionally pass a url to navigate first — with no prior session this opens a headless browser, so JS-heavy pages can be converted in a single call. Supports the same HTML processing options as convert_from_source.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Optional URL to navigate to before capturing (opens a headless session if none exists)"
+                    },
+                    "wait_seconds": {
+                        "type": "integer",
+                        "description": "Extra seconds to wait after navigation before capturing (default: 0)",
+                        "default": 0
+                    },
+                    "timeout_seconds": {
+                        "type": "integer",
+                        "description": "Navigation timeout in seconds when url is given (default: 30)",
+                        "default": 30
+                    },
+                    "extract_metadata": {
+                        "type": "boolean",
+                        "description": "Extract page metadata as YAML frontmatter (default: false)",
+                        "default": false
+                    },
+                    "preserve_css_hints": {
+                        "type": "boolean",
+                        "description": "Preserve CSS styling hints as HTML comments (default: false)",
+                        "default": false
+                    },
+                    "generate_toc": {
+                        "type": "boolean",
+                        "description": "Generate table of contents from headings (default: false)",
+                        "default": false
+                    },
+                    "toc_max_level": {
+                        "type": "integer",
+                        "description": "Maximum heading level to include in TOC (1-6, default: 3)",
+                        "default": 3
+                    },
+                    "extract_images": {
+                        "type": "boolean",
+                        "description": "Extract and process images (default: false)",
+                        "default": false
+                    },
+                    "image_format": {
+                        "type": "string",
+                        "description": "Image output format: link, reference, or base64 (default: link)",
+                        "default": "link"
+                    },
+                    "convert_tables": {
+                        "type": "boolean",
+                        "description": "Convert HTML tables to Markdown tables (default: false)",
+                        "default": false
+                    },
+                    "extract_forms": {
+                        "type": "boolean",
+                        "description": "Extract form structure (default: false)",
+                        "default": false
+                    },
+                    "preserve_comments": {
+                        "type": "boolean",
+                        "description": "Preserve HTML comments with summary (default: false)",
+                        "default": false
+                    },
+                    "extract_links": {
+                        "type": "boolean",
+                        "description": "Extract link summary (default: false)",
+                        "default": false
+                    },
+                    "analyze_headings": {
+                        "type": "boolean",
+                        "description": "Analyze heading structure (default: false)",
+                        "default": false
+                    },
+                    "extract_definition_lists": {
+                        "type": "boolean",
+                        "description": "Extract definition lists (default: false)",
+                        "default": false
+                    }
+                }
+            }
+        },
+        {
+            "name": "browser_close",
+            "description": "Close the Chromium browser session opened by browser_open_url and free its resources.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
         }
     ]);
 
@@ -1167,6 +1294,9 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
         Some("ai_tag") => handle_ai_tag(&arguments).await,
         Some("ai_translate") => handle_ai_translate(&arguments).await,
         Some("ai_classify") => handle_ai_classify(&arguments).await,
+        Some("browser_open_url") => handle_browser_open_url(&arguments).await,
+        Some("browser_capture_markdown") => handle_browser_capture_markdown(&arguments).await,
+        Some("browser_close") => handle_browser_close(&arguments).await,
         _ => {
             return JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -1456,13 +1586,6 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let image_format_str = args.get("image_format")
-        .and_then(|v| v.as_str())
-        .unwrap_or("link");
-
-    let image_format = ImageFormat::from_str(image_format_str)
-        .unwrap_or(ImageFormat::Link);
-
     let convert_tables = args.get("convert_tables")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
@@ -1544,97 +1667,7 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
     // Check if this is HTML and should use HTML-specific conversion
     let mut markdown = if language == "html" || language == "htm" {
         if extract_metadata || preserve_css_hints || extract_images || convert_tables || extract_forms || preserve_comments || extract_links || analyze_headings || extract_definition_lists {
-            let mut html_content = content.clone();
-            let mut comment_summary = String::new();
-            let mut link_summary = String::new();
-            let mut heading_summary = String::new();
-            let mut definition_list_summary = String::new();
-
-            // Extract definition lists if needed
-            if extract_definition_lists {
-                let lists = definition_list_converter::extract_definition_lists_from_html(&html_content)
-                    .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
-                if !lists.is_empty() {
-                    definition_list_summary = definition_list_converter::generate_definition_list_summary(&lists);
-                }
-            }
-
-            // Analyze headings if needed
-            if analyze_headings {
-                let headings = heading_analyzer::extract_headings_from_html(&html_content)
-                    .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
-                if !headings.is_empty() {
-                    let stats = heading_analyzer::analyze_heading_structure(&headings);
-                    heading_summary.push_str(&heading_analyzer::generate_heading_summary(&stats));
-                    heading_summary.push_str(&heading_analyzer::generate_heading_tree(&headings));
-                }
-            }
-
-            // Extract links if needed
-            if extract_links {
-                let links = link_extractor::extract_links_from_html(&html_content)
-                    .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
-                if !links.is_empty() {
-                    link_summary = link_extractor::generate_link_summary(&links);
-                }
-            }
-
-            // Process comments if needed (remove but extract info, or preserve)
-            if preserve_comments {
-                let (html, comments) = comment_extractor::process_comments_in_html(&html_content, true)
-                    .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
-                html_content = html;
-                if !comments.is_empty() {
-                    comment_summary = comment_extractor::generate_comment_summary(&comments);
-                }
-            }
-
-            // Extract forms if needed
-            if extract_forms {
-                html_content = form_extractor::process_forms_in_html(&html_content)
-                    .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?
-                    .0;
-            }
-
-            // Convert tables if needed
-            if convert_tables {
-                html_content = table_converter::convert_tables_in_html(&html_content)
-                    .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
-            }
-
-            // Process images if needed
-            if extract_images {
-                html_content = image_extractor::process_images_in_html(&html_content, image_format)
-                    .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
-            }
-
-            let html_markdown = html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
-                .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
-
-            // Prepend summaries if present (definition lists, headings, links, comments)
-            if !definition_list_summary.is_empty() || !heading_summary.is_empty() || !link_summary.is_empty() || !comment_summary.is_empty() {
-                let mut prefixed = String::new();
-                if !definition_list_summary.is_empty() {
-                    prefixed.push_str(&definition_list_summary);
-                    prefixed.push('\n');
-                }
-                if !heading_summary.is_empty() {
-                    prefixed.push_str(&heading_summary);
-                    prefixed.push('\n');
-                }
-                if !link_summary.is_empty() {
-                    prefixed.push_str(&link_summary);
-                    prefixed.push('\n');
-                }
-                if !comment_summary.is_empty() {
-                    prefixed.push_str(&comment_summary);
-                    prefixed.push('\n');
-                }
-                prefixed.push_str(&html_markdown);
-                prefixed
-            } else {
-                html_markdown
-            }
+            convert_html_with_flags(&content, args)?
         } else {
             convert_to_markdown_with_options(
                 &content,
@@ -1659,6 +1692,205 @@ async fn handle_convert_from_source(args: &Value) -> Result<String, Box<dyn std:
     }
 
     Ok(markdown)
+}
+
+/// Convert HTML to Markdown applying the optional HTML processing flags read
+/// from `args` (extract_metadata, convert_tables, extract_links, ...). With no
+/// flags set this reduces to a plain HTML → Markdown conversion. TOC
+/// generation is handled by callers.
+fn convert_html_with_flags(content: &str, args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let flag = |name: &str| args.get(name).and_then(|v| v.as_bool()).unwrap_or(false);
+
+    let extract_metadata = flag("extract_metadata");
+    let preserve_css_hints = flag("preserve_css_hints");
+    let extract_images = flag("extract_images");
+    let convert_tables = flag("convert_tables");
+    let extract_forms = flag("extract_forms");
+    let preserve_comments = flag("preserve_comments");
+    let extract_links = flag("extract_links");
+    let analyze_headings = flag("analyze_headings");
+    let extract_definition_lists = flag("extract_definition_lists");
+
+    let image_format_str = args.get("image_format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("link");
+    let image_format = ImageFormat::from_str(image_format_str)
+        .unwrap_or(ImageFormat::Link);
+
+    let mut html_content = content.to_string();
+    let mut comment_summary = String::new();
+    let mut link_summary = String::new();
+    let mut heading_summary = String::new();
+    let mut definition_list_summary = String::new();
+
+    // Extract definition lists if needed
+    if extract_definition_lists {
+        let lists = definition_list_converter::extract_definition_lists_from_html(&html_content)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+        if !lists.is_empty() {
+            definition_list_summary = definition_list_converter::generate_definition_list_summary(&lists);
+        }
+    }
+
+    // Analyze headings if needed
+    if analyze_headings {
+        let headings = heading_analyzer::extract_headings_from_html(&html_content)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+        if !headings.is_empty() {
+            let stats = heading_analyzer::analyze_heading_structure(&headings);
+            heading_summary.push_str(&heading_analyzer::generate_heading_summary(&stats));
+            heading_summary.push_str(&heading_analyzer::generate_heading_tree(&headings));
+        }
+    }
+
+    // Extract links if needed
+    if extract_links {
+        let links = link_extractor::extract_links_from_html(&html_content)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+        if !links.is_empty() {
+            link_summary = link_extractor::generate_link_summary(&links);
+        }
+    }
+
+    // Process comments if needed (remove but extract info, or preserve)
+    if preserve_comments {
+        let (html, comments) = comment_extractor::process_comments_in_html(&html_content, true)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+        html_content = html;
+        if !comments.is_empty() {
+            comment_summary = comment_extractor::generate_comment_summary(&comments);
+        }
+    }
+
+    // Extract forms if needed
+    if extract_forms {
+        html_content = form_extractor::process_forms_in_html(&html_content)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?
+            .0;
+    }
+
+    // Convert tables if needed
+    if convert_tables {
+        html_content = table_converter::convert_tables_in_html(&html_content)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+    }
+
+    // Process images if needed
+    if extract_images {
+        html_content = image_extractor::process_images_in_html(&html_content, image_format)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+    }
+
+    let html_markdown = html_to_markdown_with_options(&html_content, extract_metadata, preserve_css_hints)
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    // Prepend summaries if present (definition lists, headings, links, comments)
+    if !definition_list_summary.is_empty() || !heading_summary.is_empty() || !link_summary.is_empty() || !comment_summary.is_empty() {
+        let mut prefixed = String::new();
+        if !definition_list_summary.is_empty() {
+            prefixed.push_str(&definition_list_summary);
+            prefixed.push('\n');
+        }
+        if !heading_summary.is_empty() {
+            prefixed.push_str(&heading_summary);
+            prefixed.push('\n');
+        }
+        if !link_summary.is_empty() {
+            prefixed.push_str(&link_summary);
+            prefixed.push('\n');
+        }
+        if !comment_summary.is_empty() {
+            prefixed.push_str(&comment_summary);
+            prefixed.push('\n');
+        }
+        prefixed.push_str(&html_markdown);
+        Ok(prefixed)
+    } else {
+        Ok(html_markdown)
+    }
+}
+
+async fn handle_browser_open_url(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let url = args.get("url")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Box::new(ConversionError::MissingParameter("url".to_string())) as Box<dyn std::error::Error>)?;
+
+    let visible = args.get("visible")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let wait_seconds = args.get("wait_seconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    let timeout_seconds = args.get("timeout_seconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(browser::DEFAULT_NAV_TIMEOUT_SECS);
+
+    let user_agent = args.get("user_agent")
+        .and_then(|v| v.as_str());
+
+    let info = browser::open(url, visible, wait_seconds, user_agent, timeout_seconds)
+        .await
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    let mut result = String::new();
+    result.push_str("# Browser Session Opened\n\n");
+    result.push_str(&format!("- **URL:** {}\n", info.url));
+    if let Some(title) = &info.title {
+        result.push_str(&format!("- **Title:** {}\n", title));
+    }
+    result.push_str(&format!("- **Mode:** {}\n\n", if visible { "visible window" } else { "headless" }));
+    if visible {
+        result.push_str("The browser window is open. Interact with the page as needed (login, CAPTCHA, cookie banners), then call `browser_capture_markdown` to convert the rendered page. Call `browser_close` when finished.\n");
+    } else {
+        result.push_str("The page is loaded. Call `browser_capture_markdown` to convert the rendered page, and `browser_close` when finished.\n");
+    }
+    Ok(result)
+}
+
+async fn handle_browser_capture_markdown(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let navigate_to = args.get("url")
+        .and_then(|v| v.as_str());
+
+    let wait_seconds = args.get("wait_seconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    let timeout_seconds = args.get("timeout_seconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(browser::DEFAULT_NAV_TIMEOUT_SECS);
+
+    let (html, _info) = browser::capture_html(navigate_to, wait_seconds, timeout_seconds)
+        .await
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    // Rendered pages always carry inline scripts/styles; drop them so their
+    // text doesn't leak into the Markdown.
+    let html = html_converter::strip_non_content_tags(&html);
+
+    let mut markdown = convert_html_with_flags(&html, args)?;
+
+    let generate_toc_flag = args.get("generate_toc")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if generate_toc_flag {
+        let toc_max_level = args.get("toc_max_level")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(3) as usize;
+        markdown = generate_toc_for_markdown(&markdown, toc_max_level)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+    }
+
+    Ok(markdown)
+}
+
+async fn handle_browser_close(_args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    if browser::close().await {
+        Ok("Browser session closed.".to_string())
+    } else {
+        Ok("No browser session was open.".to_string())
+    }
 }
 
 fn handle_list_directory_files(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
@@ -2893,7 +3125,7 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
     } else {
         // Summary of all tools
         help.push_str("# Available Tools\n\n");
-        help.push_str("**47 tools** across format conversion, file/vault operations, an AI/RAG toolkit, and optional Claude-backed generation.\n\n");
+        help.push_str("**50 tools** across format conversion, browser-based web capture, file/vault operations, an AI/RAG toolkit, and optional Claude-backed generation.\n\n");
         help.push_str("| Tool | Description |\n");
         help.push_str("|------|-------------|\n");
         help.push_str("| convert_file | Convert file to Markdown with HTML processing options |\n");
@@ -2942,7 +3174,10 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
         help.push_str("| ai_ask | RAG Q&A via Claude API with citations |\n");
         help.push_str("| ai_tag | Suggest tags via Claude API |\n");
         help.push_str("| ai_translate | Translate via Claude API |\n");
-        help.push_str("| ai_classify | Classify into given labels via Claude API |\n\n");
+        help.push_str("| ai_classify | Classify into given labels via Claude API |\n");
+        help.push_str("| browser_open_url | Open a URL in Chromium (headless or visible for CAPTCHA/login) |\n");
+        help.push_str("| browser_capture_markdown | Convert the rendered page in the browser session to Markdown |\n");
+        help.push_str("| browser_close | Close the Chromium browser session |\n\n");
         help.push_str("Supported input formats: text/code, HTML/HTM/MHTML/webarchive, PDF, DOCX, DOC, RTF, ODT, XLSX/XLS/ODS/CSV, PPTX/ODP, EML, EPUB, MOBI, RSS/Atom, and markup (wiki, rst, adoc, org, tex, textile).\n\n");
         help.push_str("RAG/knowledge tools accept `output_format: \"json\"` for machine-readable output.\n\n");
         help.push_str("Use `get_tool_help` with a tool_name parameter for detailed help on a specific tool.\n");
