@@ -256,6 +256,90 @@ fn find_seq(chars: &[char], from: usize, seq: &str) -> Option<usize> {
         .find(|&i| chars[i..i + needle.len()] == needle[..])
 }
 
+/// Word-wrap a styled line into display rows of at most `width` columns,
+/// preserving span styles across the breaks. Guarantees every returned row
+/// fits in `width`, so callers can scroll by display rows exactly.
+pub fn wrap_styled_line(line: &Line<'_>, width: usize) -> Vec<Line<'static>> {
+    use unicode_width::UnicodeWidthChar;
+
+    let width = width.max(1);
+    // Flatten the line into (char, style) pairs.
+    let chars: Vec<(char, Style)> = line
+        .spans
+        .iter()
+        .flat_map(|s| s.content.chars().map(move |c| (c, s.style)))
+        .collect();
+
+    if chars.is_empty() {
+        return vec![Line::from("")];
+    }
+
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    let mut row: Vec<(char, Style)> = Vec::new();
+    let mut row_width = 0usize;
+    let mut last_space: Option<usize> = None; // index in `row` of the last space
+
+    let mut flush =
+        |row: &mut Vec<(char, Style)>, rows: &mut Vec<Line<'static>>| {
+            let mut spans: Vec<Span<'static>> = Vec::new();
+            let mut buf = String::new();
+            let mut cur_style: Option<Style> = None;
+            for &(c, style) in row.iter() {
+                if Some(style) != cur_style {
+                    if let Some(st) = cur_style {
+                        if !buf.is_empty() {
+                            spans.push(Span::styled(std::mem::take(&mut buf), st));
+                        }
+                    }
+                    cur_style = Some(style);
+                }
+                buf.push(c);
+            }
+            if let Some(st) = cur_style {
+                if !buf.is_empty() {
+                    spans.push(Span::styled(buf, st));
+                }
+            }
+            rows.push(Line::from(spans));
+            row.clear();
+        };
+
+    for (c, style) in chars {
+        let cw = c.width().unwrap_or(0);
+        if row_width + cw > width {
+            match last_space {
+                // Break at the last space: it stays on the current row,
+                // the word after it moves to the next row.
+                Some(sp) if sp + 1 < row.len() => {
+                    let carry: Vec<(char, Style)> = row.split_off(sp + 1);
+                    flush(&mut row, &mut rows);
+                    row = carry;
+                    row_width = row.iter().map(|(c, _)| c.width().unwrap_or(0)).sum();
+                }
+                _ => {
+                    // No space to break at (single long word): hard break.
+                    flush(&mut row, &mut rows);
+                    row_width = 0;
+                }
+            }
+            last_space = None;
+            // Drop a space that would land at the start of the new row.
+            if c == ' ' && row.is_empty() {
+                continue;
+            }
+        }
+        if c == ' ' {
+            last_space = Some(row.len());
+        }
+        row.push((c, style));
+        row_width += cw;
+    }
+    if !row.is_empty() || rows.is_empty() {
+        flush(&mut row, &mut rows);
+    }
+    rows
+}
+
 /// All wikilink raw strings in a line, for cursor-based link following.
 pub fn wikilinks_in_line(line: &str) -> Vec<String> {
     crate::obsidian::wikilink::parse_wikilinks(line)
@@ -345,5 +429,50 @@ mod tests {
         let text = markdown_to_text("see ![a cat](cat.jpg) here");
         let spans = &text.lines[0].spans;
         assert!(spans.iter().any(|s| s.content.as_ref() == "🖼 a cat"));
+    }
+
+    fn row_text(l: &Line) -> String {
+        l.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn wrap_breaks_at_word_boundaries_within_width() {
+        let line = Line::from("the quick brown fox jumps over the lazy dog");
+        let rows = wrap_styled_line(&line, 16);
+        assert!(rows.len() > 1);
+        for r in &rows {
+            let t = row_text(r);
+            assert!(t.chars().count() <= 16, "row too wide: {:?}", t);
+            assert!(!t.starts_with(' '), "row starts with space: {:?}", t);
+        }
+        let joined: String = rows.iter().map(row_text).collect::<Vec<_>>().join(" ");
+        assert!(joined.split_whitespace().eq("the quick brown fox jumps over the lazy dog".split_whitespace()));
+    }
+
+    #[test]
+    fn wrap_preserves_span_styles_across_break() {
+        let line = Line::from(vec![
+            Span::raw("plain start "),
+            Span::styled("bold segment that will wrap", Style::default().add_modifier(Modifier::BOLD)),
+        ]);
+        let rows = wrap_styled_line(&line, 18);
+        assert!(rows.len() >= 2);
+        // Bold text on the continuation row keeps its style.
+        let last = rows.last().unwrap();
+        assert!(last.spans.iter().all(|s| s.style.add_modifier.contains(Modifier::BOLD)));
+    }
+
+    #[test]
+    fn wrap_hard_breaks_single_long_word_and_handles_empty() {
+        let rows = wrap_styled_line(&Line::from("abcdefghij"), 4);
+        assert_eq!(rows.iter().map(row_text).collect::<Vec<_>>(), vec!["abcd", "efgh", "ij"]);
+
+        let rows = wrap_styled_line(&Line::from(""), 10);
+        assert_eq!(rows.len(), 1);
+
+        // Short line: single row, unchanged.
+        let rows = wrap_styled_line(&Line::from("short"), 40);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(row_text(&rows[0]), "short");
     }
 }

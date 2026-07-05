@@ -8,7 +8,7 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScree
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use std::path::{Path, PathBuf};
 
 /// Restores the terminal even on panic/early return.
@@ -197,25 +197,41 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     state.select(if app.filtered.is_empty() { None } else { Some(app.selected) });
     f.render_stateful_widget(list, panes[0], &mut state);
 
-    // Content with cursor-line highlight
-    let mut text = if app.raw_view {
-        ratatui::text::Text::from(app.content.lines().map(Line::from).collect::<Vec<_>>())
+    // Content: wrap lines ourselves so scrolling is exact in display rows.
+    // (Paragraph's own Wrap scrolls in post-wrap rows while the cursor moves
+    // in logical lines — mixing the two loses the cursor on narrow terminals.)
+    let logical: Vec<Line> = if app.raw_view {
+        app.content.lines().map(Line::from).collect()
     } else {
-        render::markdown_to_text(&app.content)
+        render::markdown_to_text(&app.content).lines
     };
-    if app.focus == Focus::Content {
-        if let Some(line) = text.lines.get_mut(app.cursor) {
-            *line = line.clone().style(Style::default().bg(Color::Rgb(40, 40, 60)));
+    let inner_width = panes[1].width.saturating_sub(2).max(1) as usize;
+    let mut display: Vec<Line<'static>> = Vec::new();
+    let mut cursor_row_start = 0usize;
+    let mut cursor_row_end = 0usize;
+    for (i, line) in logical.iter().enumerate() {
+        let mut rows = render::wrap_styled_line(line, inner_width);
+        if i == app.cursor {
+            cursor_row_start = display.len();
+            cursor_row_end = display.len() + rows.len().saturating_sub(1);
+            if app.focus == Focus::Content {
+                for row in &mut rows {
+                    *row = row.clone().style(Style::default().bg(Color::Rgb(40, 40, 60)));
+                }
+            }
         }
+        display.extend(rows);
     }
-    // Keep cursor visible
+    let text = ratatui::text::Text::from(display);
+
+    // Keep the cursor's display rows visible.
     let view_height = panes[1].height.saturating_sub(2);
     app.view_height = view_height as usize;
-    if (app.cursor as u16) >= app.scroll + view_height {
-        app.scroll = app.cursor as u16 - view_height + 1;
+    if (cursor_row_end as u16) >= app.scroll + view_height {
+        app.scroll = cursor_row_end as u16 - view_height + 1;
     }
-    if (app.cursor as u16) < app.scroll {
-        app.scroll = app.cursor as u16;
+    if (cursor_row_start as u16) < app.scroll {
+        app.scroll = cursor_row_start as u16;
     }
     let content_title = match &app.current {
         Some(rel) => {
@@ -241,7 +257,6 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     };
     let para = Paragraph::new(text)
         .block(Block::default().borders(Borders::ALL).title(content_title).border_style(content_style))
-        .wrap(Wrap { trim: false })
         .scroll((app.scroll, 0));
     f.render_widget(para, panes[1]);
 
