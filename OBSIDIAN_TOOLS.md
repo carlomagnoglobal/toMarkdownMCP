@@ -63,14 +63,28 @@ every binding below). Summary:
 - **Notes**: `Enter` open file / follow the `[[wikilink]]` on the cursor
   line · `Backspace` or `Esc` go back · `r` toggle raw source vs. formatted
   view (persists as you move between notes)
+- **View**: `z` zen mode (hide the file tree, distraction-free) · `T` cycle
+  dark/light theme · **mouse**: wheel scrolls either pane, click selects and
+  opens a file, click a content line to move the cursor there, click it
+  again to follow its wikilink
 - **General**: `?` toggle help · `q` or `Ctrl+c` quit
 
-Headings, bold/italic, inline/fenced code, and checkboxes (colored by state)
-are styled. Callouts (`> [!warning] ...`) render as a colored, icon-labeled
-box rather than a plain blockquote. Image references — `![[photo.png]]` and
-`![alt](cat.jpg)` — show as a `🖼` placeholder (no image rendering is
-attempted; the terminal can't display it). The content pane title shows the
-open note's tags and backlink count. If the open file changes on disk (e.g.
+Rendering is fully typographic: headings lose their `#` and gain colored
+underlines (ATX and setext forms), frontmatter shows as a boxed dimmed
+"Properties" panel, pipe tables are re-aligned into real columns with box
+borders, fenced code blocks get labeled rules, a gutter, and **real syntax
+highlighting** (syntect — per-token colors for rust/js/python/…), inline
+code drops its backticks onto a shaded chip, `[text](url)` links show just
+the styled text, bullets become `•` with hanging indents on wrapped lines,
+`~~strike~~`/`__bold__`/`_italic_` all render, blockquotes get a `▌` bar,
+callouts (`> [!warning] ...`) render as colored icon-labeled boxes, and
+checkboxes show `☐`/`☑` glyphs colored by state. Search matches are
+highlighted in-line (all occurrences). Long panes get a scrollbar; wide
+terminals cap text at 100 columns and center it; the title bar shows a
+breadcrumb of the nearest heading plus tags and backlink count; the status
+bar shows position, word count, and reading time. Image references —
+`![[photo.png]]` and `![alt](cat.jpg)` — show as a `🖼` placeholder (no
+image rendering is attempted). If the open file changes on disk (e.g.
 edited in Obsidian while the viewer is open), it's reloaded automatically on
 the next tick.
 

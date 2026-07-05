@@ -45,10 +45,26 @@ pub struct App {
     pub current_mtime: Option<SystemTime>,
     pub current_tags: Vec<String>,
     pub current_backlink_count: usize,
+    pub word_count: usize,
     /// View the open note as raw source instead of styled Markdown. Persists
     /// across notes until toggled.
     pub raw_view: bool,
     pub show_help: bool,
+    /// Zen mode: hide the file tree, content only.
+    pub zen: bool,
+    /// Theme index for render::Theme::by_index.
+    pub theme_idx: usize,
+    /// Cached styled document (syntax highlighting is expensive); key covers
+    /// content, width, raw flag, and theme.
+    styled_cache: Option<(u64, std::rc::Rc<super::render::StyledDoc>)>,
+    // --- set during draw, consumed by mouse handling ---
+    pub tree_area: ratatui::layout::Rect,
+    pub content_area: ratatui::layout::Rect,
+    /// Rendered tree row -> index into `filtered` (None for directory rows).
+    pub tree_rows: Vec<Option<usize>>,
+    pub tree_state: ratatui::widgets::ListState,
+    /// Display row -> logical content line, from the last draw.
+    pub row_logical: Vec<usize>,
 }
 
 impl App {
@@ -76,9 +92,63 @@ impl App {
             current_mtime: None,
             current_tags: Vec::new(),
             current_backlink_count: 0,
+            word_count: 0,
             raw_view: false,
             show_help: false,
+            zen: false,
+            theme_idx: 0,
+            styled_cache: None,
+            tree_area: ratatui::layout::Rect::default(),
+            content_area: ratatui::layout::Rect::default(),
+            tree_rows: Vec::new(),
+            tree_state: ratatui::widgets::ListState::default(),
+            row_logical: Vec::new(),
         }
+    }
+
+    pub fn toggle_zen(&mut self) {
+        self.zen = !self.zen;
+        if self.zen {
+            self.focus = Focus::Content;
+            self.status = "zen mode (z to exit)".into();
+        } else {
+            self.status = "zen off".into();
+        }
+    }
+
+    pub fn cycle_theme(&mut self) {
+        self.theme_idx += 1;
+        let theme = super::render::Theme::by_index(self.theme_idx);
+        self.status = format!("theme: {}", theme.name);
+    }
+
+    /// Styled document for the current content, cached across frames.
+    pub fn styled_doc(
+        &mut self,
+        width: usize,
+        theme: &super::render::Theme,
+    ) -> std::rc::Rc<super::render::StyledDoc> {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.content.hash(&mut h);
+        width.hash(&mut h);
+        self.raw_view.hash(&mut h);
+        theme.name.hash(&mut h);
+        let key = h.finish();
+
+        if let Some((k, doc)) = &self.styled_cache {
+            if *k == key {
+                return std::rc::Rc::clone(doc);
+            }
+        }
+        let doc = std::rc::Rc::new(super::render::style_document(
+            &self.content,
+            self.raw_view,
+            width,
+            theme,
+        ));
+        self.styled_cache = Some((key, std::rc::Rc::clone(&doc)));
+        doc
     }
 
     pub fn apply_filter(&mut self) {
@@ -239,6 +309,7 @@ impl App {
                 self.content_matches.clear();
                 self.focus = Focus::Content;
                 self.current_mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+                self.word_count = self.content.split_whitespace().count();
                 self.refresh_vault_info();
                 self.status = format!("{} · ? for help", rel);
             }
@@ -271,6 +342,7 @@ impl App {
         let Ok(content) = std::fs::read_to_string(&path) else { return };
         self.content = content;
         self.current_mtime = Some(mtime);
+        self.word_count = self.content.split_whitespace().count();
         let max = self.content.lines().count().saturating_sub(1);
         if self.cursor > max {
             self.cursor = max;

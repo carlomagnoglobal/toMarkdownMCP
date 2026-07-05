@@ -3,12 +3,15 @@ pub mod render;
 
 use anyhow::{anyhow, Result};
 use app::{App, Focus, SearchTarget};
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    MouseButton, MouseEventKind,
+};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
 use std::path::{Path, PathBuf};
 
 /// Restores the terminal even on panic/early return.
@@ -17,7 +20,7 @@ struct TerminalGuard;
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = crossterm::execute!(std::io::stdout(), LeaveAlternateScreen);
+        let _ = crossterm::execute!(std::io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
     }
 }
 
@@ -46,7 +49,7 @@ pub fn run(path: &Path) -> Result<()> {
     }
 
     enable_raw_mode()?;
-    crossterm::execute!(std::io::stdout(), EnterAlternateScreen)?;
+    crossterm::execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
     let _guard = TerminalGuard;
     let mut terminal = ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(std::io::stdout()))?;
 
@@ -54,14 +57,77 @@ pub fn run(path: &Path) -> Result<()> {
         app.maybe_reload();
         terminal.draw(|f| draw(f, &mut app))?;
         if event::poll(std::time::Duration::from_millis(250))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
                     handle_key(&mut app, key.code, key.modifiers);
                 }
+                Event::Mouse(m) => handle_mouse(&mut app, m),
+                _ => {}
             }
         }
     }
     Ok(())
+}
+
+fn handle_mouse(app: &mut App, m: crossterm::event::MouseEvent) {
+    let in_tree = !app.zen
+        && m.column >= app.tree_area.x
+        && m.column < app.tree_area.x + app.tree_area.width
+        && m.row >= app.tree_area.y
+        && m.row < app.tree_area.y + app.tree_area.height;
+    let in_content = m.column >= app.content_area.x
+        && m.column < app.content_area.x + app.content_area.width
+        && m.row >= app.content_area.y
+        && m.row < app.content_area.y + app.content_area.height;
+
+    match m.kind {
+        MouseEventKind::ScrollDown => {
+            if in_tree {
+                app.selected = (app.selected + 3).min(app.filtered.len().saturating_sub(1));
+                app.focus = Focus::Tree;
+            } else if in_content {
+                let max = app.content.lines().count().saturating_sub(1);
+                app.cursor = (app.cursor + 3).min(max);
+                app.focus = Focus::Content;
+            }
+        }
+        MouseEventKind::ScrollUp => {
+            if in_tree {
+                app.selected = app.selected.saturating_sub(3);
+                app.focus = Focus::Tree;
+            } else if in_content {
+                app.cursor = app.cursor.saturating_sub(3);
+                app.focus = Focus::Content;
+            }
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            if in_tree {
+                app.focus = Focus::Tree;
+                // Click row -> rendered tree row (account for the list's scroll offset).
+                let rel = (m.row - app.tree_area.y).saturating_sub(1) as usize;
+                let row = app.tree_state.offset() + rel;
+                if let Some(Some(file_pos)) = app.tree_rows.get(row) {
+                    app.selected = *file_pos;
+                    if let Some(relpath) = app.selected_file().cloned() {
+                        app.open(&relpath, true);
+                    }
+                }
+            } else if in_content {
+                app.focus = Focus::Content;
+                let rel = (m.row - app.content_area.y).saturating_sub(1) as usize;
+                let display_row = app.scroll as usize + rel;
+                if let Some(&logical) = app.row_logical.get(display_row) {
+                    if logical == app.cursor {
+                        // Second click on the same line follows its wikilink.
+                        app.follow_link();
+                    } else {
+                        app.cursor = logical;
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
@@ -86,6 +152,8 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => app.quit = true,
         (KeyCode::Char('?'), _) => app.toggle_help(),
         (KeyCode::Char('r'), _) => app.toggle_raw_view(),
+        (KeyCode::Char('z'), _) => app.toggle_zen(),
+        (KeyCode::Char('T'), _) => app.cycle_theme(),
         (KeyCode::Tab, _) | (KeyCode::BackTab, _) => {
             app.focus = if app.focus == Focus::Tree { Focus::Content } else { Focus::Tree };
         }
@@ -164,111 +232,277 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     }
 }
 
+/// Widest readable text column; wider panes center the text block.
+const MAX_TEXT_WIDTH: u16 = 100;
+
 fn draw(f: &mut ratatui::Frame, app: &mut App) {
+    let theme = render::Theme::by_index(app.theme_idx);
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(3), Constraint::Length(1)])
         .split(f.area());
-    let panes = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
-        .split(outer[0]);
 
-    // File tree
-    let items: Vec<ListItem> = app
-        .filtered
-        .iter()
-        .map(|&i| ListItem::new(app.files[i].clone()))
-        .collect();
-    let tree_title = if app.searching && app.search_target == SearchTarget::Tree {
-        format!(" Files /{} ", app.search)
+    let content_pane = if app.zen {
+        app.tree_area = Rect::default();
+        outer[0]
     } else {
-        " Files ".to_string()
+        let panes = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+            .split(outer[0]);
+        app.tree_area = panes[0];
+        draw_tree(f, app, panes[0], &theme);
+        panes[1]
     };
-    let tree_style = if app.focus == Focus::Tree {
-        Style::default().fg(Color::Cyan)
-    } else {
-        Style::default()
-    };
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(tree_title).border_style(tree_style))
-        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD));
-    let mut state = ListState::default();
-    state.select(if app.filtered.is_empty() { None } else { Some(app.selected) });
-    f.render_stateful_widget(list, panes[0], &mut state);
+    app.content_area = content_pane;
 
-    // Content: wrap lines ourselves so scrolling is exact in display rows.
-    // (Paragraph's own Wrap scrolls in post-wrap rows while the cursor moves
-    // in logical lines — mixing the two loses the cursor on narrow terminals.)
-    let logical: Vec<Line> = if app.raw_view {
-        app.content.lines().map(Line::from).collect()
-    } else {
-        render::markdown_to_text(&app.content).lines
-    };
-    let inner_width = panes[1].width.saturating_sub(2).max(1) as usize;
-    let mut display: Vec<Line<'static>> = Vec::new();
-    let mut cursor_row_start = 0usize;
-    let mut cursor_row_end = 0usize;
-    for (i, line) in logical.iter().enumerate() {
-        let mut rows = render::wrap_styled_line(line, inner_width);
-        if i == app.cursor {
-            cursor_row_start = display.len();
-            cursor_row_end = display.len() + rows.len().saturating_sub(1);
-            if app.focus == Focus::Content {
-                for row in &mut rows {
-                    *row = row.clone().style(Style::default().bg(Color::Rgb(40, 40, 60)));
-                }
-            }
-        }
-        display.extend(rows);
-    }
-    let text = ratatui::text::Text::from(display);
-
-    // Keep the cursor's display rows visible.
-    let view_height = panes[1].height.saturating_sub(2);
-    app.view_height = view_height as usize;
-    if (cursor_row_end as u16) >= app.scroll + view_height {
-        app.scroll = cursor_row_end as u16 - view_height + 1;
-    }
-    if (cursor_row_start as u16) < app.scroll {
-        app.scroll = cursor_row_start as u16;
-    }
-    let content_title = match &app.current {
-        Some(rel) => {
-            let tags = if app.current_tags.is_empty() {
-                String::new()
-            } else {
-                format!(" · #{}", app.current_tags.join(" #"))
-            };
-            let mode = if app.raw_view { " · raw" } else { "" };
-            let search = if app.searching && app.search_target == SearchTarget::Content {
-                format!(" · /{}", app.search)
-            } else {
-                String::new()
-            };
-            format!(" {}{}{}{} · {} backlinks ", rel, tags, mode, search, app.current_backlink_count)
-        }
-        None => " (no note) ".to_string(),
-    };
-    let content_style = if app.focus == Focus::Content {
-        Style::default().fg(Color::Cyan)
-    } else {
-        Style::default()
-    };
-    let para = Paragraph::new(text)
-        .block(Block::default().borders(Borders::ALL).title(content_title).border_style(content_style))
-        .scroll((app.scroll, 0));
-    f.render_widget(para, panes[1]);
-
-    // Status bar
-    f.render_widget(
-        Paragraph::new(Line::from(app.status.clone())).style(Style::default().fg(Color::DarkGray)),
-        outer[1],
-    );
+    let (total_rows, _nearest_heading) = draw_content(f, app, content_pane, &theme);
+    draw_status(f, app, outer[1], total_rows, &theme);
 
     if app.show_help {
         draw_help(f, f.area());
     }
+}
+
+fn border_style(focused: bool, theme: &render::Theme) -> Style {
+    if focused {
+        Style::default().fg(theme.border_focused)
+    } else {
+        Style::default().fg(theme.border_unfocused)
+    }
+}
+
+fn draw_tree(f: &mut ratatui::Frame, app: &mut App, area: Rect, theme: &render::Theme) {
+    // Group flat vault-relative paths by directory. Also record the rendered
+    // row -> file mapping for mouse clicks.
+    let mut items: Vec<ListItem> = Vec::new();
+    let mut tree_rows: Vec<Option<usize>> = Vec::new();
+    let mut selected_row = 0usize;
+    let mut last_dir: Option<&str> = None;
+    for (fi, &idx) in app.filtered.iter().enumerate() {
+        let path = &app.files[idx];
+        let (dir, name) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
+        if last_dir != Some(dir) {
+            if !dir.is_empty() {
+                items.push(ListItem::new(Line::from(Span::styled(
+                    format!("▸ {}/", dir),
+                    Style::default().fg(theme.tree_dir).add_modifier(Modifier::BOLD),
+                ))));
+                tree_rows.push(None);
+            }
+            last_dir = Some(dir);
+        }
+        if fi == app.selected {
+            selected_row = items.len();
+        }
+        let indent = if dir.is_empty() { "" } else { "  " };
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled(format!("{}· ", indent), Style::default().fg(theme.text_dim)),
+            Span::raw(name.to_string()),
+        ])));
+        tree_rows.push(Some(fi));
+    }
+    app.tree_rows = tree_rows;
+
+    let tree_title = if app.searching && app.search_target == SearchTarget::Tree {
+        format!(" Files /{}▏", app.search)
+    } else {
+        format!(" Files ({}) ", app.filtered.len())
+    };
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .title(tree_title)
+                .border_style(border_style(app.focus == Focus::Tree, theme)),
+        )
+        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD));
+    if app.filtered.is_empty() {
+        app.tree_state.select(None);
+    } else {
+        app.tree_state.select(Some(selected_row));
+    }
+    let mut state = std::mem::take(&mut app.tree_state);
+    f.render_stateful_widget(list, area, &mut state);
+    app.tree_state = state;
+}
+
+/// Renders the content pane. Returns (total display rows, nearest heading).
+fn draw_content(
+    f: &mut ratatui::Frame,
+    app: &mut App,
+    area: Rect,
+    theme: &render::Theme,
+) -> (usize, Option<String>) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(border_style(app.focus == Focus::Content, theme));
+
+    // Reading-width cap: center the text block when the pane is wide.
+    let inner = block.inner(area);
+    let text_width = inner.width.min(MAX_TEXT_WIDTH);
+    let text_area = Rect {
+        x: inner.x + (inner.width - text_width) / 2,
+        y: inner.y,
+        width: text_width,
+        height: inner.height,
+    };
+    let inner_width = text_width.max(1) as usize;
+
+    let doc = app.styled_doc(inner_width, theme);
+    let query = if !app.content_matches.is_empty()
+        || (app.searching && app.search_target == SearchTarget::Content)
+    {
+        Some(app.search.as_str())
+    } else {
+        None
+    };
+    let d = render::build_display(
+        &doc,
+        inner_width,
+        app.cursor,
+        app.focus == Focus::Content,
+        query,
+        theme,
+    );
+    let total_rows = d.rows.len();
+    app.row_logical = d.row_logical.clone();
+
+    // Keep the cursor's display rows visible.
+    let view_height = inner.height;
+    app.view_height = view_height as usize;
+    if (d.cursor_row_end as u16) >= app.scroll + view_height {
+        app.scroll = d.cursor_row_end as u16 - view_height + 1;
+    }
+    if (d.cursor_row_start as u16) < app.scroll {
+        app.scroll = d.cursor_row_start as u16;
+    }
+
+    // Title: note · breadcrumb/tags · state, trimmed to fit.
+    let nearest_heading = nearest_heading_above(&app.content, app.cursor);
+    let title = content_title(app, nearest_heading.as_deref());
+    let title = truncate_middle(&title, area.width.saturating_sub(4) as usize);
+
+    f.render_widget(block.clone().title(title), area);
+    let para = Paragraph::new(ratatui::text::Text::from(d.rows)).scroll((app.scroll, 0));
+    f.render_widget(para, text_area);
+
+    // Scrollbar on the pane's right edge.
+    if total_rows > view_height as usize {
+        let mut sb_state = ratatui::widgets::ScrollbarState::new(
+            total_rows.saturating_sub(view_height as usize),
+        )
+        .position(app.scroll as usize);
+        f.render_stateful_widget(
+            ratatui::widgets::Scrollbar::new(ratatui::widgets::ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .thumb_style(Style::default().fg(theme.border_focused))
+                .track_style(Style::default().fg(theme.border_unfocused)),
+            area.inner(ratatui::layout::Margin { vertical: 1, horizontal: 0 }),
+            &mut sb_state,
+        );
+    }
+
+    (total_rows, nearest_heading)
+}
+
+fn content_title(app: &App, heading: Option<&str>) -> String {
+    match &app.current {
+        Some(rel) => {
+            let mut title = format!(" {}", rel);
+            if let Some(h) = heading {
+                if app.cursor > 0 {
+                    title.push_str(&format!(" › {}", h));
+                }
+            }
+            if !app.current_tags.is_empty() {
+                title.push_str(&format!(" · #{}", app.current_tags.join(" #")));
+            }
+            if app.raw_view {
+                title.push_str(" · raw");
+            }
+            if app.searching && app.search_target == SearchTarget::Content {
+                title.push_str(&format!(" · /{}▏", app.search));
+            }
+            title.push(' ');
+            title
+        }
+        None => " (no note) ".to_string(),
+    }
+}
+
+/// The nearest Markdown heading at or above the cursor line (outside fences).
+fn nearest_heading_above(content: &str, cursor: usize) -> Option<String> {
+    let mut in_fence = false;
+    let mut found: Option<String> = None;
+    for (i, line) in content.lines().enumerate() {
+        if i > cursor {
+            break;
+        }
+        let t = line.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        let hashes = t.chars().take_while(|&c| c == '#').count();
+        if (1..=6).contains(&hashes) && t.chars().nth(hashes) == Some(' ') {
+            found = Some(t[hashes + 1..].trim().to_string());
+        }
+    }
+    found
+}
+
+fn truncate_middle(s: &str, max: usize) -> String {
+    let count = s.chars().count();
+    if count <= max || max < 5 {
+        return s.to_string();
+    }
+    let keep = max - 1;
+    let head: String = s.chars().take(keep).collect();
+    format!("{}…", head)
+}
+
+fn draw_status(
+    f: &mut ratatui::Frame,
+    app: &App,
+    area: Rect,
+    total_rows: usize,
+    theme: &render::Theme,
+) {
+    let lines_total = app.content.lines().count().max(1);
+    let pct = if lines_total <= 1 { 100 } else { (app.cursor * 100) / (lines_total - 1) };
+    let minutes = (app.word_count + 219) / 220;
+    let _ = total_rows;
+    let right = if app.current.is_some() {
+        format!(
+            "L{}/{} · {}% · {}w · ~{}min ",
+            app.cursor + 1,
+            lines_total,
+            pct,
+            app.word_count,
+            minutes.max(1),
+        )
+    } else {
+        String::new()
+    };
+
+    let left_width = area.width.saturating_sub(right.chars().count() as u16);
+    let left = truncate_middle(&app.status, left_width.saturating_sub(1) as usize);
+    let pad = area
+        .width
+        .saturating_sub(left.chars().count() as u16 + right.chars().count() as u16);
+    let line = Line::from(vec![
+        Span::styled(left, Style::default().fg(theme.status_fg)),
+        Span::raw(" ".repeat(pad as usize)),
+        Span::styled(right, Style::default().fg(theme.status_fg)),
+    ]);
+    f.render_widget(Paragraph::new(line), area);
 }
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
@@ -302,11 +536,17 @@ Notes
   Backspace, Esc  go back
   r               toggle raw source / formatted view
 
+View
+  z               zen mode (hide file tree)
+  T               cycle theme (dark / light)
+  Mouse           wheel scrolls · click selects/opens · click twice
+                  on a line to follow its [[wikilink]]
+
 General
   ?               toggle this help
   q, Ctrl+c       quit
 ";
-    let rect = centered_rect(60, 24, area);
+    let rect = centered_rect(64, 30, area);
     f.render_widget(Clear, rect);
     let popup = Paragraph::new(HELP)
         .block(Block::default().borders(Borders::ALL).title(" Help (any key closes) "))
