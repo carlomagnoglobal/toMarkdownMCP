@@ -50,10 +50,20 @@ The same binary ships an interactive terminal viewer:
 to_markdown_mcp tui /path/to/vault    # or a single .md file
 ```
 
-Keys: `Tab` switch pane · `↑/↓` or `j/k` move · `g`/`G` or `Home`/`End` jump to
-top/bottom · `Ctrl+f`/`Ctrl+b` page down/up · `Ctrl+d`/`Ctrl+u` half-page ·
-`Enter` open file / follow the `[[wikilink]]` on the cursor line ·
-`Backspace` back · `/` filename search · `q` quit.
+Press `?` inside the app for the full in-app key reference (a popup covering
+every binding below). Summary:
+
+- **Navigation**: `↑/↓` or `j/k` move · `h`/`l` back / open·follow-link ·
+  `Space` or `Ctrl+f` page down · `Ctrl+b` page up · `Ctrl+d`/`Ctrl+u`
+  half-page · `g`/`G` or `Home`/`End` jump to top/bottom · `Tab`/`Shift+Tab`
+  switch pane
+- **Search**: `/` search — filters the file list in the tree pane, or
+  searches the open note's text in the content pane · `n`/`N` jump to the
+  next/previous match · `Enter` confirm · `Esc` cancel (fully reverts)
+- **Notes**: `Enter` open file / follow the `[[wikilink]]` on the cursor
+  line · `Backspace` or `Esc` go back · `r` toggle raw source vs. formatted
+  view (persists as you move between notes)
+- **General**: `?` toggle help · `q` or `Ctrl+c` quit
 
 Headings, bold/italic, inline/fenced code, and checkboxes (colored by state)
 are styled. Callouts (`> [!warning] ...`) render as a colored, icon-labeled

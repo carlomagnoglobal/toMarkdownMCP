@@ -8,6 +8,13 @@ pub enum Focus {
     Content,
 }
 
+/// Which pane a `/` search applies to.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SearchTarget {
+    Tree,
+    Content,
+}
+
 pub struct App {
     pub root: PathBuf,
     /// Vault-relative note paths (sorted).
@@ -25,6 +32,11 @@ pub struct App {
     pub history: Vec<String>,
     pub searching: bool,
     pub search: String,
+    pub search_target: SearchTarget,
+    /// Line numbers (0-indexed) in the open note matching the last content search.
+    pub content_matches: Vec<usize>,
+    /// Cursor position when a content search began, restored on cancel.
+    pub search_origin_cursor: usize,
     pub status: String,
     pub quit: bool,
     /// Content pane inner height, refreshed each draw; used for page/half-page jumps.
@@ -33,6 +45,10 @@ pub struct App {
     pub current_mtime: Option<SystemTime>,
     pub current_tags: Vec<String>,
     pub current_backlink_count: usize,
+    /// View the open note as raw source instead of styled Markdown. Persists
+    /// across notes until toggled.
+    pub raw_view: bool,
+    pub show_help: bool,
 }
 
 impl App {
@@ -51,12 +67,17 @@ impl App {
             history: Vec::new(),
             searching: false,
             search: String::new(),
-            status: "q quit · Enter open/follow · Tab pane · / search · Backspace back · g/G top/bottom · ^f/^b/^d/^u page".into(),
+            search_target: SearchTarget::Tree,
+            content_matches: Vec::new(),
+            search_origin_cursor: 0,
+            status: "? for help · q quit".into(),
             quit: false,
             view_height: 20,
             current_mtime: None,
             current_tags: Vec::new(),
             current_backlink_count: 0,
+            raw_view: false,
+            show_help: false,
         }
     }
 
@@ -78,6 +99,130 @@ impl App {
         self.filtered.get(self.selected).map(|&i| &self.files[i])
     }
 
+    /// Enter search-input mode. Targets the file tree or the open note's
+    /// content depending on which pane currently has focus.
+    pub fn begin_search(&mut self) {
+        self.searching = true;
+        self.search.clear();
+        self.search_target = match self.focus {
+            Focus::Tree => SearchTarget::Tree,
+            Focus::Content => SearchTarget::Content,
+        };
+        if self.search_target == SearchTarget::Content {
+            self.search_origin_cursor = self.cursor;
+            self.content_matches.clear();
+        }
+    }
+
+    pub fn type_search_char(&mut self, c: char) {
+        self.search.push(c);
+        self.recompute_search();
+    }
+
+    pub fn backspace_search(&mut self) {
+        self.search.pop();
+        self.recompute_search();
+    }
+
+    fn recompute_search(&mut self) {
+        match self.search_target {
+            SearchTarget::Tree => self.apply_filter(),
+            SearchTarget::Content => self.recompute_content_matches(),
+        }
+    }
+
+    fn recompute_content_matches(&mut self) {
+        let q = self.search.to_lowercase();
+        if q.is_empty() {
+            self.content_matches.clear();
+            return;
+        }
+        self.content_matches = self
+            .content
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| line.to_lowercase().contains(&q))
+            .map(|(i, _)| i)
+            .collect();
+        if let Some(&next) = self
+            .content_matches
+            .iter()
+            .find(|&&i| i >= self.search_origin_cursor)
+            .or_else(|| self.content_matches.first())
+        {
+            self.cursor = next;
+        }
+    }
+
+    /// Commit the in-progress search: exits input mode but keeps
+    /// `content_matches` (if any) so `n`/`N` keep working afterward.
+    pub fn commit_search(&mut self) {
+        self.searching = false;
+    }
+
+    /// Abort the in-progress search: exits input mode, restores the cursor
+    /// to where the content search began, and clears matches entirely.
+    pub fn cancel_search(&mut self) {
+        self.searching = false;
+        if self.search_target == SearchTarget::Content {
+            self.cursor = self.search_origin_cursor;
+            self.content_matches.clear();
+        }
+        self.search.clear();
+    }
+
+    /// Jump to the next content-search match after the cursor, wrapping.
+    pub fn next_match(&mut self) {
+        if self.content_matches.is_empty() {
+            self.status = "No active search (press / in the content pane)".into();
+            return;
+        }
+        let next = self
+            .content_matches
+            .iter()
+            .find(|&&i| i > self.cursor)
+            .or_else(|| self.content_matches.first())
+            .copied();
+        if let Some(line) = next {
+            self.cursor = line;
+            self.report_match_position();
+        }
+    }
+
+    /// Jump to the previous content-search match before the cursor, wrapping.
+    pub fn prev_match(&mut self) {
+        if self.content_matches.is_empty() {
+            self.status = "No active search (press / in the content pane)".into();
+            return;
+        }
+        let prev = self
+            .content_matches
+            .iter()
+            .rev()
+            .find(|&&i| i < self.cursor)
+            .or_else(|| self.content_matches.last())
+            .copied();
+        if let Some(line) = prev {
+            self.cursor = line;
+            self.report_match_position();
+        }
+    }
+
+    fn report_match_position(&mut self) {
+        if let Some(pos) = self.content_matches.iter().position(|&i| i == self.cursor) {
+            self.status = format!("match {}/{}", pos + 1, self.content_matches.len());
+        }
+    }
+
+    pub fn toggle_raw_view(&mut self) {
+        self.raw_view = !self.raw_view;
+        self.status = if self.raw_view { "raw view".into() } else { "formatted view".into() };
+    }
+
+    pub fn toggle_help(&mut self) {
+        self.show_help = !self.show_help;
+    }
+
     pub fn open(&mut self, rel: &str, push_history: bool) {
         let path = self.root.join(rel);
         match std::fs::read_to_string(&path) {
@@ -91,10 +236,11 @@ impl App {
                 self.content = content;
                 self.scroll = 0;
                 self.cursor = 0;
+                self.content_matches.clear();
                 self.focus = Focus::Content;
                 self.current_mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
                 self.refresh_vault_info();
-                self.status = format!("{} · q quit · Backspace back", rel);
+                self.status = format!("{} · ? for help", rel);
             }
             Err(e) => self.status = format!("Cannot open {}: {}", rel, e),
         }
@@ -225,6 +371,110 @@ mod tests {
         assert_ne!(app.current_mtime, before);
         assert_eq!(app.cursor, 0); // clamped: file shrank to one line
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn app_with_content(content: &str) -> App {
+        let dir = scratch_dir("search");
+        std::fs::write(dir.join("A.md"), content).unwrap();
+        let mut app = App::new(dir, vec!["A.md".into()]);
+        app.open("A.md", false);
+        app
+    }
+
+    #[test]
+    fn content_search_jumps_and_wraps() {
+        let mut app = app_with_content("alpha\nbeta\nalpha again\nbeta again\nalpha third");
+        app.cursor = 0;
+        app.begin_search();
+        assert_eq!(app.search_target, SearchTarget::Content);
+        app.type_search_char('a');
+        app.type_search_char('l');
+        app.type_search_char('p');
+        app.type_search_char('h');
+        app.type_search_char('a');
+        // Live-jump lands on the match at/after the origin cursor (line 0 itself).
+        assert_eq!(app.cursor, 0);
+        app.commit_search();
+        assert!(!app.searching);
+        assert_eq!(app.content_matches, vec![0, 2, 4]);
+
+        app.next_match();
+        assert_eq!(app.cursor, 2);
+        app.next_match();
+        assert_eq!(app.cursor, 4);
+        app.next_match(); // wraps
+        assert_eq!(app.cursor, 0);
+
+        app.prev_match(); // wraps backward
+        assert_eq!(app.cursor, 4);
+        app.prev_match();
+        assert_eq!(app.cursor, 2);
+    }
+
+    #[test]
+    fn cancel_search_restores_cursor_and_clears_matches() {
+        let mut app = app_with_content("one\ntwo\nthree\ntwo again");
+        app.cursor = 0;
+        app.begin_search();
+        app.type_search_char('t');
+        app.type_search_char('w');
+        app.type_search_char('o');
+        assert_ne!(app.content_matches.len(), 0);
+
+        app.cancel_search();
+        assert!(!app.searching);
+        assert_eq!(app.cursor, 0); // restored to origin
+        assert!(app.content_matches.is_empty());
+        assert!(app.search.is_empty());
+
+        // n/N report "no active search" rather than panicking or moving.
+        app.next_match();
+        assert_eq!(app.cursor, 0);
+        assert!(app.status.contains("No active search"));
+    }
+
+    #[test]
+    fn tree_search_unaffected_by_content_search_logic() {
+        let dir = scratch_dir("tree_search");
+        let mut app = App::new(dir.clone(), vec!["Alpha.md".into(), "Beta.md".into()]);
+        app.focus = Focus::Tree;
+        app.begin_search();
+        assert_eq!(app.search_target, SearchTarget::Tree);
+        app.type_search_char('b');
+        assert_eq!(app.filtered.len(), 1);
+        assert_eq!(app.selected_file(), Some(&"Beta.md".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn toggle_raw_view_persists_across_open() {
+        let dir = scratch_dir("raw_persist");
+        std::fs::write(dir.join("A.md"), "one").unwrap();
+        std::fs::write(dir.join("B.md"), "two").unwrap();
+        let mut app = App::new(dir.clone(), vec!["A.md".into(), "B.md".into()]);
+        app.open("A.md", false);
+        assert!(!app.raw_view);
+        app.toggle_raw_view();
+        assert!(app.raw_view);
+
+        app.open("B.md", true);
+        assert!(app.raw_view, "raw_view should persist across notes");
+
+        app.toggle_raw_view();
+        assert!(!app.raw_view);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn toggle_help_flips_flag() {
+        let dir = scratch_dir("help");
+        let mut app = App::new(dir.clone(), vec![]);
+        assert!(!app.show_help);
+        app.toggle_help();
+        assert!(app.show_help);
+        app.toggle_help();
+        assert!(!app.show_help);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
