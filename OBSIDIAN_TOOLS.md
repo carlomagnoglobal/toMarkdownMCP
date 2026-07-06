@@ -64,7 +64,10 @@ every binding below). Summary:
   line · `Backspace` or `Esc` go back · `r` toggle raw source vs. formatted
   view (persists as you move between notes)
 - **View**: `z` zen mode (hide the file tree, distraction-free) · `T` cycle
-  dark/light theme · **mouse**: wheel scrolls either pane, click selects and
+  dark/light theme · `s` text-stats popup for the open note (words, chars,
+  spaces, exact gpt-4o token count + Claude-proxy estimate, top word and
+  token frequencies — the `analyze_text` MCP tool exposes the full tables) ·
+  **mouse**: wheel scrolls either pane, click selects and
   opens a file, click a content line to move the cursor there, click it
   again to follow its wikilink
 - **General**: `?` toggle help · `q` or `Ctrl+c` quit

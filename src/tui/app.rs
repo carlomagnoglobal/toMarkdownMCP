@@ -15,6 +15,14 @@ pub enum SearchTarget {
     Content,
 }
 
+/// Precomputed text metrics for the stats popup (`s`).
+pub struct NoteStats {
+    /// Exact metrics via tiktoken o200k (gpt-4o) — includes the token table.
+    pub openai: crate::textmetrics::TextMetrics,
+    /// Claude cl100k-proxy token estimate for comparison.
+    pub anthropic_tokens: usize,
+}
+
 pub struct App {
     pub root: PathBuf,
     /// Vault-relative note paths (sorted).
@@ -50,6 +58,8 @@ pub struct App {
     /// across notes until toggled.
     pub raw_view: bool,
     pub show_help: bool,
+    /// Stats popup for the open note (computed on toggle, not per frame).
+    pub show_stats: Option<NoteStats>,
     /// Zen mode: hide the file tree, content only.
     pub zen: bool,
     /// Theme index for render::Theme::by_index.
@@ -95,6 +105,7 @@ impl App {
             word_count: 0,
             raw_view: false,
             show_help: false,
+            show_stats: None,
             zen: false,
             theme_idx: 0,
             styled_cache: None,
@@ -103,6 +114,27 @@ impl App {
             tree_rows: Vec::new(),
             tree_state: ratatui::widgets::ListState::default(),
             row_logical: Vec::new(),
+        }
+    }
+
+    /// Toggle the stats popup, computing metrics for the open note.
+    pub fn toggle_stats(&mut self) {
+        if self.show_stats.is_some() {
+            self.show_stats = None;
+            return;
+        }
+        if self.current.is_none() {
+            self.status = "Open a note first (stats analyzes the open note)".into();
+            return;
+        }
+        use crate::textmetrics::{analyze_text, TokenizerSpec};
+        let openai = analyze_text(&self.content, &TokenizerSpec::OpenAi { model: "gpt-4o".into() });
+        let anthropic = analyze_text(&self.content, &TokenizerSpec::Anthropic);
+        match (openai, anthropic) {
+            (Ok(openai), Ok(anthropic)) => {
+                self.show_stats = Some(NoteStats { openai, anthropic_tokens: anthropic.tokens });
+            }
+            (Err(e), _) | (_, Err(e)) => self.status = format!("Stats failed: {}", e),
         }
     }
 

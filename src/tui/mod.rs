@@ -136,6 +136,11 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         app.show_help = false;
         return;
     }
+    // Same for the stats popup ('s' re-toggles).
+    if app.show_stats.is_some() && code != KeyCode::Char('s') {
+        app.show_stats = None;
+        return;
+    }
 
     if app.searching {
         match code {
@@ -154,6 +159,7 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         (KeyCode::Char('r'), _) => app.toggle_raw_view(),
         (KeyCode::Char('z'), _) => app.toggle_zen(),
         (KeyCode::Char('T'), _) => app.cycle_theme(),
+        (KeyCode::Char('s'), KeyModifiers::NONE) => app.toggle_stats(),
         (KeyCode::Tab, _) | (KeyCode::BackTab, _) => {
             app.focus = if app.focus == Focus::Tree { Focus::Content } else { Focus::Tree };
         }
@@ -259,9 +265,84 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     let (total_rows, _nearest_heading) = draw_content(f, app, content_pane, &theme);
     draw_status(f, app, outer[1], total_rows, &theme);
 
+    if let Some(stats) = &app.show_stats {
+        draw_stats(f, f.area(), stats, &theme);
+    }
     if app.show_help {
         draw_help(f, f.area());
     }
+}
+
+fn draw_stats(f: &mut ratatui::Frame, area: Rect, stats: &app::NoteStats, theme: &render::Theme) {
+    let m = &stats.openai;
+    let mut lines: Vec<Line> = Vec::new();
+    let key = Style::default().fg(theme.h2).add_modifier(Modifier::BOLD);
+
+    lines.push(Line::from(vec![
+        Span::styled("  Words ", key),
+        Span::raw(m.words.to_string()),
+        Span::styled("   Chars ", key),
+        Span::raw(m.chars.to_string()),
+        Span::styled("   Spaces ", key),
+        Span::raw(m.spaces.to_string()),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  Tokens ", key),
+        Span::raw(format!("{} (gpt-4o o200k, exact)", m.tokens)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("         ", key),
+        Span::raw(format!("~{} (Claude cl100k proxy, ", stats.anthropic_tokens)),
+        Span::styled("estimate", Style::default().fg(theme.quote)),
+        Span::raw(")"),
+    ]));
+    lines.push(Line::from(""));
+
+    // Three columns: top words | top chars | top tokens
+    lines.push(Line::from(vec![
+        Span::styled(format!("  {:<26}", "── top words ──"), Style::default().fg(theme.rule)),
+        Span::styled(format!("{:<18}", "── top chars ──"), Style::default().fg(theme.rule)),
+        Span::styled("── top tokens ──", Style::default().fg(theme.rule)),
+    ]));
+    let rows = 12usize;
+    for i in 0..rows {
+        let w = m
+            .word_freq
+            .get(i)
+            .map(|(w, c)| format!("{} = {}", truncate_middle(w, 17), c))
+            .unwrap_or_default();
+        let ch = m
+            .char_freq
+            .get(i)
+            .map(|(ch, c)| format!("{} = {}", ch, c))
+            .unwrap_or_default();
+        let t = m
+            .token_freq
+            .get(i)
+            .map(|(t, c)| format!("{} = {}", truncate_middle(t, 17), c))
+            .unwrap_or_default();
+        lines.push(Line::from(vec![
+            Span::raw(format!("  {:<26}", w)),
+            Span::raw(format!("{:<18}", ch)),
+            Span::raw(t),
+        ]));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  s or any key closes · analyze_text MCP tool has full tables",
+        Style::default().fg(theme.text_dim),
+    )));
+
+    let rect = centered_rect(74, (lines.len() + 2) as u16, area);
+    f.render_widget(Clear, rect);
+    let popup = Paragraph::new(ratatui::text::Text::from(lines)).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .title(" Text Stats ")
+            .border_style(Style::default().fg(theme.border_focused)),
+    );
+    f.render_widget(popup, rect);
 }
 
 fn border_style(focused: bool, theme: &render::Theme) -> Style {
@@ -539,6 +620,8 @@ Notes
 View
   z               zen mode (hide file tree)
   T               cycle theme (dark / light)
+  s               text stats popup (words/chars/spaces/tokens + top
+                  word & token frequencies for the open note)
   Mouse           wheel scrolls · click selects/opens · click twice
                   on a line to follow its [[wikilink]]
 

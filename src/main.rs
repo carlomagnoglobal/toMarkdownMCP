@@ -36,6 +36,7 @@ mod doc_intel;
 mod llm;
 mod browser;
 mod obsidian;
+mod textmetrics;
 mod tui;
 
 use converter::convert_to_markdown_with_options;
@@ -1378,6 +1379,22 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
             }
         },
         {
+            "name": "analyze_text",
+            "description": "Complete text metrics: word/character/space/token counts plus sorted frequency tables for words, characters, and tokens. Modular provider-aware tokenization — openai (tiktoken, exact), anthropic (cl100k proxy, estimate), meta/llama/qwen/deepseek (exact with a tokenizer.json via tokenizer_file, else estimate), grok (estimate), heuristic. Estimated counts are clearly flagged.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "Inline text to analyze"},
+                    "file_path": {"type": "string", "description": "File to analyze instead of inline content"},
+                    "provider": {"type": "string", "description": "Tokenizer provider: openai, anthropic, meta, llama, qwen, deepseek, grok, heuristic (default: anthropic)", "default": "anthropic"},
+                    "model": {"type": "string", "description": "Model hint for the provider (e.g. gpt-4o vs gpt-4 selects o200k vs cl100k)"},
+                    "tokenizer_file": {"type": "string", "description": "Path to a HuggingFace tokenizer.json for exact meta/qwen/deepseek counts"},
+                    "top": {"type": "integer", "description": "Rows per frequency table (default 50; 0 = all)", "default": 50},
+                    "output_format": {"type": "string", "description": "markdown (default) or json", "default": "markdown"}
+                }
+            }
+        },
+        {
             "name": "obsidian_extract_dataview_fields",
             "description": "Extract Dataview fields — inline 'key:: value' (line, [bracketed], (parenthesized) forms) and frontmatter properties — across the vault or one note, optionally filtered by field name.",
             "inputSchema": {
@@ -1474,6 +1491,7 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
         Some("obsidian_rename_note") => handle_obsidian_rename_note(&arguments),
         Some("obsidian_convert_canvas") => handle_obsidian_convert_canvas(&arguments),
         Some("obsidian_extract_dataview_fields") => handle_obsidian_extract_dataview_fields(&arguments),
+        Some("analyze_text") => handle_analyze_text(&arguments),
         _ => {
             return JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -2142,6 +2160,42 @@ fn handle_obsidian_rename_note(args: &Value) -> Result<String, Box<dyn std::erro
     let new_name = obsidian_arg(args, "new_name")?;
     let dry_run = args.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(true);
     obsidian_result(obsidian::tools::rename_note(Path::new(vault), note, new_name, dry_run))
+}
+
+fn handle_analyze_text(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
+    let text = match (args.get("content").and_then(|v| v.as_str()), args.get("file_path").and_then(|v| v.as_str())) {
+        (Some(c), _) => c.to_string(),
+        (None, Some(path)) => std::fs::read_to_string(path)
+            .map_err(|e| Box::new(ConversionError::ConversionFailed(format!("Cannot read {}: {}", path, e))) as Box<dyn std::error::Error>)?,
+        (None, None) => {
+            return Err(Box::new(ConversionError::MissingParameter("content or file_path".to_string())));
+        }
+    };
+
+    let provider = args.get("provider").and_then(|v| v.as_str()).unwrap_or("anthropic");
+    let model = args.get("model").and_then(|v| v.as_str());
+    let tokenizer_file = args.get("tokenizer_file").and_then(|v| v.as_str());
+    let top = args.get("top").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+    let format = args.get("output_format").and_then(|v| v.as_str()).unwrap_or("markdown");
+
+    let spec = textmetrics::TokenizerSpec::from_params(provider, model, tokenizer_file)
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+    let metrics = textmetrics::analyze_text(&text, &spec)
+        .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)?;
+
+    if format == "json" {
+        let mut v = serde_json::to_value(&metrics)?;
+        if top != 0 {
+            for key in ["word_freq", "char_freq", "token_freq"] {
+                if let Some(arr) = v.get_mut(key).and_then(|a| a.as_array_mut()) {
+                    arr.truncate(top);
+                }
+            }
+        }
+        Ok(serde_json::to_string_pretty(&v)?)
+    } else {
+        Ok(textmetrics::metrics_to_markdown(&metrics, top))
+    }
 }
 
 fn handle_obsidian_convert_canvas(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
@@ -3388,7 +3442,7 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
     } else {
         // Summary of all tools
         help.push_str("# Available Tools\n\n");
-        help.push_str("**61 tools** across format conversion, browser-based web capture, file/vault operations, Obsidian vault support, an AI/RAG toolkit, and optional Claude-backed generation.\n\n");
+        help.push_str("**62 tools** across format conversion, browser-based web capture, file/vault operations, Obsidian vault support, an AI/RAG toolkit, and optional Claude-backed generation.\n\n");
         help.push_str("| Tool | Description |\n");
         help.push_str("|------|-------------|\n");
         help.push_str("| convert_file | Convert file to Markdown with HTML processing options |\n");
@@ -3451,7 +3505,8 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
         help.push_str("| obsidian_create_note_from_template | New note or daily note with {{date}}/{{title}} |\n");
         help.push_str("| obsidian_rename_note | Rename note + rewrite inbound links (dry-run default) |\n");
         help.push_str("| obsidian_convert_canvas | .canvas file to structured Markdown |\n");
-        help.push_str("| obsidian_extract_dataview_fields | Inline key:: value + frontmatter fields |\n\n");
+        help.push_str("| obsidian_extract_dataview_fields | Inline key:: value + frontmatter fields |\n");
+        help.push_str("| analyze_text | Words/chars/spaces/tokens + word, character & token frequency tables, provider-aware tokenizers |\n\n");
         help.push_str("Run the binary as `to_markdown_mcp tui [PATH]` for an interactive terminal Markdown/vault viewer.\n\n");
         help.push_str("Supported input formats: text/code, HTML/HTM/MHTML/webarchive, PDF, DOCX, DOC, RTF, ODT, XLSX/XLS/ODS/CSV, PPTX/ODP, EML, EPUB, MOBI, RSS/Atom, and markup (wiki, rst, adoc, org, tex, textile).\n\n");
         help.push_str("RAG/knowledge tools accept `output_format: \"json\"` for machine-readable output.\n\n");
