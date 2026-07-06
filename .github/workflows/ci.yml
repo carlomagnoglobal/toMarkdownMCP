@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.toml') }}
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test
+        run: cargo test --verbose
+
+      - name: Protocol smoke (tools/list)
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}' \
+            | ./target/debug/to_markdown_mcp \
+            | python3 -c "import json,sys; n=len(json.load(sys.stdin)['result']['tools']); print(n,'tools'); assert n >= 62"

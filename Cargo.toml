@@ -2,6 +2,13 @@
 name = "to_markdown_mcp"
 version = "0.1.0"
 edition = "2021"
+description = "MCP server converting anything to Markdown — documents, office files, live web pages (Chromium), Obsidian vaults — plus RAG tools and token analytics. Includes a terminal Markdown viewer."
+license = "MIT"
+repository = "https://github.com/carlomagnoglobal/toMarkdownMCP"
+readme = "README.md"
+authors = ["Carlo Magno Global"]
+keywords = ["mcp", "markdown", "converter", "obsidian", "rag"]
+categories = ["command-line-utilities", "text-processing"]
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

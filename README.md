@@ -127,6 +127,22 @@ Claude-backed generation. Call `get_tool_help` (no arguments) for the full list,
 Run `to_markdown_mcp tui [PATH]` for an interactive terminal Markdown viewer over a vault or
 file: file tree, styled rendering, `[[wikilink]]` following, and filename search.
 
+## Documentation
+
+**Guides**: [GETTING_STARTED.md](GETTING_STARTED.md) · [QUICK_START.md](QUICK_START.md) ·
+[INSTALL.md](INSTALL.md) · [USAGE.md](USAGE.md) · [DEPLOYMENT.md](DEPLOYMENT.md) ·
+[RELEASE.md](RELEASE.md) · [CHANGELOG.md](CHANGELOG.md)
+
+**Feature docs**: [BROWSER_TOOLS.md](BROWSER_TOOLS.md) · [OBSIDIAN_TOOLS.md](OBSIDIAN_TOOLS.md) ·
+[RAG_TOOLS.md](RAG_TOOLS.md) · [SECOND_BRAIN_TOOLS.md](SECOND_BRAIN_TOOLS.md) ·
+[AI_TOOLS.md](AI_TOOLS.md) · [SRE_TOOLS.md](SRE_TOOLS.md) ·
+[DOCUMENT_CONVERSION.md](DOCUMENT_CONVERSION.md) · [MARKUP_CONVERSION.md](MARKUP_CONVERSION.md)
+
+**Publishing**: [DOCKER_HUB_QUICK_START.md](DOCKER_HUB_QUICK_START.md) ·
+[MCP_REGISTRIES_GUIDE.md](MCP_REGISTRIES_GUIDE.md) ·
+[PUBLISH_TO_REGISTRIES.md](PUBLISH_TO_REGISTRIES.md) ·
+validation: [MCP_TEST_RESULTS.md](MCP_TEST_RESULTS.md)
+
 #### 1. `convert_file`
 Converts a file to Markdown format. For HTML files, supports optional metadata extraction, CSS hints, TOC generation, and image handling.
 

@@ -1,0 +1,23 @@
+{
+  "name": "toMarkdownMCP",
+  "description": "Convert anything to Markdown — documents, office files, live web pages (Chromium with human-in-the-loop), Obsidian vaults — plus RAG chunking/retrieval and provider-aware token analytics. 62 tools, pure Rust, zero MCP-framework dependencies.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": "Carlo Magno Global",
+  "homepage": "https://github.com/carlomagnoglobal/toMarkdownMCP",
+  "repository": "https://github.com/carlomagnoglobal/toMarkdownMCP",
+  "transport": "stdio",
+  "command": "to_markdown_mcp",
+  "args": [],
+  "docker": {
+    "image": "YOURUSER/tomarkdownmcp",
+    "run": ["docker", "run", "-i", "--rm", "YOURUSER/tomarkdownmcp"]
+  },
+  "categories": ["markdown", "converter", "documents", "obsidian", "rag", "browser", "knowledge-base"],
+  "tools_count": 62,
+  "tools_schema": "MCP_TOOL_SCHEMA.json",
+  "environment": {
+    "ANTHROPIC_API_KEY": "Optional — enables the ai_* generation tools",
+    "CHROME": "Optional — path to Chrome/Chromium for the browser_* tools (auto-detected when installed normally)"
+  }
+}

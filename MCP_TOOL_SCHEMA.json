@@ -1,0 +1,1902 @@
+{
+  "tools": [
+    {
+      "description": "Convert a text, code, HTML, or document file to Markdown format. Supports HTML/HTM/MHTML/webarchive; documents PDF, DOCX, DOC, RTF, ODT; spreadsheets XLSX, XLS, ODS, CSV; presentations PPTX, ODP; email EML; ebooks EPUB, MOBI; RSS/Atom feeds; and markup WIKI, RST, ADOC, ORG, TEX, TEXTILE.",
+      "inputSchema": {
+        "properties": {
+          "add_line_numbers": {
+            "default": false,
+            "description": "Add line numbers to code block (default: false)",
+            "type": "boolean"
+          },
+          "analyze_headings": {
+            "default": false,
+            "description": "Analyze heading structure and hierarchy (default: false)",
+            "type": "boolean"
+          },
+          "convert_tables": {
+            "default": false,
+            "description": "Convert HTML tables to Markdown pipe tables (default: false)",
+            "type": "boolean"
+          },
+          "extract_blockquotes": {
+            "default": false,
+            "description": "Extract and convert HTML blockquotes (default: false)",
+            "type": "boolean"
+          },
+          "extract_definition_lists": {
+            "default": false,
+            "description": "Extract and convert HTML definition lists (default: false)",
+            "type": "boolean"
+          },
+          "extract_forms": {
+            "default": false,
+            "description": "Extract HTML forms and convert to Markdown tables (default: false)",
+            "type": "boolean"
+          },
+          "extract_images": {
+            "default": false,
+            "description": "Extract and process images from HTML (default: false)",
+            "type": "boolean"
+          },
+          "extract_links": {
+            "default": false,
+            "description": "Extract and summarize all links in document (default: false)",
+            "type": "boolean"
+          },
+          "extract_metadata": {
+            "default": false,
+            "description": "Extract metadata from HTML files as YAML frontmatter (default: false)",
+            "type": "boolean"
+          },
+          "file_path": {
+            "description": "Path to the file to convert",
+            "type": "string"
+          },
+          "file_type": {
+            "description": "Optional: explicitly specify language (overrides detection)",
+            "type": "string"
+          },
+          "generate_toc": {
+            "default": false,
+            "description": "Generate table of contents from headings (default: false)",
+            "type": "boolean"
+          },
+          "image_format": {
+            "default": "link",
+            "description": "Image output format: 'link' (external URLs), 'skip' (remove), or 'embed' (base64, default: 'link')",
+            "type": "string"
+          },
+          "include_filename": {
+            "default": true,
+            "description": "Include filename as Markdown heading (default: true)",
+            "type": "boolean"
+          },
+          "preserve_comments": {
+            "default": false,
+            "description": "Preserve HTML comments in output (default: false)",
+            "type": "boolean"
+          },
+          "preserve_css_hints": {
+            "default": false,
+            "description": "Preserve CSS styling hints as HTML comments in output (default: false)",
+            "type": "boolean"
+          },
+          "toc_max_level": {
+            "default": 3,
+            "description": "Maximum heading level to include in TOC (1-6, default: 3)",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_path"
+        ],
+        "type": "object"
+      },
+      "name": "convert_file"
+    },
+    {
+      "description": "Convert plain text content to Markdown format",
+      "inputSchema": {
+        "properties": {
+          "add_line_numbers": {
+            "default": false,
+            "description": "Add line numbers to code block (default: false)",
+            "type": "boolean"
+          },
+          "content": {
+            "description": "The text content to convert",
+            "type": "string"
+          },
+          "file_type": {
+            "description": "Optional: specify code language (e.g., 'rust', 'python', 'javascript')",
+            "type": "string"
+          },
+          "title": {
+            "description": "Optional: title for the markdown document",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "type": "object"
+      },
+      "name": "convert_text"
+    },
+    {
+      "description": "Convert code or HTML from various sources (file, URL, stdin) to Markdown",
+      "inputSchema": {
+        "properties": {
+          "add_line_numbers": {
+            "default": false,
+            "description": "Add line numbers to code block (default: false)",
+            "type": "boolean"
+          },
+          "analyze_headings": {
+            "default": false,
+            "description": "Analyze heading structure and hierarchy (default: false)",
+            "type": "boolean"
+          },
+          "convert_tables": {
+            "default": false,
+            "description": "Convert HTML tables to Markdown pipe tables (default: false)",
+            "type": "boolean"
+          },
+          "extract_blockquotes": {
+            "default": false,
+            "description": "Extract and convert HTML blockquotes (default: false)",
+            "type": "boolean"
+          },
+          "extract_definition_lists": {
+            "default": false,
+            "description": "Extract and convert HTML definition lists (default: false)",
+            "type": "boolean"
+          },
+          "extract_forms": {
+            "default": false,
+            "description": "Extract HTML forms and convert to Markdown tables (default: false)",
+            "type": "boolean"
+          },
+          "extract_images": {
+            "default": false,
+            "description": "Extract and process images from HTML (default: false)",
+            "type": "boolean"
+          },
+          "extract_links": {
+            "default": false,
+            "description": "Extract and summarize all links in document (default: false)",
+            "type": "boolean"
+          },
+          "extract_metadata": {
+            "default": false,
+            "description": "Extract metadata from HTML as YAML frontmatter (default: false)",
+            "type": "boolean"
+          },
+          "file_type": {
+            "description": "Optional: specify code language (auto-detected from file extension if omitted)",
+            "type": "string"
+          },
+          "generate_toc": {
+            "default": false,
+            "description": "Generate table of contents from headings (default: false)",
+            "type": "boolean"
+          },
+          "image_format": {
+            "default": "link",
+            "description": "Image output format: 'link' (external URLs), 'skip' (remove), or 'embed' (base64, default: 'link')",
+            "type": "string"
+          },
+          "preserve_comments": {
+            "default": false,
+            "description": "Preserve HTML comments in output (default: false)",
+            "type": "boolean"
+          },
+          "preserve_css_hints": {
+            "default": false,
+            "description": "Preserve CSS styling hints as HTML comments (default: false)",
+            "type": "boolean"
+          },
+          "source": {
+            "description": "Source: file path, URL (http://...), or '-' for stdin",
+            "type": "string"
+          },
+          "title": {
+            "description": "Optional: title for the markdown document",
+            "type": "string"
+          },
+          "toc_max_level": {
+            "default": 3,
+            "description": "Maximum heading level to include in TOC (1-6, default: 3)",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "name": "convert_from_source"
+    },
+    {
+      "description": "List all code files in a directory (recursively)",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "description": "Directory path to scan for code files",
+            "type": "string"
+          },
+          "recursive": {
+            "default": true,
+            "description": "Recursively scan subdirectories (default: true)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "directory"
+        ],
+        "type": "object"
+      },
+      "name": "list_directory_files"
+    },
+    {
+      "description": "Get a lightweight summary of a file including metadata, headings, and preview",
+      "inputSchema": {
+        "properties": {
+          "file_path": {
+            "description": "Path to the file to summarize",
+            "type": "string"
+          },
+          "preview_length": {
+            "default": 300,
+            "description": "Number of characters to include in preview (default: 300)",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_path"
+        ],
+        "type": "object"
+      },
+      "name": "get_file_summary"
+    },
+    {
+      "description": "Convert multiple files to Markdown in one call",
+      "inputSchema": {
+        "properties": {
+          "convert_tables": {
+            "default": false,
+            "description": "Convert HTML tables to Markdown (default: false)",
+            "type": "boolean"
+          },
+          "extract_forms": {
+            "default": false,
+            "description": "Extract HTML forms (default: false)",
+            "type": "boolean"
+          },
+          "extract_images": {
+            "default": false,
+            "description": "Extract images from HTML (default: false)",
+            "type": "boolean"
+          },
+          "extract_links": {
+            "default": false,
+            "description": "Extract and summarize links (default: false)",
+            "type": "boolean"
+          },
+          "extract_metadata": {
+            "default": false,
+            "description": "Extract metadata from HTML files (default: false)",
+            "type": "boolean"
+          },
+          "file_paths": {
+            "description": "List of file paths to convert (up to 10)",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "image_format": {
+            "default": "link",
+            "description": "Image format: 'link' (default), 'skip', or 'embed'",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_paths"
+        ],
+        "type": "object"
+      },
+      "name": "batch_convert_files"
+    },
+    {
+      "description": "Search for text across files and return matching snippets",
+      "inputSchema": {
+        "properties": {
+          "context_chars": {
+            "default": 150,
+            "description": "Characters of context around match (default: 150)",
+            "type": "integer"
+          },
+          "directory": {
+            "description": "Directory to search (recursively)",
+            "type": "string"
+          },
+          "max_results": {
+            "default": 5,
+            "description": "Maximum number of files with matches (default: 5)",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Text to search for (case-insensitive)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "directory",
+          "query"
+        ],
+        "type": "object"
+      },
+      "name": "search_files"
+    },
+    {
+      "description": "List recently modified files in a directory",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "description": "Directory to scan",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of files to return (default: 10)",
+            "type": "integer"
+          },
+          "recursive": {
+            "default": true,
+            "description": "Recursively scan subdirectories (default: true)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "directory"
+        ],
+        "type": "object"
+      },
+      "name": "get_recently_modified_files"
+    },
+    {
+      "description": "Returns statistics about a directory: file counts by type, top-level folder list, and top 20 most frequent tags from Markdown files",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "description": "Root directory to analyze",
+            "type": "string"
+          }
+        },
+        "required": [
+          "directory"
+        ],
+        "type": "object"
+      },
+      "name": "get_vault_statistics"
+    },
+    {
+      "description": "Scans for uncompleted tasks (lines containing '- [ ]') and returns them grouped by file",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": ".",
+            "description": "Root directory to scan (default: current directory)",
+            "type": "string"
+          },
+          "folder_scope": {
+            "description": "Optional subfolder path to restrict scan",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "extract_active_todos"
+    },
+    {
+      "description": "Updates content under a specific heading in a Markdown file without touching the rest of the document",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Markdown content to insert",
+            "type": "string"
+          },
+          "heading": {
+            "description": "Heading name to target (without # symbols, e.g. 'Action Items')",
+            "type": "string"
+          },
+          "mode": {
+            "default": "append",
+            "description": "'append' adds to bottom of section; 'overwrite' replaces everything under the heading",
+            "enum": [
+              "append",
+              "overwrite"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "Path to the Markdown file",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "heading",
+          "content"
+        ],
+        "type": "object"
+      },
+      "name": "safe_append_or_replace_section"
+    },
+    {
+      "description": "Validates a list of note names or file paths against real files on disk",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": ".",
+            "description": "Root directory to search (default: current directory)",
+            "type": "string"
+          },
+          "links": {
+            "description": "Note names, filenames, or paths to validate",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "links"
+        ],
+        "type": "object"
+      },
+      "name": "resolve_and_validate_links"
+    },
+    {
+      "description": "Inserts or overwrites a Markdown table under a specific heading. Creates file if it does not exist",
+      "inputSchema": {
+        "properties": {
+          "headers": {
+            "description": "Column names for the table",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "heading": {
+            "description": "Section heading under which the table should be placed",
+            "type": "string"
+          },
+          "path": {
+            "description": "Path to the Markdown file (will be created if absent)",
+            "type": "string"
+          },
+          "rows": {
+            "description": "Array of rows, each an array of cell strings",
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "heading",
+          "headers",
+          "rows"
+        ],
+        "type": "object"
+      },
+      "name": "upsert_markdown_table"
+    },
+    {
+      "description": "Read raw file content as-is, without any conversion or processing",
+      "inputSchema": {
+        "properties": {
+          "end_line": {
+            "description": "Last line to return (omit for full file)",
+            "type": "integer"
+          },
+          "path": {
+            "description": "Path to the file to read",
+            "type": "string"
+          },
+          "start_line": {
+            "default": 1,
+            "description": "First line to return (default: 1)",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "name": "read_file"
+    },
+    {
+      "description": "Create a new file with content, or append/overwrite an existing file",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Content to write or append",
+            "type": "string"
+          },
+          "mode": {
+            "default": "create",
+            "description": "Mode: 'create' (fails if exists), 'append' (add to end), 'overwrite' (replace entirely)",
+            "enum": [
+              "create",
+              "append",
+              "overwrite"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "Path to the file to create or modify",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object"
+      },
+      "name": "create_or_append_file"
+    },
+    {
+      "description": "Get help on available tools. Specify a tool name for detailed help, or omit for a summary of all tools",
+      "inputSchema": {
+        "properties": {
+          "tool_name": {
+            "description": "Name of a specific tool (omit for full list)",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "get_tool_help"
+    },
+    {
+      "description": "Move or rename a file or directory to a new path",
+      "inputSchema": {
+        "properties": {
+          "new_path": {
+            "description": "Destination path (including new filename)",
+            "type": "string"
+          },
+          "old_path": {
+            "description": "Current file or directory path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "old_path",
+          "new_path"
+        ],
+        "type": "object"
+      },
+      "name": "move_or_rename_file"
+    },
+    {
+      "description": "Permanently delete a file or directory (irreversible)",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "description": "Path to file or directory to delete",
+            "type": "string"
+          },
+          "recursive": {
+            "default": false,
+            "description": "Required true to delete non-empty directories (default: false)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "name": "delete_file"
+    },
+    {
+      "description": "Create multiple new files in one call",
+      "inputSchema": {
+        "properties": {
+          "notes": {
+            "description": "Array of {path, content} objects (up to 20)",
+            "items": {
+              "properties": {
+                "content": {
+                  "description": "File content",
+                  "type": "string"
+                },
+                "path": {
+                  "description": "File path (parent directories auto-created)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "notes"
+        ],
+        "type": "object"
+      },
+      "name": "batch_create_notes"
+    },
+    {
+      "description": "Update YAML frontmatter properties in a Markdown file without changing the body",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "description": "Path to the Markdown file",
+            "type": "string"
+          },
+          "properties": {
+            "description": "Key-value pairs to set or update (set value to null to remove)",
+            "type": "object"
+          }
+        },
+        "required": [
+          "path",
+          "properties"
+        ],
+        "type": "object"
+      },
+      "name": "update_note_properties"
+    },
+    {
+      "description": "Fuzzy lookup to find a file by name, filename snippet, or frontmatter alias",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": ".",
+            "description": "Root directory to search (default: current directory)",
+            "type": "string"
+          },
+          "search_term": {
+            "description": "Conceptual name, filename snippet, or alias to search for",
+            "type": "string"
+          }
+        },
+        "required": [
+          "search_term"
+        ],
+        "type": "object"
+      },
+      "name": "find_note_by_alias_or_title"
+    },
+    {
+      "description": "Map wiki-link connections: outlinks (references this file makes) and backlinks (files that reference this file)",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": ".",
+            "description": "Root directory to scan for backlinks (default: current directory)",
+            "type": "string"
+          },
+          "path": {
+            "description": "File path to analyze",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "name": "get_graph_relationships"
+    },
+    {
+      "description": "Split a Markdown/document file into heading-aware, token-bounded chunks for RAG/embeddings. Dual output: readable Markdown or structured JSON (output_format=json).",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline Markdown/text to chunk instead of a file.",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to chunk (any supported format). Provide this or 'content'.",
+            "type": "string"
+          },
+          "max_tokens": {
+            "default": 512,
+            "description": "Max approximate tokens per chunk",
+            "type": "integer"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          },
+          "overlap": {
+            "default": 64,
+            "description": "Word overlap between adjacent chunks",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "chunk_markdown"
+    },
+    {
+      "description": "Convert any supported file to Markdown then chunk it into JSON records ({id, text, metadata}) ready for embedding. Primary ingestion entry point for RAG pipelines.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file.",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to ingest (any supported format).",
+            "type": "string"
+          },
+          "max_tokens": {
+            "default": 512,
+            "type": "integer"
+          },
+          "output_format": {
+            "default": "json",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          },
+          "overlap": {
+            "default": 64,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "extract_chunks_for_rag"
+    },
+    {
+      "description": "Extract a nested heading outline (level/title/anchor/children) from a document. Dual output: Markdown list or JSON tree.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file.",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to outline (any supported format).",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "get_document_outline"
+    },
+    {
+      "description": "Search inside converted document content across a directory, ranked by term frequency. Returns ranked snippets with source and score. Dual output: Markdown or JSON.",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": ".",
+            "description": "Directory to search (recursive)",
+            "type": "string"
+          },
+          "max_results": {
+            "default": 10,
+            "type": "integer"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Search terms",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "name": "search_content"
+    },
+    {
+      "description": "Word/vocabulary statistics for a file: total words, distinct words, vocabulary richness, sentence/paragraph counts, and a per-word frequency table. Dual output: Markdown or JSON.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file.",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to analyze (any supported format).",
+            "type": "string"
+          },
+          "min_length": {
+            "default": 1,
+            "description": "Ignore words shorter than this",
+            "type": "integer"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          },
+          "stopwords": {
+            "default": false,
+            "description": "Exclude common English stopwords",
+            "type": "boolean"
+          },
+          "top_n": {
+            "default": 25,
+            "description": "Number of top words to report",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "get_text_statistics"
+    },
+    {
+      "description": "Aggregate word statistics across a directory: per-document word/distinct counts plus corpus totals and global distinct-word count. Dual output: Markdown or JSON.",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": ".",
+            "description": "Directory to analyze (recursive)",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          },
+          "stopwords": {
+            "default": true,
+            "description": "Exclude common English stopwords",
+            "type": "boolean"
+          },
+          "top_n": {
+            "default": 25,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "get_corpus_statistics"
+    },
+    {
+      "description": "Extract #tags and frontmatter tags. With 'directory' builds a vault-wide tag index {tag, count, files}; with 'file_path'/'content' returns tags for one note. Dual output.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "directory": {
+            "description": "Vault directory to build a tag index from",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "Single file to extract tags from",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "extract_tags"
+    },
+    {
+      "description": "Salient terms for a document via TF-IDF (pass 'directory' to use the vault as the IDF corpus). Answers 'what is this note about'. Dual output.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "directory": {
+            "description": "Optional corpus directory for IDF weighting",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to analyze",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          },
+          "top_n": {
+            "default": 10,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "extract_keywords"
+    },
+    {
+      "description": "Find notes similar to a given note via cosine similarity over TF vectors, boosted by shared tags/links. Powers 'see also' and RAG neighbor expansion. Dual output.",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": ".",
+            "description": "Vault directory to search",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "The note to find neighbors for",
+            "type": "string"
+          },
+          "max_results": {
+            "default": 5,
+            "type": "integer"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path"
+        ],
+        "type": "object"
+      },
+      "name": "find_related_notes"
+    },
+    {
+      "description": "Extractive TL;DR: rank sentences by keyword density and position and return the top ones. Deterministic, no LLM. Dual output.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to summarize",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          },
+          "sentences": {
+            "default": 3,
+            "description": "Number of sentences to return",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "summarize_document"
+    },
+    {
+      "description": "Mine Q:/A: lines and '?'-terminated headings into {question, answer, source} pairs \u2014 flashcards, eval sets, or RAG ground-truth. Dual output.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to mine",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "extract_qa_pairs"
+    },
+    {
+      "description": "Lightweight entity extraction: URLs, emails, dates, and capitalized name phrases, aggregated with counts. Dual output.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to analyze",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "extract_entities"
+    },
+    {
+      "description": "Flagship 'second brain' export: one JSON artifact bundling summary, outline, tags, keywords, stats, and RAG chunks for a document \u2014 a single object an AI agent or vector DB can ingest to 'know' the note. Always JSON.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to index (any supported format)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "build_knowledge_index"
+    },
+    {
+      "description": "RAG retrieval: rank chunks across a directory (or file) against a query and assemble the top ones into one context block under a token budget, with citations. The retrieval step to feed an LLM. Dual output.",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": ".",
+            "description": "Directory to search (recursive)",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "Single file to retrieve from instead of a directory",
+            "type": "string"
+          },
+          "max_tokens": {
+            "default": 2000,
+            "description": "Context token budget",
+            "type": "integer"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "The question/topic to retrieve context for",
+            "type": "string"
+          },
+          "top_k": {
+            "default": 8,
+            "description": "Max number of chunks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "name": "retrieve_context"
+    },
+    {
+      "description": "Estimate token count for a file/content and show whether it fits each model's context window (Opus 4.8, Sonnet 5, Haiku 4.5). Dual output.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to measure (any supported format)",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "count_tokens"
+    },
+    {
+      "description": "Detect near-duplicate documents across a directory using SimHash. Returns groups of similar files with a similarity score. Dual output.",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": ".",
+            "description": "Directory to scan (recursive)",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          },
+          "threshold": {
+            "default": 3,
+            "description": "Max differing bits (0-64); lower is stricter",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "find_duplicates"
+    },
+    {
+      "description": "Cluster documents in a directory by topic via cosine similarity over term vectors. Returns labeled groups with top terms. Dual output.",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": ".",
+            "description": "Directory to cluster (recursive)",
+            "type": "string"
+          },
+          "min_similarity": {
+            "default": 0.2,
+            "description": "Minimum cosine similarity to join a cluster",
+            "type": "number"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "cluster_documents"
+    },
+    {
+      "description": "Compute Flesch Reading Ease and Flesch-Kincaid grade level with word/sentence/syllable counts. Dual output.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to analyze (any supported format)",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "analyze_readability"
+    },
+    {
+      "description": "Detect the natural language of a document (English/Spanish/French/German/Portuguese/Italian) via function-word analysis. Dual output.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to analyze (any supported format)",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          },
+          "top_n": {
+            "default": 3,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "detect_natural_language"
+    },
+    {
+      "description": "Heuristic topic/content-type classification (technical, finance, legal, correspondence, academic, marketing) via keyword signals. Dual output. See ai_classify for the LLM version.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to classify (any supported format)",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "classify_document"
+    },
+    {
+      "description": "Abstractive summary via the Claude API (requires ANTHROPIC_API_KEY; returns a setup note if absent). Local alternative: summarize_document.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to summarize (any supported format)",
+            "type": "string"
+          },
+          "max_tokens": {
+            "default": 600,
+            "type": "integer"
+          },
+          "model": {
+            "description": "Override model (default claude-haiku-4-5)",
+            "type": "string"
+          },
+          "style": {
+            "default": "concise",
+            "description": "Summary style, e.g. concise, detailed, bullet points",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "ai_summarize"
+    },
+    {
+      "description": "RAG question-answering via the Claude API: retrieves relevant context across a directory/file, then answers grounded in it with citations (requires ANTHROPIC_API_KEY).",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": ".",
+            "description": "Directory to retrieve context from",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "Single file to answer from instead of a directory",
+            "type": "string"
+          },
+          "max_tokens": {
+            "default": 800,
+            "type": "integer"
+          },
+          "model": {
+            "description": "Override model (default claude-haiku-4-5)",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "json"
+            ],
+            "type": "string"
+          },
+          "question": {
+            "description": "The question to answer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "name": "ai_ask"
+    },
+    {
+      "description": "Suggest topical tags for a document via the Claude API (requires ANTHROPIC_API_KEY). Local alternative: extract_keywords.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to tag (any supported format)",
+            "type": "string"
+          },
+          "max_tags": {
+            "default": 8,
+            "type": "integer"
+          },
+          "model": {
+            "description": "Override model (default claude-haiku-4-5)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "ai_tag"
+    },
+    {
+      "description": "Translate a document to a target language via the Claude API, preserving Markdown (requires ANTHROPIC_API_KEY).",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to translate (any supported format)",
+            "type": "string"
+          },
+          "max_tokens": {
+            "default": 2000,
+            "type": "integer"
+          },
+          "model": {
+            "description": "Override model (default claude-haiku-4-5)",
+            "type": "string"
+          },
+          "target_language": {
+            "description": "Target language, e.g. Spanish, French",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_language"
+        ],
+        "type": "object"
+      },
+      "name": "ai_translate"
+    },
+    {
+      "description": "Classify a document into caller-provided labels via the Claude API (requires ANTHROPIC_API_KEY). Local alternative: classify_document.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline content instead of a file",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to classify (any supported format)",
+            "type": "string"
+          },
+          "labels": {
+            "description": "Candidate labels",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "Override model (default claude-haiku-4-5)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "labels"
+        ],
+        "type": "object"
+      },
+      "name": "ai_classify"
+    },
+    {
+      "description": "Open a URL in a real Chromium browser (executes JavaScript, keeps cookies/session). Headless by default; set visible=true to show the window so a human can solve CAPTCHAs, log in, or dismiss banners. The session stays open across tool calls \u2014 follow up with browser_capture_markdown to convert the rendered page, and browser_close when done.",
+      "inputSchema": {
+        "properties": {
+          "timeout_seconds": {
+            "default": 30,
+            "description": "Navigation timeout in seconds (default: 30)",
+            "type": "integer"
+          },
+          "url": {
+            "description": "URL to open (http:// or https://)",
+            "type": "string"
+          },
+          "user_agent": {
+            "description": "Optional custom User-Agent string",
+            "type": "string"
+          },
+          "visible": {
+            "default": false,
+            "description": "Show the browser window for human interaction (default: false = headless)",
+            "type": "boolean"
+          },
+          "wait_seconds": {
+            "default": 0,
+            "description": "Extra seconds to wait after page load for JS-rendered content to settle (default: 0)",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "name": "browser_open_url"
+    },
+    {
+      "description": "Capture the rendered HTML of the page currently open in the browser session (after any human interaction) and convert it to Markdown. Optionally pass a url to navigate first \u2014 with no prior session this opens a headless browser, so JS-heavy pages can be converted in a single call. Supports the same HTML processing options as convert_from_source.",
+      "inputSchema": {
+        "properties": {
+          "analyze_headings": {
+            "default": false,
+            "description": "Analyze heading structure (default: false)",
+            "type": "boolean"
+          },
+          "convert_tables": {
+            "default": false,
+            "description": "Convert HTML tables to Markdown tables (default: false)",
+            "type": "boolean"
+          },
+          "extract_definition_lists": {
+            "default": false,
+            "description": "Extract definition lists (default: false)",
+            "type": "boolean"
+          },
+          "extract_forms": {
+            "default": false,
+            "description": "Extract form structure (default: false)",
+            "type": "boolean"
+          },
+          "extract_images": {
+            "default": false,
+            "description": "Extract and process images (default: false)",
+            "type": "boolean"
+          },
+          "extract_links": {
+            "default": false,
+            "description": "Extract link summary (default: false)",
+            "type": "boolean"
+          },
+          "extract_metadata": {
+            "default": false,
+            "description": "Extract page metadata as YAML frontmatter (default: false)",
+            "type": "boolean"
+          },
+          "generate_toc": {
+            "default": false,
+            "description": "Generate table of contents from headings (default: false)",
+            "type": "boolean"
+          },
+          "image_format": {
+            "default": "link",
+            "description": "Image output format: link, reference, or base64 (default: link)",
+            "type": "string"
+          },
+          "preserve_comments": {
+            "default": false,
+            "description": "Preserve HTML comments with summary (default: false)",
+            "type": "boolean"
+          },
+          "preserve_css_hints": {
+            "default": false,
+            "description": "Preserve CSS styling hints as HTML comments (default: false)",
+            "type": "boolean"
+          },
+          "timeout_seconds": {
+            "default": 30,
+            "description": "Navigation timeout in seconds when url is given (default: 30)",
+            "type": "integer"
+          },
+          "toc_max_level": {
+            "default": 3,
+            "description": "Maximum heading level to include in TOC (1-6, default: 3)",
+            "type": "integer"
+          },
+          "url": {
+            "description": "Optional URL to navigate to before capturing (opens a headless session if none exists)",
+            "type": "string"
+          },
+          "wait_seconds": {
+            "default": 0,
+            "description": "Extra seconds to wait after navigation before capturing (default: 0)",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "browser_capture_markdown"
+    },
+    {
+      "description": "Close the Chromium browser session opened by browser_open_url and free its resources.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "browser_close"
+    },
+    {
+      "description": "Index an Obsidian vault: note/attachment counts, tag frequencies, aliases, broken and ambiguous wikilinks, and optionally orphan notes. Understands [[link|alias]], [[note#heading]], [[note#^block]], ![[embeds]] and frontmatter aliases.",
+      "inputSchema": {
+        "properties": {
+          "include_orphans": {
+            "default": false,
+            "description": "List notes with no inbound links (default: false)",
+            "type": "boolean"
+          },
+          "vault_path": {
+            "description": "Path to the vault root directory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault_path"
+        ],
+        "type": "object"
+      },
+      "name": "obsidian_vault_index"
+    },
+    {
+      "description": "Get a note by path, filename stem, or frontmatter alias: parsed YAML frontmatter, aliases, tags (frontmatter + inline #tags), headings, outgoing wikilinks, backlink count, and content. Optionally transclude ![[embeds]] recursively.",
+      "inputSchema": {
+        "properties": {
+          "inline_embeds": {
+            "default": false,
+            "description": "Replace ![[embeds]] with the embedded note content (default: false)",
+            "type": "boolean"
+          },
+          "max_embed_depth": {
+            "default": 3,
+            "description": "Maximum transclusion recursion depth (default: 3)",
+            "type": "integer"
+          },
+          "note": {
+            "description": "Note path, stem, or alias",
+            "type": "string"
+          },
+          "vault_path": {
+            "description": "Path to the vault root directory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault_path",
+          "note"
+        ],
+        "type": "object"
+      },
+      "name": "obsidian_get_note"
+    },
+    {
+      "description": "Resolve a wikilink string ([[target#heading|alias]], alias, path, or ^block form) using Obsidian's shortest-path rules. Reports Resolved/Ambiguous/Broken, whether the heading exists, and the block anchor line.",
+      "inputSchema": {
+        "properties": {
+          "from_note": {
+            "description": "Source note for same-folder disambiguation (optional)",
+            "type": "string"
+          },
+          "link": {
+            "description": "Link text, with or without [[ ]]",
+            "type": "string"
+          },
+          "vault_path": {
+            "description": "Path to the vault root directory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault_path",
+          "link"
+        ],
+        "type": "object"
+      },
+      "name": "obsidian_resolve_link"
+    },
+    {
+      "description": "List all inbound wikilinks to a note \u2014 including alias, heading, block, and embed forms \u2014 with the linking note and the source line as context.",
+      "inputSchema": {
+        "properties": {
+          "note": {
+            "description": "Note path, stem, or alias",
+            "type": "string"
+          },
+          "vault_path": {
+            "description": "Path to the vault root directory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault_path",
+          "note"
+        ],
+        "type": "object"
+      },
+      "name": "obsidian_get_backlinks"
+    },
+    {
+      "description": "Search an Obsidian vault by tag (with nested-tag prefix matching), alias, frontmatter field (key or key=value), or full text.",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 50,
+            "description": "Maximum hits (default: 50)",
+            "type": "integer"
+          },
+          "mode": {
+            "description": "One of: tag, alias, field, text",
+            "enum": [
+              "tag",
+              "alias",
+              "field",
+              "text"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Search query; for field mode use 'key' or 'key=value'",
+            "type": "string"
+          },
+          "vault_path": {
+            "description": "Path to the vault root directory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault_path",
+          "query",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "name": "obsidian_search"
+    },
+    {
+      "description": "List checkbox tasks across the vault or one note, with all states ([ ] open, [x] done, [/] in progress, [-] cancelled, [>] forwarded, ...), nesting depth, #tags, and Tasks-plugin dates (\ud83d\udcc5 due, \u2705 done, \u23f3 scheduled, \ud83d\udeeb start, \ud83d\udd01 recurrence).",
+      "inputSchema": {
+        "properties": {
+          "note": {
+            "description": "Limit to one note (path, stem, or alias)",
+            "type": "string"
+          },
+          "status": {
+            "description": "Filter: open, done, in_progress, cancelled, forwarded, or a raw state char",
+            "type": "string"
+          },
+          "vault_path": {
+            "description": "Path to the vault root directory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault_path"
+        ],
+        "type": "object"
+      },
+      "name": "obsidian_list_tasks"
+    },
+    {
+      "description": "Read the vault's .obsidian configuration: attachment folder, new-link format, daily-notes folder/format/template, templates folder, and enabled core plugins.",
+      "inputSchema": {
+        "properties": {
+          "vault_path": {
+            "description": "Path to the vault root directory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault_path"
+        ],
+        "type": "object"
+      },
+      "name": "obsidian_get_vault_config"
+    },
+    {
+      "description": "Create a note (or today's daily note per .obsidian/daily-notes.json) from a template, substituting {{title}}, {{date}}, {{time}}, and {{date:FORMAT}}. Refuses to overwrite existing notes.",
+      "inputSchema": {
+        "properties": {
+          "daily": {
+            "default": false,
+            "description": "Create today's daily note using the vault's daily-notes settings (default: false)",
+            "type": "boolean"
+          },
+          "template": {
+            "description": "Vault-relative template path (default: daily-notes template when daily=true)",
+            "type": "string"
+          },
+          "title": {
+            "description": "Note title, optionally with folder ('projects/New Idea'). Required unless daily=true",
+            "type": "string"
+          },
+          "vault_path": {
+            "description": "Path to the vault root directory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault_path"
+        ],
+        "type": "object"
+      },
+      "name": "obsidian_create_note_from_template"
+    },
+    {
+      "description": "Rename or move a note and rewrite every inbound wikilink (preserving |alias, #heading, and #^block fragments), like Obsidian's own rename. dry_run defaults to true \u2014 pass dry_run=false to apply.",
+      "inputSchema": {
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "description": "Preview changes without writing (default: true)",
+            "type": "boolean"
+          },
+          "new_name": {
+            "description": "New stem (same folder) or vault-relative path",
+            "type": "string"
+          },
+          "note": {
+            "description": "Note to rename (path, stem, or alias)",
+            "type": "string"
+          },
+          "vault_path": {
+            "description": "Path to the vault root directory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault_path",
+          "note",
+          "new_name"
+        ],
+        "type": "object"
+      },
+      "name": "obsidian_rename_note"
+    },
+    {
+      "description": "Convert an Obsidian .canvas file (JsonCanvas: text/file/link/group nodes and edges) to structured Markdown with groups, nodes in reading order, and connections.",
+      "inputSchema": {
+        "properties": {
+          "canvas_path": {
+            "description": "Path to the .canvas file",
+            "type": "string"
+          }
+        },
+        "required": [
+          "canvas_path"
+        ],
+        "type": "object"
+      },
+      "name": "obsidian_convert_canvas"
+    },
+    {
+      "description": "Complete text metrics: word/character/space/token counts plus sorted frequency tables for words, characters, and tokens. Modular provider-aware tokenization \u2014 openai (tiktoken, exact), anthropic (cl100k proxy, estimate), meta/llama/qwen/deepseek (exact with a tokenizer.json via tokenizer_file, else estimate), grok (estimate), heuristic. Estimated counts are clearly flagged.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "Inline text to analyze",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File to analyze instead of inline content",
+            "type": "string"
+          },
+          "model": {
+            "description": "Model hint for the provider (e.g. gpt-4o vs gpt-4 selects o200k vs cl100k)",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "markdown",
+            "description": "markdown (default) or json",
+            "type": "string"
+          },
+          "provider": {
+            "default": "anthropic",
+            "description": "Tokenizer provider: openai, anthropic, meta, llama, qwen, deepseek, grok, heuristic (default: anthropic)",
+            "type": "string"
+          },
+          "tokenizer_file": {
+            "description": "Path to a HuggingFace tokenizer.json for exact meta/qwen/deepseek counts",
+            "type": "string"
+          },
+          "top": {
+            "default": 50,
+            "description": "Rows per frequency table (default 50; 0 = all)",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "analyze_text"
+    },
+    {
+      "description": "Extract Dataview fields \u2014 inline 'key:: value' (line, [bracketed], (parenthesized) forms) and frontmatter properties \u2014 across the vault or one note, optionally filtered by field name.",
+      "inputSchema": {
+        "properties": {
+          "field": {
+            "description": "Only this field name (case-insensitive)",
+            "type": "string"
+          },
+          "note": {
+            "description": "Limit to one note (path, stem, or alias)",
+            "type": "string"
+          },
+          "vault_path": {
+            "description": "Path to the vault root directory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault_path"
+        ],
+        "type": "object"
+      },
+      "name": "obsidian_extract_dataview_fields"
+    }
+  ]
+}

@@ -10,7 +10,7 @@ non-interactively for automated testing.
 Build the binary once, then drive it over JSON-RPC/stdio:
 
 ```bash
-cd /Users/elisjmendez/Documents/toMarkdownMCP
+cd /path/to/toMarkdownMCP
 cargo build
 python3 developer_examples/capture_url.py https://example.com/some-article developer_examples/output.md
 ```
