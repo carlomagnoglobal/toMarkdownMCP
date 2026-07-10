@@ -50,15 +50,18 @@ use image_extractor::ImageFormat;
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonRpcRequest {
     jsonrpc: String,
-    id: String,
+    // Number or string per JSON-RPC; absent for notifications.
+    #[serde(default)]
+    id: Option<Value>,
     method: String,
+    #[serde(default)]
     params: Value,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonRpcResponse {
     jsonrpc: String,
-    id: String,
+    id: Value,
     result: Option<Value>,
     error: Option<JsonRpcError>,
 }
@@ -175,6 +178,10 @@ async fn main() -> Result<()> {
 
         match serde_json::from_str::<JsonRpcRequest>(&line) {
             Ok(request) => {
+                // JSON-RPC notifications (no id) must not receive a response.
+                if request.id.is_none() {
+                    continue;
+                }
                 let response = handle_request(&request).await;
                 writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
                 stdout.flush()?;
@@ -182,7 +189,7 @@ async fn main() -> Result<()> {
             Err(e) => {
                 let error_response = json!({
                     "jsonrpc": "2.0",
-                    "id": "unknown",
+                    "id": null,
                     "error": {
                         "code": -32700,
                         "message": "Parse error",
@@ -198,13 +205,44 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+fn request_id(request: &JsonRpcRequest) -> Value {
+    request.id.clone().unwrap_or(Value::Null)
+}
+
 async fn handle_request(request: &JsonRpcRequest) -> JsonRpcResponse {
     match request.method.as_str() {
-        "tools/list" => handle_list_tools(&request.id),
+        "initialize" => {
+            // Echo the client's protocol version when given (MCP handshake).
+            let version = request
+                .params
+                .get("protocolVersion")
+                .and_then(|v| v.as_str())
+                .unwrap_or("2024-11-05");
+            JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                id: request_id(request),
+                result: Some(json!({
+                    "protocolVersion": version,
+                    "capabilities": { "tools": {} },
+                    "serverInfo": {
+                        "name": "toMarkdownMCP",
+                        "version": env!("CARGO_PKG_VERSION")
+                    }
+                })),
+                error: None,
+            }
+        }
+        "ping" => JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id: request_id(request),
+            result: Some(json!({})),
+            error: None,
+        },
+        "tools/list" => handle_list_tools(&request_id(request)),
         "tools/call" => handle_call_tool(request).await,
         _ => JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
-            id: request.id.clone(),
+            id: request_id(request),
             result: None,
             error: Some(JsonRpcError {
                 code: -32601,
@@ -215,7 +253,7 @@ async fn handle_request(request: &JsonRpcRequest) -> JsonRpcResponse {
     }
 }
 
-fn handle_list_tools(id: &str) -> JsonRpcResponse {
+fn handle_list_tools(id: &Value) -> JsonRpcResponse {
     let tools = json!([
         {
             "name": "convert_file",
@@ -1472,7 +1510,7 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
 
     JsonRpcResponse {
         jsonrpc: "2.0".to_string(),
-        id: id.to_string(),
+        id: id.clone(),
         result: Some(json!({
             "tools": tools
         })),
@@ -1628,7 +1666,7 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
         _ => {
             return JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
-                id: request.id.clone(),
+                id: request_id(request),
                 result: None,
                 error: Some(JsonRpcError {
                     code: -32602,
@@ -1642,7 +1680,7 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
     match result {
         Ok(content) => JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
-            id: request.id.clone(),
+            id: request_id(request),
             result: Some(json!({
                 "content": [
                     {
@@ -1655,7 +1693,7 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
         },
         Err(e) => JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
-            id: request.id.clone(),
+            id: request_id(request),
             result: None,
             error: Some(JsonRpcError {
                 code: -32603,
