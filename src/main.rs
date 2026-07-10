@@ -62,7 +62,11 @@ struct JsonRpcRequest {
 struct JsonRpcResponse {
     jsonrpc: String,
     id: Value,
+    // JSON-RPC: a response carries exactly one of result/error — emitting a
+    // null for the other key fails strict clients (Claude Desktop's schema).
+    #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<JsonRpcError>,
 }
 
@@ -70,6 +74,7 @@ struct JsonRpcResponse {
 struct JsonRpcError {
     code: i32,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<Value>,
 }
 
