@@ -96,6 +96,29 @@ Key summary (press `?` in-app for the authoritative list):
 
 Mouse: wheel scrolls, click opens/moves cursor, click a line twice to follow its wikilink.
 
+## Default paths & multiple vaults (`--base-dir`)
+
+Start the server with one or more base directories to avoid absolute paths in every call:
+
+```bash
+to_markdown_mcp --base-dir ~/vault --base-dir ~/work-notes
+# or: --base-dir ~/vault,~/work-notes
+```
+
+- Relative `file_path`/`path`/`vault_path`/... values resolve against the base dirs — the first directory where the path **exists** wins (multi-vault lookup); if it exists nowhere, it resolves against the **first** dir (so newly created files land there).
+- `vault_path` and `directory` parameters may be omitted entirely — they default to the first base dir.
+- Absolute paths, URLs, and stdin (`-`) are never rewritten. Without the flag, behavior is unchanged.
+- `tui` with no path argument also opens the first base dir.
+
+In an MCP client config, pass the flag via `args`:
+
+```json
+{"mcpServers": {"toMarkdown": {
+  "command": "/path/to/to_markdown_mcp",
+  "args": ["--base-dir", "/Users/you/vault"]
+}}}
+```
+
 ## Exit codes & logging
 
 The server logs to **stderr** (stdout is reserved for JSON-RPC). Set `RUST_LOG`-style filtering via the built-in `info` default.

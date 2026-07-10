@@ -46,13 +46,14 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 {
   "mcpServers": {
     "toMarkdown": {
-      "command": "/path/to/toMarkdownMCP/target/release/to_markdown_mcp"
+      "command": "/path/to/toMarkdownMCP/target/release/to_markdown_mcp",
+      "args": ["--base-dir", "/path/to/your/vault"]
     }
   }
 }
 ```
 
-Restart Claude Desktop — the 62 tools appear automatically. For Claude Code:
+Restart Claude Desktop — the 62 tools appear automatically. The optional `--base-dir` sets a default vault so tool calls can use relative paths or omit `vault_path` (see INSTALL.md). For Claude Code:
 
 ```bash
 claude mcp add toMarkdown -- /path/to/toMarkdownMCP/target/release/to_markdown_mcp

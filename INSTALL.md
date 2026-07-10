@@ -26,7 +26,8 @@ Prerequisites: Rust 1.75+ (`curl https://sh.rustup.rs -sSf | sh`). The browser t
 {
   "mcpServers": {
     "toMarkdown": {
-      "command": "/path/to/toMarkdownMCP/target/release/to_markdown_mcp"
+      "command": "/path/to/toMarkdownMCP/target/release/to_markdown_mcp",
+      "args": ["--base-dir", "/path/to/your/vault"]
     }
   }
 }
@@ -34,10 +35,19 @@ Prerequisites: Rust 1.75+ (`curl https://sh.rustup.rs -sSf | sh`). The browser t
 
 Use the **absolute** path to the binary. Restart Claude Desktop.
 
+The optional `--base-dir` flag sets your default vault/working directory once, so tool
+calls can use relative paths (`"file_path": "notes/todo.md"`) or omit `vault_path`
+entirely. Repeat the flag (or comma-separate) for multiple vaults — relative paths pick
+the first vault where the file exists; new files are created in the first one:
+
+```json
+"args": ["--base-dir", "/Users/you/vault", "--base-dir", "/Users/you/work-notes"]
+```
+
 **Claude Code**:
 
 ```bash
-claude mcp add toMarkdown -- /path/to/toMarkdownMCP/target/release/to_markdown_mcp
+claude mcp add toMarkdown -- /path/to/toMarkdownMCP/target/release/to_markdown_mcp --base-dir /path/to/your/vault
 ```
 
 **Any other MCP client**: the server speaks JSON-RPC 2.0 over stdio (newline-delimited). Point the client's `command` at the binary with no arguments.

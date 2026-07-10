@@ -1593,13 +1593,11 @@
             "type": "boolean"
           },
           "vault_path": {
-            "description": "Path to the vault root directory",
+            "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)",
             "type": "string"
           }
         },
-        "required": [
-          "vault_path"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "obsidian_vault_index"
@@ -1623,12 +1621,11 @@
             "type": "string"
           },
           "vault_path": {
-            "description": "Path to the vault root directory",
+            "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)",
             "type": "string"
           }
         },
         "required": [
-          "vault_path",
           "note"
         ],
         "type": "object"
@@ -1648,12 +1645,11 @@
             "type": "string"
           },
           "vault_path": {
-            "description": "Path to the vault root directory",
+            "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)",
             "type": "string"
           }
         },
         "required": [
-          "vault_path",
           "link"
         ],
         "type": "object"
@@ -1669,12 +1665,11 @@
             "type": "string"
           },
           "vault_path": {
-            "description": "Path to the vault root directory",
+            "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)",
             "type": "string"
           }
         },
         "required": [
-          "vault_path",
           "note"
         ],
         "type": "object"
@@ -1705,12 +1700,11 @@
             "type": "string"
           },
           "vault_path": {
-            "description": "Path to the vault root directory",
+            "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)",
             "type": "string"
           }
         },
         "required": [
-          "vault_path",
           "query",
           "mode"
         ],
@@ -1731,13 +1725,11 @@
             "type": "string"
           },
           "vault_path": {
-            "description": "Path to the vault root directory",
+            "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)",
             "type": "string"
           }
         },
-        "required": [
-          "vault_path"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "obsidian_list_tasks"
@@ -1747,13 +1739,11 @@
       "inputSchema": {
         "properties": {
           "vault_path": {
-            "description": "Path to the vault root directory",
+            "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)",
             "type": "string"
           }
         },
-        "required": [
-          "vault_path"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "obsidian_get_vault_config"
@@ -1776,13 +1766,11 @@
             "type": "string"
           },
           "vault_path": {
-            "description": "Path to the vault root directory",
+            "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)",
             "type": "string"
           }
         },
-        "required": [
-          "vault_path"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "obsidian_create_note_from_template"
@@ -1805,12 +1793,11 @@
             "type": "string"
           },
           "vault_path": {
-            "description": "Path to the vault root directory",
+            "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)",
             "type": "string"
           }
         },
         "required": [
-          "vault_path",
           "note",
           "new_name"
         ],
@@ -1887,13 +1874,11 @@
             "type": "string"
           },
           "vault_path": {
-            "description": "Path to the vault root directory",
+            "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)",
             "type": "string"
           }
         },
-        "required": [
-          "vault_path"
-        ],
+        "required": [],
         "type": "object"
       },
       "name": "obsidian_extract_dataview_fields"

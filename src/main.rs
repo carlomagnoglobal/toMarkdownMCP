@@ -70,23 +70,84 @@ struct JsonRpcError {
     data: Option<Value>,
 }
 
+/// Base/vault directories from `--base-dir` flags. First entry is the
+/// primary default. Empty vec = feature off (fully backward compatible).
+static BASE_DIRS: once_cell::sync::OnceCell<Vec<std::path::PathBuf>> = once_cell::sync::OnceCell::new();
+
+fn base_dirs() -> &'static [std::path::PathBuf] {
+    BASE_DIRS.get().map(|v| v.as_slice()).unwrap_or(&[])
+}
+
+fn expand_tilde(p: &str) -> String {
+    if let Some(rest) = p.strip_prefix("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return std::path::Path::new(&home).join(rest).to_string_lossy().into_owned();
+        }
+    }
+    p.to_string()
+}
+
+/// Pull every `--base-dir <path>` (or `--base-dir=a,b`) out of the arg list,
+/// returning the remaining args. Comma-separated values add multiple dirs.
+fn extract_base_dirs(args: Vec<String>) -> Vec<String> {
+    let mut rest = Vec::new();
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        let value = if a == "--base-dir" {
+            it.next()
+        } else if let Some(v) = a.strip_prefix("--base-dir=") {
+            Some(v.to_string())
+        } else {
+            rest.push(a);
+            continue;
+        };
+        let Some(value) = value else {
+            eprintln!("warning: --base-dir requires a path argument");
+            continue;
+        };
+        for part in value.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            let p = std::path::PathBuf::from(expand_tilde(part));
+            if !p.is_dir() {
+                eprintln!("warning: --base-dir '{}' is not an existing directory (kept anyway)", part);
+            }
+            dirs.push(p.canonicalize().unwrap_or(p));
+        }
+    }
+    if !dirs.is_empty() {
+        let _ = BASE_DIRS.set(dirs);
+    }
+    rest
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // CLI dispatch: no args = MCP stdio server (unchanged default);
     // `tui <path>` = interactive Markdown/vault viewer.
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = extract_base_dirs(args);
     match args.first().map(|s| s.as_str()) {
         None => {}
         Some("tui") => {
-            let path = args.get(1).map(String::as_str).unwrap_or(".");
+            let default = base_dirs()
+                .first()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|| ".".to_string());
+            let path = args.get(1).map(String::as_str).unwrap_or(&default);
             return tui::run(Path::new(path));
         }
         Some("--help") | Some("-h") => {
             println!("to_markdown_mcp — Markdown conversion MCP server + vault viewer\n");
             println!("USAGE:");
-            println!("  to_markdown_mcp              Run the MCP server (JSON-RPC over stdio)");
-            println!("  to_markdown_mcp tui [PATH]   Open the TUI Markdown viewer on a vault dir or file (default: .)");
-            println!("  to_markdown_mcp --help       Show this help");
+            println!("  to_markdown_mcp [--base-dir DIR]...   Run the MCP server (JSON-RPC over stdio)");
+            println!("  to_markdown_mcp tui [PATH]            Open the TUI Markdown viewer on a vault dir or file (default: .)");
+            println!("  to_markdown_mcp --help                Show this help");
+            println!();
+            println!("OPTIONS:");
+            println!("  --base-dir DIR   Default vault/base directory. Repeatable (or comma-separated)");
+            println!("                   for multiple vaults; the first is the primary default.");
+            println!("                   Relative tool paths resolve against these directories, and");
+            println!("                   vault_path/directory parameters may be omitted in tool calls.");
             return Ok(());
         }
         Some(other) => {
@@ -1256,10 +1317,10 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)"},
                     "include_orphans": {"type": "boolean", "description": "List notes with no inbound links (default: false)", "default": false}
                 },
-                "required": ["vault_path"]
+                "required": []
             }
         },
         {
@@ -1268,12 +1329,12 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)"},
                     "note": {"type": "string", "description": "Note path, stem, or alias"},
                     "inline_embeds": {"type": "boolean", "description": "Replace ![[embeds]] with the embedded note content (default: false)", "default": false},
                     "max_embed_depth": {"type": "integer", "description": "Maximum transclusion recursion depth (default: 3)", "default": 3}
                 },
-                "required": ["vault_path", "note"]
+                "required": ["note"]
             }
         },
         {
@@ -1282,11 +1343,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)"},
                     "link": {"type": "string", "description": "Link text, with or without [[ ]]"},
                     "from_note": {"type": "string", "description": "Source note for same-folder disambiguation (optional)"}
                 },
-                "required": ["vault_path", "link"]
+                "required": ["link"]
             }
         },
         {
@@ -1295,10 +1356,10 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)"},
                     "note": {"type": "string", "description": "Note path, stem, or alias"}
                 },
-                "required": ["vault_path", "note"]
+                "required": ["note"]
             }
         },
         {
@@ -1307,12 +1368,12 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)"},
                     "query": {"type": "string", "description": "Search query; for field mode use 'key' or 'key=value'"},
                     "mode": {"type": "string", "description": "One of: tag, alias, field, text", "enum": ["tag", "alias", "field", "text"]},
                     "limit": {"type": "integer", "description": "Maximum hits (default: 50)", "default": 50}
                 },
-                "required": ["vault_path", "query", "mode"]
+                "required": ["query", "mode"]
             }
         },
         {
@@ -1321,11 +1382,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)"},
                     "status": {"type": "string", "description": "Filter: open, done, in_progress, cancelled, forwarded, or a raw state char"},
                     "note": {"type": "string", "description": "Limit to one note (path, stem, or alias)"}
                 },
-                "required": ["vault_path"]
+                "required": []
             }
         },
         {
@@ -1334,9 +1395,9 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "vault_path": {"type": "string", "description": "Path to the vault root directory"}
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)"}
                 },
-                "required": ["vault_path"]
+                "required": []
             }
         },
         {
@@ -1345,12 +1406,12 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)"},
                     "title": {"type": "string", "description": "Note title, optionally with folder ('projects/New Idea'). Required unless daily=true"},
                     "template": {"type": "string", "description": "Vault-relative template path (default: daily-notes template when daily=true)"},
                     "daily": {"type": "boolean", "description": "Create today's daily note using the vault's daily-notes settings (default: false)", "default": false}
                 },
-                "required": ["vault_path"]
+                "required": []
             }
         },
         {
@@ -1359,12 +1420,12 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)"},
                     "note": {"type": "string", "description": "Note to rename (path, stem, or alias)"},
                     "new_name": {"type": "string", "description": "New stem (same folder) or vault-relative path"},
                     "dry_run": {"type": "boolean", "description": "Preview changes without writing (default: true)", "default": true}
                 },
-                "required": ["vault_path", "note", "new_name"]
+                "required": ["note", "new_name"]
             }
         },
         {
@@ -1400,11 +1461,11 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "vault_path": {"type": "string", "description": "Path to the vault root directory"},
+                    "vault_path": {"type": "string", "description": "Path to the vault root directory. Optional when the server runs with --base-dir (defaults to the first base dir)"},
                     "note": {"type": "string", "description": "Limit to one note (path, stem, or alias)"},
                     "field": {"type": "string", "description": "Only this field name (case-insensitive)"}
                 },
-                "required": ["vault_path"]
+                "required": []
             }
         }
     ]);
@@ -1419,9 +1480,81 @@ fn handle_list_tools(id: &str) -> JsonRpcResponse {
     }
 }
 
+/// String argument keys that hold filesystem paths and should resolve
+/// against `--base-dir` directories when relative.
+const PATH_KEYS: &[&str] = &[
+    "file_path", "path", "vault_path", "directory", "old_path", "new_path", "tokenizer_file",
+];
+/// Directory-type keys that default to the primary base dir when omitted.
+const INJECT_KEYS: &[&str] = &["vault_path", "directory"];
+
+/// Resolve one path string against the given base dirs: absolute paths
+/// pass through; relative paths pick the first base dir where they exist,
+/// falling back to the primary base dir (so new files land somewhere sane).
+fn resolve_with(dirs: &[std::path::PathBuf], value: &str) -> String {
+    let expanded = expand_tilde(value);
+    let p = std::path::Path::new(&expanded);
+    if p.is_absolute() || dirs.is_empty() {
+        return expanded;
+    }
+    // Don't touch URLs or the stdin sentinel.
+    if expanded.contains("://") || expanded == "-" {
+        return expanded;
+    }
+    for dir in dirs {
+        let candidate = dir.join(p);
+        if candidate.exists() {
+            return candidate.to_string_lossy().into_owned();
+        }
+    }
+    dirs[0].join(p).to_string_lossy().into_owned()
+}
+
+/// Rewrite path-like arguments in place per the `--base-dir` rules.
+fn apply_base_dirs_with(dirs: &[std::path::PathBuf], arguments: &mut Value) {
+    if dirs.is_empty() {
+        return;
+    }
+    let Some(obj) = arguments.as_object_mut() else { return };
+    for key in PATH_KEYS {
+        if let Some(Value::String(s)) = obj.get(*key) {
+            let resolved = resolve_with(dirs, s);
+            obj.insert((*key).to_string(), Value::String(resolved));
+        }
+    }
+    if let Some(Value::Array(items)) = obj.get_mut("file_paths") {
+        for item in items.iter_mut() {
+            if let Value::String(s) = item {
+                *item = Value::String(resolve_with(dirs, s));
+            }
+        }
+    }
+    // `source` is path-or-URL: resolve only when it looks like a local path.
+    if let Some(Value::String(s)) = obj.get("source") {
+        if !s.contains("://") && s != "-" {
+            let resolved = resolve_with(dirs, s);
+            obj.insert("source".to_string(), Value::String(resolved));
+        }
+    }
+    for key in INJECT_KEYS {
+        if !obj.contains_key(*key) {
+            obj.insert(
+                (*key).to_string(),
+                Value::String(dirs[0].to_string_lossy().into_owned()),
+            );
+        }
+    }
+}
+
+/// No-op when the server was started without `--base-dir`.
+fn apply_base_dirs(arguments: &mut Value) {
+    apply_base_dirs_with(base_dirs(), arguments);
+}
+
 async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
     let tool_name = request.params.get("name").and_then(|v| v.as_str());
-    let arguments = request.params.get("arguments").cloned().unwrap_or(Value::Object(Default::default()));
+    let mut arguments = request.params.get("arguments").cloned().unwrap_or(Value::Object(Default::default()));
+    apply_base_dirs(&mut arguments);
 
     let result = match tool_name {
         Some("convert_file") => handle_convert_file(&arguments),
@@ -3508,6 +3641,7 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
         help.push_str("| obsidian_extract_dataview_fields | Inline key:: value + frontmatter fields |\n");
         help.push_str("| analyze_text | Words/chars/spaces/tokens + word, character & token frequency tables, provider-aware tokenizers |\n\n");
         help.push_str("Run the binary as `to_markdown_mcp tui [PATH]` for an interactive terminal Markdown/vault viewer.\n\n");
+        help.push_str("Start the server with `--base-dir DIR` (repeatable or comma-separated for multiple vaults) to set default directories: relative file/vault paths resolve against them (first existing match wins, new files go to the first dir), and vault_path/directory parameters may be omitted entirely.\n\n");
         help.push_str("Supported input formats: text/code, HTML/HTM/MHTML/webarchive, PDF, DOCX, DOC, RTF, ODT, XLSX/XLS/ODS/CSV, PPTX/ODP, EML, EPUB, MOBI, RSS/Atom, and markup (wiki, rst, adoc, org, tex, textile).\n\n");
         help.push_str("RAG/knowledge tools accept `output_format: \"json\"` for machine-readable output.\n\n");
         help.push_str("Use `get_tool_help` with a tool_name parameter for detailed help on a specific tool.\n");
@@ -4753,4 +4887,100 @@ async fn handle_ai_classify(args: &Value) -> Result<String, Box<dyn std::error::
     llm::complete(&prompt, Some("You are a precise document classifier."), &model, 200)
         .await
         .map_err(|e| Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>)
+}
+
+#[cfg(test)]
+mod base_dir_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn fixture_vault() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini_vault")
+    }
+
+    #[test]
+    fn absolute_paths_untouched() {
+        let dirs = vec![fixture_vault()];
+        assert_eq!(resolve_with(&dirs, "/etc/hosts"), "/etc/hosts");
+    }
+
+    #[test]
+    fn relative_path_resolves_to_existing_dir() {
+        let dirs = vec![PathBuf::from("/nonexistent-vault"), fixture_vault()];
+        let resolved = resolve_with(&dirs, "Note A.md");
+        assert!(resolved.ends_with("mini_vault/Note A.md"), "{}", resolved);
+        assert!(std::path::Path::new(&resolved).exists());
+    }
+
+    #[test]
+    fn missing_relative_falls_back_to_primary() {
+        let dirs = vec![fixture_vault(), PathBuf::from("/other")];
+        let resolved = resolve_with(&dirs, "brand-new-note.md");
+        assert!(resolved.starts_with(fixture_vault().to_str().unwrap()), "{}", resolved);
+    }
+
+    #[test]
+    fn urls_and_stdin_untouched() {
+        let dirs = vec![fixture_vault()];
+        assert_eq!(resolve_with(&dirs, "https://example.com/a.md"), "https://example.com/a.md");
+        assert_eq!(resolve_with(&dirs, "-"), "-");
+    }
+
+    #[test]
+    fn no_dirs_is_noop() {
+        assert_eq!(resolve_with(&[], "notes/a.md"), "notes/a.md");
+        let mut args = serde_json::json!({"file_path": "notes/a.md"});
+        apply_base_dirs_with(&[], &mut args);
+        assert_eq!(args["file_path"], "notes/a.md");
+        assert!(args.get("vault_path").is_none());
+    }
+
+    #[test]
+    fn injects_missing_vault_path_and_directory() {
+        let dirs = vec![fixture_vault()];
+        let mut args = serde_json::json!({});
+        apply_base_dirs_with(&dirs, &mut args);
+        assert_eq!(args["vault_path"].as_str().unwrap(), fixture_vault().to_str().unwrap());
+        assert_eq!(args["directory"].as_str().unwrap(), fixture_vault().to_str().unwrap());
+    }
+
+    #[test]
+    fn explicit_vault_path_not_overwritten() {
+        let dirs = vec![fixture_vault()];
+        let mut args = serde_json::json!({"vault_path": "/explicit/vault"});
+        apply_base_dirs_with(&dirs, &mut args);
+        assert_eq!(args["vault_path"], "/explicit/vault");
+    }
+
+    #[test]
+    fn file_paths_array_resolved() {
+        let dirs = vec![fixture_vault()];
+        let mut args = serde_json::json!({"file_paths": ["Note A.md", "/abs/x.md"]});
+        apply_base_dirs_with(&dirs, &mut args);
+        let arr = args["file_paths"].as_array().unwrap();
+        assert!(arr[0].as_str().unwrap().ends_with("mini_vault/Note A.md"));
+        assert_eq!(arr[1], "/abs/x.md");
+    }
+
+    #[test]
+    fn source_url_kept_source_path_resolved() {
+        let dirs = vec![fixture_vault()];
+        let mut args = serde_json::json!({"source": "https://example.com"});
+        apply_base_dirs_with(&dirs, &mut args);
+        assert_eq!(args["source"], "https://example.com");
+        let mut args = serde_json::json!({"source": "Note A.md"});
+        apply_base_dirs_with(&dirs, &mut args);
+        assert!(args["source"].as_str().unwrap().ends_with("mini_vault/Note A.md"));
+    }
+
+    #[test]
+    fn extract_base_dirs_parses_and_strips() {
+        // Note: BASE_DIRS is process-global; this test only checks arg stripping
+        // and relies on set-once semantics being tolerant (extract ignores failure).
+        let rest = extract_base_dirs(vec![
+            "--base-dir".into(), "/tmp".into(),
+            "tui".into(), "some/path".into(),
+        ]);
+        assert_eq!(rest, vec!["tui".to_string(), "some/path".to_string()]);
+    }
 }

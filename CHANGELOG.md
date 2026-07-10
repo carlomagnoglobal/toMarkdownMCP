@@ -2,6 +2,10 @@
 
 All notable changes to toMarkdownMCP.
 
+## Unreleased
+
+- `--base-dir DIR` server flag (repeatable / comma-separated for multiple vaults): relative tool paths resolve against the configured directories (first existing match wins; new files go to the first dir), `vault_path`/`directory` parameters become optional (default to the first dir), and `tui` with no path opens the first dir. Fully backward compatible when the flag is absent.
+
 ## v0.1.0 — 2026-07-06
 
 First public release. 🎉

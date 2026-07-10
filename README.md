@@ -127,6 +127,10 @@ Claude-backed generation. Call `get_tool_help` (no arguments) for the full list,
 Run `to_markdown_mcp tui [PATH]` for an interactive terminal Markdown viewer over a vault or
 file: file tree, styled rendering, `[[wikilink]]` following, and filename search.
 
+Start the server with `--base-dir /path/to/vault` (repeatable for multiple vaults) to set
+default directories once in your MCP client config: relative paths then resolve against
+them and `vault_path` can be omitted in tool calls — see [USAGE.md](USAGE.md).
+
 ## Documentation
 
 **Guides**: [GETTING_STARTED.md](GETTING_STARTED.md) · [QUICK_START.md](QUICK_START.md) ·
