@@ -2,7 +2,18 @@
 
 All notable changes to toMarkdownMCP.
 
-## Unreleased
+## v0.1.1 — 2026-07-10
+
+### Fixed — MCP protocol compliance (critical)
+
+v0.1.0 could not connect to Claude Desktop or other strict MCP clients:
+
+- Implemented the `initialize` handshake (returns protocolVersion echoing the client's, tools capability, serverInfo) and `ping`
+- Request `id` now accepts numbers as well as strings (clients send `id: 0`); responses echo it verbatim; parse errors respond with `id: null`
+- JSON-RPC notifications (e.g. `notifications/initialized`) are consumed silently instead of receiving Method-not-found errors
+- Responses no longer emit a `null` for the unused `result`/`error` key — strict client schemas reject messages carrying both
+
+### Added
 
 - `--base-dir DIR` server flag (repeatable / comma-separated for multiple vaults): relative tool paths resolve against the configured directories (first existing match wins; new files go to the first dir), `vault_path`/`directory` parameters become optional (default to the first dir), and `tui` with no path opens the first dir. Fully backward compatible when the flag is absent.
 

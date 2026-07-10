@@ -1,7 +1,7 @@
 {
   "name": "toMarkdownMCP",
   "description": "Convert anything to Markdown — documents, office files, live web pages (Chromium with human-in-the-loop), Obsidian vaults — plus RAG chunking/retrieval and provider-aware token analytics. 62 tools, pure Rust, zero MCP-framework dependencies.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "author": "Carlo Magno Global",
   "homepage": "https://github.com/carlomagnoglobal/toMarkdownMCP",
