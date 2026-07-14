@@ -64,5 +64,5 @@ claude mcp add toMarkdown -- /path/to/toMarkdownMCP/target/release/to_markdown_m
 - [QUICK_START.md](QUICK_START.md) — build/run cheatsheet
 - [USAGE.md](USAGE.md) — every tool family with examples
 - [INSTALL.md](INSTALL.md) — detailed client integration
-- [DEPLOYMENT.md](DEPLOYMENT.md) — binaries, source, Docker
-- [BROWSER_TOOLS.md](BROWSER_TOOLS.md) · [OBSIDIAN_TOOLS.md](OBSIDIAN_TOOLS.md) · [RAG_TOOLS.md](RAG_TOOLS.md) · [AI_TOOLS.md](AI_TOOLS.md)
+- [DEPLOYMENT.md](../deployment/DEPLOYMENT.md) — binaries, source, Docker
+- [BROWSER_TOOLS.md](../tools/BROWSER_TOOLS.md) · [OBSIDIAN_TOOLS.md](../tools/OBSIDIAN_TOOLS.md) · [RAG_TOOLS.md](../tools/RAG_TOOLS.md) · [AI_TOOLS.md](../tools/AI_TOOLS.md)

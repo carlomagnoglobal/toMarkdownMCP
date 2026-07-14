@@ -36,7 +36,7 @@ Handles 60+ programming languages, HTML/HTM/MHTML/webarchive, PDF, DOCX/DOC/RTF/
 
 ### 2. Browser web capture (real Chromium)
 
-`browser_open_url` → interact (CAPTCHA/login) → `browser_capture_markdown` → `browser_close`. Or one-shot: pass `url` directly to `browser_capture_markdown` for JS-rendered pages. See [BROWSER_TOOLS.md](BROWSER_TOOLS.md).
+`browser_open_url` → interact (CAPTCHA/login) → `browser_capture_markdown` → `browser_close`. Or one-shot: pass `url` directly to `browser_capture_markdown` for JS-rendered pages. See [BROWSER_TOOLS.md](../tools/BROWSER_TOOLS.md).
 
 ```json
 {"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"browser_capture_markdown","arguments":{"url":"https://example.com/spa","wait_seconds":2,"extract_metadata":true}}}
@@ -44,11 +44,11 @@ Handles 60+ programming languages, HTML/HTM/MHTML/webarchive, PDF, DOCX/DOC/RTF/
 
 ### 3. Obsidian vault intelligence
 
-11 `obsidian_*` tools: vault index (broken links, orphans, tags), note lookup by path/stem/alias with embed transclusion, wikilink resolution (`[[target#heading|alias]]`, `#^block`), backlinks, search (tag/alias/field/text), tasks with states and dates, `.canvas` → Markdown, Dataview fields, vault config, templated note creation, and link-rewriting rename (dry-run by default). See [OBSIDIAN_TOOLS.md](OBSIDIAN_TOOLS.md).
+11 `obsidian_*` tools: vault index (broken links, orphans, tags), note lookup by path/stem/alias with embed transclusion, wikilink resolution (`[[target#heading|alias]]`, `#^block`), backlinks, search (tag/alias/field/text), tasks with states and dates, `.canvas` → Markdown, Dataview fields, vault config, templated note creation, and link-rewriting rename (dry-run by default). See [OBSIDIAN_TOOLS.md](../tools/OBSIDIAN_TOOLS.md).
 
 ### 4. RAG & knowledge
 
-`chunk_markdown`, `extract_chunks_for_rag`, `get_document_outline`, `search_content`, `retrieve_context`, `build_knowledge_index`, `extract_tags/keywords/entities/qa_pairs`, `find_related_notes`, `find_duplicates`, `cluster_documents`, `summarize_document`, readability/language/classification, corpus statistics. Most accept `output_format: "json"`. See [RAG_TOOLS.md](RAG_TOOLS.md) and [SECOND_BRAIN_TOOLS.md](SECOND_BRAIN_TOOLS.md).
+`chunk_markdown`, `extract_chunks_for_rag`, `get_document_outline`, `search_content`, `retrieve_context`, `build_knowledge_index`, `extract_tags/keywords/entities/qa_pairs`, `find_related_notes`, `find_duplicates`, `cluster_documents`, `summarize_document`, readability/language/classification, corpus statistics. Most accept `output_format: "json"`. See [RAG_TOOLS.md](../tools/RAG_TOOLS.md) and [SECOND_BRAIN_TOOLS.md](../tools/SECOND_BRAIN_TOOLS.md).
 
 ### 5. Text analytics — `analyze_text`
 
@@ -73,7 +73,7 @@ Estimated counts always carry an explicit ⚠️ warning and the method used.
 
 ### 7. Claude-backed generation (optional)
 
-`ai_summarize`, `ai_ask` (RAG Q&A with citations), `ai_tag`, `ai_translate`, `ai_classify` — need `ANTHROPIC_API_KEY`; degrade to a setup note without one. See [AI_TOOLS.md](AI_TOOLS.md).
+`ai_summarize`, `ai_ask` (RAG Q&A with citations), `ai_tag`, `ai_translate`, `ai_classify` — need `ANTHROPIC_API_KEY`; degrade to a setup note without one. See [AI_TOOLS.md](../tools/AI_TOOLS.md).
 
 ## The TUI viewer
 

@@ -118,9 +118,9 @@ The server reads JSON-RPC 2.0 requests from stdin and writes responses to stdout
 ### Available Tools
 
 The server exposes **62 tools** — format conversion, browser-based web capture (Chromium, with
-human-in-the-loop support for CAPTCHAs/logins — see [BROWSER_TOOLS.md](BROWSER_TOOLS.md)),
+human-in-the-loop support for CAPTCHAs/logins — see [BROWSER_TOOLS.md](docs/tools/BROWSER_TOOLS.md)),
 Obsidian vault support (wikilink/backlink graph, tasks, canvas, dataview, templates — see
-[OBSIDIAN_TOOLS.md](OBSIDIAN_TOOLS.md)), file/vault operations, an AI/RAG toolkit, and optional
+[OBSIDIAN_TOOLS.md](docs/tools/OBSIDIAN_TOOLS.md)), file/vault operations, an AI/RAG toolkit, and optional
 Claude-backed generation. Call `get_tool_help` (no arguments) for the full list, or with a
 `tool_name` for detailed help on one tool. A selection is documented below.
 
@@ -129,23 +129,23 @@ file: file tree, styled rendering, `[[wikilink]]` following, and filename search
 
 Start the server with `--base-dir /path/to/vault` (repeatable for multiple vaults) to set
 default directories once in your MCP client config: relative paths then resolve against
-them and `vault_path` can be omitted in tool calls — see [USAGE.md](USAGE.md).
+them and `vault_path` can be omitted in tool calls — see [USAGE.md](docs/guides/USAGE.md).
 
 ## Documentation
 
-**Guides**: [GETTING_STARTED.md](GETTING_STARTED.md) · [QUICK_START.md](QUICK_START.md) ·
-[INSTALL.md](INSTALL.md) · [USAGE.md](USAGE.md) · [DEPLOYMENT.md](DEPLOYMENT.md) ·
-[RELEASE.md](RELEASE.md) · [CHANGELOG.md](CHANGELOG.md)
+**Guides**: [GETTING_STARTED.md](docs/guides/GETTING_STARTED.md) · [QUICK_START.md](docs/guides/QUICK_START.md) ·
+[INSTALL.md](docs/guides/INSTALL.md) · [USAGE.md](docs/guides/USAGE.md) · [DEPLOYMENT.md](docs/deployment/DEPLOYMENT.md) ·
+[RELEASE.md](docs/deployment/RELEASE.md) · [CHANGELOG.md](CHANGELOG.md)
 
-**Feature docs**: [BROWSER_TOOLS.md](BROWSER_TOOLS.md) · [OBSIDIAN_TOOLS.md](OBSIDIAN_TOOLS.md) ·
-[RAG_TOOLS.md](RAG_TOOLS.md) · [SECOND_BRAIN_TOOLS.md](SECOND_BRAIN_TOOLS.md) ·
-[AI_TOOLS.md](AI_TOOLS.md) · [SRE_TOOLS.md](SRE_TOOLS.md) ·
-[DOCUMENT_CONVERSION.md](DOCUMENT_CONVERSION.md) · [MARKUP_CONVERSION.md](MARKUP_CONVERSION.md)
+**Feature docs**: [BROWSER_TOOLS.md](docs/tools/BROWSER_TOOLS.md) · [OBSIDIAN_TOOLS.md](docs/tools/OBSIDIAN_TOOLS.md) ·
+[RAG_TOOLS.md](docs/tools/RAG_TOOLS.md) · [SECOND_BRAIN_TOOLS.md](docs/tools/SECOND_BRAIN_TOOLS.md) ·
+[AI_TOOLS.md](docs/tools/AI_TOOLS.md) · [SRE_TOOLS.md](docs/tools/SRE_TOOLS.md) ·
+[DOCUMENT_CONVERSION.md](docs/features/DOCUMENT_CONVERSION.md) · [MARKUP_CONVERSION.md](docs/features/MARKUP_CONVERSION.md)
 
-**Publishing**: [DOCKER_HUB_QUICK_START.md](DOCKER_HUB_QUICK_START.md) ·
-[MCP_REGISTRIES_GUIDE.md](MCP_REGISTRIES_GUIDE.md) ·
-[PUBLISH_TO_REGISTRIES.md](PUBLISH_TO_REGISTRIES.md) ·
-validation: [MCP_TEST_RESULTS.md](MCP_TEST_RESULTS.md)
+**Publishing**: [DOCKER_HUB_QUICK_START.md](docs/deployment/DOCKER_HUB_QUICK_START.md) ·
+[MCP_REGISTRIES_GUIDE.md](docs/deployment/MCP_REGISTRIES_GUIDE.md) ·
+[PUBLISH_TO_REGISTRIES.md](docs/deployment/PUBLISH_TO_REGISTRIES.md) ·
+validation: [MCP_TEST_RESULTS.md](docs/planning/MCP_TEST_RESULTS.md)
 
 #### 1. `convert_file`
 Converts a file to Markdown format. For HTML files, supports optional metadata extraction, CSS hints, TOC generation, and image handling.
@@ -473,19 +473,19 @@ All HTML features work together seamlessly:
 ```
 
 For detailed documentation on each feature:
-- [METADATA_EXTRACTION.md](METADATA_EXTRACTION.md) - Extract document metadata
-- [CSS_STYLING_HINTS.md](CSS_STYLING_HINTS.md) - Preserve CSS information
-- [IMAGE_EXTRACTION.md](IMAGE_EXTRACTION.md) - Control image handling
-- [TABLE_CONVERSION.md](TABLE_CONVERSION.md) - Convert HTML tables to Markdown
-- [FORM_EXTRACTION.md](FORM_EXTRACTION.md) - Extract and convert HTML forms
-- [HEADING_ANALYSIS.md](HEADING_ANALYSIS.md) - Analyze heading structure and hierarchy
-- [LINK_EXTRACTION.md](LINK_EXTRACTION.md) - Extract and summarize links
-- [COMMENT_PRESERVATION.md](COMMENT_PRESERVATION.md) - Preserve HTML comments
-- [CODE_LANGUAGE_DETECTION.md](CODE_LANGUAGE_DETECTION.md) - Auto-detect code block languages
-- [TOC_GENERATION.md](TOC_GENERATION.md) - Generate table of contents
-- [WEBARCHIVE_SUPPORT.md](WEBARCHIVE_SUPPORT.md) - Safari webarchive support
+- [METADATA_EXTRACTION.md](docs/features/METADATA_EXTRACTION.md) - Extract document metadata
+- [CSS_STYLING_HINTS.md](docs/features/CSS_STYLING_HINTS.md) - Preserve CSS information
+- [IMAGE_EXTRACTION.md](docs/features/IMAGE_EXTRACTION.md) - Control image handling
+- [TABLE_CONVERSION.md](docs/features/TABLE_CONVERSION.md) - Convert HTML tables to Markdown
+- [FORM_EXTRACTION.md](docs/features/FORM_EXTRACTION.md) - Extract and convert HTML forms
+- [HEADING_ANALYSIS.md](docs/features/HEADING_ANALYSIS.md) - Analyze heading structure and hierarchy
+- [LINK_EXTRACTION.md](docs/features/LINK_EXTRACTION.md) - Extract and summarize links
+- [COMMENT_PRESERVATION.md](docs/features/COMMENT_PRESERVATION.md) - Preserve HTML comments
+- [CODE_LANGUAGE_DETECTION.md](docs/features/CODE_LANGUAGE_DETECTION.md) - Auto-detect code block languages
+- [TOC_GENERATION.md](docs/features/TOC_GENERATION.md) - Generate table of contents
+- [WEBARCHIVE_SUPPORT.md](docs/features/WEBARCHIVE_SUPPORT.md) - Safari webarchive support
 
-For complete HTML conversion documentation, see [HTML_SUPPORT.md](HTML_SUPPORT.md).
+For complete HTML conversion documentation, see [HTML_SUPPORT.md](docs/features/HTML_SUPPORT.md).
 
 ## HTML Table Conversion
 
@@ -530,7 +530,7 @@ Convert HTML tables to clean Markdown pipe format:
 | Alice | 30 |
 ```
 
-See [TABLE_CONVERSION.md](TABLE_CONVERSION.md) for complete documentation.
+See [TABLE_CONVERSION.md](docs/features/TABLE_CONVERSION.md) for complete documentation.
 
 ## Form Extraction
 
@@ -582,7 +582,7 @@ Extract HTML forms and convert them to readable Markdown tables:
 | | submit | | Label: Send |
 ```
 
-See [FORM_EXTRACTION.md](FORM_EXTRACTION.md) for complete documentation.
+See [FORM_EXTRACTION.md](docs/features/FORM_EXTRACTION.md) for complete documentation.
 
 ## Comment Preservation
 
@@ -634,7 +634,7 @@ Extract and preserve HTML comments during conversion:
 # Welcome
 ```
 
-See [COMMENT_PRESERVATION.md](COMMENT_PRESERVATION.md) for complete documentation.
+See [COMMENT_PRESERVATION.md](docs/features/COMMENT_PRESERVATION.md) for complete documentation.
 
 ## Link Extraction
 
@@ -686,7 +686,7 @@ Extract and categorize all hyperlinks in a document:
 1. `Broken Link`
 ```
 
-See [LINK_EXTRACTION.md](LINK_EXTRACTION.md) for complete documentation.
+See [LINK_EXTRACTION.md](docs/features/LINK_EXTRACTION.md) for complete documentation.
 
 ## Heading Structure Analysis
 
@@ -737,7 +737,7 @@ Analyze document heading hierarchy and validate structure:
   ├─ H2: Section 2
 ```
 
-See [HEADING_ANALYSIS.md](HEADING_ANALYSIS.md) for complete documentation.
+See [HEADING_ANALYSIS.md](docs/features/HEADING_ANALYSIS.md) for complete documentation.
 
 ## Webarchive Support
 
@@ -760,7 +760,7 @@ Webarchive files from Safari, Mail, and other Apple applications are fully suppo
 - UTF-8 and binary data handling
 - Cross-platform compatibility
 
-See [WEBARCHIVE_SUPPORT.md](WEBARCHIVE_SUPPORT.md) for complete documentation.
+See [WEBARCHIVE_SUPPORT.md](docs/features/WEBARCHIVE_SUPPORT.md) for complete documentation.
 
 ## Testing
 
