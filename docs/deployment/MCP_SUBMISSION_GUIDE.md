@@ -43,6 +43,6 @@ Ready-to-paste values for registry submission forms. Keep in sync with README/CH
 
 ## Assets
 
-- Tool schema: `MCP_TOOL_SCHEMA.json` (generated from the live binary)
+- Tool schema: [`MCP_TOOL_SCHEMA.json`](../mcp_functions/MCP_TOOL_SCHEMA.json) (generated from the live binary)
 - Registry config: `MCP_REGISTRY_CONFIG.json`
 - Test evidence: [MCP_TEST_RESULTS.md](../planning/MCP_TEST_RESULTS.md)

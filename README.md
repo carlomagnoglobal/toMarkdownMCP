@@ -142,6 +142,9 @@ them and `vault_path` can be omitted in tool calls — see [USAGE.md](docs/guide
 [AI_TOOLS.md](docs/tools/AI_TOOLS.md) · [SRE_TOOLS.md](docs/tools/SRE_TOOLS.md) ·
 [DOCUMENT_CONVERSION.md](docs/features/DOCUMENT_CONVERSION.md) · [MARKUP_CONVERSION.md](docs/features/MARKUP_CONVERSION.md)
 
+**All MCP functions**: [FUNCTIONS_REFERENCE.md](docs/mcp_functions/FUNCTIONS_REFERENCE.md) — every tool grouped by category ·
+[MCP_TOOL_SCHEMA.json](docs/mcp_functions/MCP_TOOL_SCHEMA.json) — full generated schema
+
 **Publishing**: [DOCKER_HUB_QUICK_START.md](docs/deployment/DOCKER_HUB_QUICK_START.md) ·
 [MCP_REGISTRIES_GUIDE.md](docs/deployment/MCP_REGISTRIES_GUIDE.md) ·
 [PUBLISH_TO_REGISTRIES.md](docs/deployment/PUBLISH_TO_REGISTRIES.md) ·

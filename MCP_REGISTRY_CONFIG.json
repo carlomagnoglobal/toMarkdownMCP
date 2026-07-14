@@ -15,7 +15,7 @@
   },
   "categories": ["markdown", "converter", "documents", "obsidian", "rag", "browser", "knowledge-base"],
   "tools_count": 62,
-  "tools_schema": "MCP_TOOL_SCHEMA.json",
+  "tools_schema": "docs/mcp_functions/MCP_TOOL_SCHEMA.json",
   "environment": {
     "ANTHROPIC_API_KEY": "Optional — enables the ai_* generation tools",
     "CHROME": "Optional — path to Chrome/Chromium for the browser_* tools (auto-detected when installed normally)"

@@ -21,18 +21,18 @@ printf '%s\n' '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}' \
   | ./target/release/to_markdown_mcp | python3 -c "import json,sys; print(len(json.load(sys.stdin)['result']['tools']),'tools')"
 ```
 
-If the tool count changed, update the counts quoted in README.md, USAGE.md, and `get_tool_help` (src/main.rs), and regenerate `MCP_TOOL_SCHEMA.json`:
+If the tool count changed, update the counts quoted in README.md, USAGE.md, and `get_tool_help` (src/main.rs), and regenerate `docs/mcp_functions/MCP_TOOL_SCHEMA.json`:
 
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}' \
   | ./target/release/to_markdown_mcp \
-  | python3 -c "import json,sys; json.dump({'tools': json.load(sys.stdin)['result']['tools']}, open('MCP_TOOL_SCHEMA.json','w'), indent=2)"
+  | python3 -c "import json,sys; json.dump({'tools': json.load(sys.stdin)['result']['tools']}, open('docs/mcp_functions/MCP_TOOL_SCHEMA.json','w'), indent=2)"
 ```
 
 ## 2. Commit, tag, push
 
 ```bash
-git add Cargo.toml CHANGELOG.md MCP_TOOL_SCHEMA.json   # explicit paths
+git add Cargo.toml CHANGELOG.md docs/mcp_functions/MCP_TOOL_SCHEMA.json   # explicit paths
 git commit -m "Release vX.Y.Z"
 git tag -a vX.Y.Z -m "vX.Y.Z"
 git push origin main vX.Y.Z

@@ -18,7 +18,7 @@ $ printf '...tools/list...' | ./target/release/to_markdown_mcp
 tools: 62
 ```
 
-- `tools/list` returns 62 tool schemas (captured verbatim in `MCP_TOOL_SCHEMA.json`)
+- `tools/list` returns 62 tool schemas (captured verbatim in [`MCP_TOOL_SCHEMA.json`](../mcp_functions/MCP_TOOL_SCHEMA.json))
 - `tools/call` verified per family:
   - `convert_from_source` on a live URL and on PDF/DOCX/XLSX fixtures ✅
   - `browser_capture_markdown` on a JS-rendered page — full 18.9K-char article captured, metadata frontmatter, no script leakage ✅

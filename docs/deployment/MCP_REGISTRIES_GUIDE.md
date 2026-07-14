@@ -17,7 +17,7 @@ Complete guide for submitting to both **mcp.so** and the **Docker Hub MCP Regist
 - [ ] Repo is **public** on GitHub
 - [ ] A tagged release exists with binaries ([RELEASE.md](RELEASE.md))
 - [ ] README clearly states what the server does + how to install
-- [ ] `MCP_REGISTRY_CONFIG.json` and `MCP_TOOL_SCHEMA.json` are up to date
+- [ ] `MCP_REGISTRY_CONFIG.json` and [`MCP_TOOL_SCHEMA.json`](../mcp_functions/MCP_TOOL_SCHEMA.json) are up to date
 
 ## Server metadata (copy-paste source of truth)
 
