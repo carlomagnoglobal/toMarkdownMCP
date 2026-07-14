@@ -12,6 +12,7 @@ Cargo.lock
 .idea/
 *.iml
 *.sublime-workspace
+.obsidian/
 
 # OS
 Thumbs.db
