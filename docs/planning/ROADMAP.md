@@ -62,14 +62,14 @@ Desktop GUI with functionality on par with **Obsidian, Typora, MacMD Viewer, and
 - [x] Bundled themes (System/Light/Dark/Sepia) + user CSS file support, persisted
 - [x] Stats footer: words/chars/read-time
 
-### Phase 7 — Vault navigation & knowledge (Obsidian parity, read side)
+### Phase 7 — Vault navigation & knowledge (Obsidian parity, read side) ✅
 
-- [ ] Wikilink following with embeds/transclusion (reuses `src/obsidian/`)
-- [ ] Backlinks panel, tag browser, properties panel, Dataview fields
-- [ ] Vault-wide search: full text / tag / alias / field
-- [ ] Interactive graph view (global + local per note)
-- [ ] Tasks view; `.canvas` rendering
-- [ ] Quick switcher (fuzzy open by title/alias)
+- [x] Wikilinks render as clickable anchors resolved with Obsidian's shortest-path rules (`[[target#heading|alias]]`, embeds shown as ⧉ links; full transclusion rendering still pending)
+- [x] Note panel: frontmatter properties, tags (click → tag search), backlinks with context
+- [x] Vault-wide search tab: full text / tag / alias / frontmatter field (reuses `obsidian::tools::search`)
+- [x] Interactive graph view: canvas force layout, node size by degree, drag, click-to-open, global + current-note local modes
+- [x] Tasks tab across the vault (state, due date, source line); `.canvas` files render via the JsonCanvas converter
+- [x] Quick switcher (Cmd/Ctrl+O or P): fuzzy match over titles and aliases
 
 ### Phase 8 — Editing (Typora / Obsidian parity, write side)
 

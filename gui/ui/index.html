@@ -92,6 +92,62 @@
     display: none; margin: 12px; padding: 10px 14px; border: 1px solid #d1242f;
     border-radius: 6px; color: #d1242f; font-size: 13px;
   }
+  #tabs { display: flex; gap: 2px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
+  #tabs button {
+    flex: 1; padding: 5px 2px; border: none; background: none; color: var(--muted);
+    cursor: pointer; font-size: 12px; border-bottom: 2px solid transparent;
+  }
+  #tabs button.active { color: var(--fg); border-bottom-color: var(--accent); }
+  .pane { display: none; }
+  .pane.active { display: block; }
+  #search-pane input, #search-pane select {
+    width: 100%; margin-bottom: 6px; padding: 6px 8px; font-size: 13px;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg);
+  }
+  .result { padding: 4px 6px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-bottom: 2px; }
+  .result:hover { background: var(--hover); }
+  .result .where { color: var(--muted); font-size: 11px; }
+  .tag-item { display: inline-block; margin: 2px; padding: 2px 8px; border-radius: 10px;
+              background: var(--code-bg); border: 1px solid var(--border); font-size: 12px; cursor: pointer; }
+  .tag-item:hover { background: var(--hover); }
+  .task-item { padding: 3px 6px; font-size: 12px; border-radius: 4px; cursor: pointer; }
+  .task-item:hover { background: var(--hover); }
+  .task-item .src { color: var(--muted); font-size: 11px; }
+  #note-panel {
+    border-top: 1px solid var(--border); margin-top: 8px; padding-top: 6px;
+    font-size: 12px; max-height: 40vh; overflow-y: auto;
+  }
+  #note-panel .kv { display: flex; gap: 6px; padding: 1px 6px; }
+  #note-panel .kv .k { color: var(--muted); min-width: 70px; }
+  #note-panel .bl { padding: 2px 6px; border-radius: 4px; cursor: pointer; }
+  #note-panel .bl:hover { background: var(--hover); }
+  #note-panel .bl .ctx { color: var(--muted); font-size: 11px; overflow: hidden;
+                         text-overflow: ellipsis; white-space: nowrap; }
+  .overlay {
+    display: none; position: fixed; inset: 0; z-index: 50;
+    background: color-mix(in srgb, var(--bg) 75%, transparent);
+  }
+  .overlay.show { display: block; }
+  #switcher {
+    position: absolute; top: 15vh; left: 50%; transform: translateX(-50%);
+    width: 480px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.3); overflow: hidden;
+  }
+  #switcher input {
+    width: 100%; padding: 12px 14px; font-size: 15px; border: none; outline: none;
+    background: var(--bg); color: var(--fg); border-bottom: 1px solid var(--border);
+  }
+  #switcher-results { max-height: 40vh; overflow-y: auto; }
+  #switcher-results .result.sel { background: var(--active); }
+  #graph-box {
+    position: absolute; inset: 6vh 8vw; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column;
+  }
+  #graph-head { display: flex; gap: 8px; align-items: center; padding: 8px 12px;
+                border-bottom: 1px solid var(--border); font-size: 13px; }
+  #graph-head button { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
+                       background: var(--bg); color: var(--fg); cursor: pointer; font-size: 12px; }
+  #graph-canvas { flex: 1; width: 100%; }
   @media print {
     #sidebar, #statusbar, #error { display: none !important; }
     #main, #scroll { overflow: visible !important; }
@@ -115,10 +171,32 @@
       <button id="export-html">Export HTML</button>
       <button id="print-pdf" title="Print or save as PDF">Print / PDF</button>
       <button id="copy-rich" title="Copy as rich text">Copy Rich</button>
+      <button id="show-graph" title="Vault link graph">Graph</button>
     </div>
-    <div id="recents-box"></div>
-    <div id="toc-box"></div>
-    <div id="tree-box"></div>
+    <div id="tabs">
+      <button data-pane="files-pane" class="active">Files</button>
+      <button data-pane="search-pane">Search</button>
+      <button data-pane="tags-pane">Tags</button>
+      <button data-pane="tasks-pane">Tasks</button>
+    </div>
+    <div id="files-pane" class="pane active">
+      <div id="recents-box"></div>
+      <div id="toc-box"></div>
+      <div id="tree-box"></div>
+    </div>
+    <div id="search-pane" class="pane">
+      <input id="search-input" placeholder="Search vault… (Enter)">
+      <select id="search-mode">
+        <option value="text">Full text</option>
+        <option value="tag">Tag</option>
+        <option value="alias">Alias</option>
+        <option value="field">Frontmatter field</option>
+      </select>
+      <div id="search-results"></div>
+    </div>
+    <div id="tags-pane" class="pane"><div id="tags-list"></div></div>
+    <div id="tasks-pane" class="pane"><div id="tasks-list"></div></div>
+    <div id="note-panel"></div>
   </div>
   <div id="main">
     <div id="error"></div>
@@ -126,6 +204,24 @@
       <div id="content"><p id="placeholder">Open a folder or file — or drop one here.</p></div>
     </div>
     <div id="statusbar"><span id="stats"></span><span id="live" class="live"></span></div>
+  </div>
+  <div id="switcher-overlay" class="overlay">
+    <div id="switcher">
+      <input id="switcher-input" placeholder="Open note by title or alias…">
+      <div id="switcher-results"></div>
+    </div>
+  </div>
+  <div id="graph-overlay" class="overlay">
+    <div id="graph-box">
+      <div id="graph-head">
+        <strong>Vault graph</strong>
+        <button id="graph-global">Global</button>
+        <button id="graph-local">Current note</button>
+        <span style="flex:1"></span>
+        <button id="graph-close">Close</button>
+      </div>
+      <canvas id="graph-canvas"></canvas>
+    </div>
   </div>
 <script>
 const invoke = window.__TAURI__.core.invoke;
@@ -274,7 +370,7 @@ async function openFile(path, remember = true, preserveScroll = false) {
   const ratio = preserveScroll && scrollBox.scrollHeight > 0
     ? scrollBox.scrollTop / scrollBox.scrollHeight : 0;
   try {
-    const r = await invoke('open_file', { path });
+    const r = await invoke('open_file', { path, vaultRoot: currentFolder });
     contentBox.innerHTML = r.html;
     document.title = r.title + ' — toMarkdown Viewer';
     scrollBox.scrollTop = preserveScroll ? ratio * scrollBox.scrollHeight : 0;
@@ -284,7 +380,61 @@ async function openFile(path, remember = true, preserveScroll = false) {
     currentFile = path;
     if (remember) addRecent(path, 'file');
     invoke('watch_file', { path }).catch(() => {});
+    renderNotePanel(path);
   } catch (e) { showError(String(e)); }
+}
+
+// ---- Wikilink navigation (delegated click handler) ----
+contentBox.addEventListener('click', async (e) => {
+  const a = e.target.closest('a');
+  if (!a) return;
+  const href = a.getAttribute('href') || '';
+  if (!href.startsWith('wikilink:')) return;
+  e.preventDefault();
+  if (!currentFolder) { showError('Open the vault folder to follow wikilinks.'); return; }
+  const target = decodeURIComponent(href.slice('wikilink:'.length)).split('#')[0];
+  try {
+    const resolved = await invoke('resolve_wikilink',
+      { root: currentFolder, target, from: currentFile || '' });
+    openFile(resolved);
+  } catch (err) { showError(String(err)); }
+});
+
+// ---- Note panel: properties, tags, backlinks, dataview fields ----
+async function renderNotePanel(path) {
+  const panel = document.getElementById('note-panel');
+  if (!currentFolder || !path.endsWith('.md')) { panel.innerHTML = ''; return; }
+  try {
+    const info = await invoke('note_info', { root: currentFolder, path });
+    const note = info.note || {};
+    let html = '';
+    const fm = note.frontmatter || {};
+    const fmKeys = Object.keys(fm);
+    if (fmKeys.length) {
+      html += '<div class="section-title">Properties</div>';
+      for (const k of fmKeys) {
+        const v = Array.isArray(fm[k]) ? fm[k].join(', ') : String(fm[k] ?? '');
+        html += `<div class="kv"><span class="k">${k}</span><span>${v}</span></div>`;
+      }
+    }
+    const tags = note.tags || [];
+    if (tags.length) {
+      html += '<div class="section-title">Tags</div><div>' +
+        tags.map(t => `<span class="tag-item" data-tag="${t}">#${t}</span>`).join('') + '</div>';
+    }
+    const backlinks = (info.backlinks && info.backlinks.backlinks) || info.backlinks || [];
+    if (Array.isArray(backlinks) && backlinks.length) {
+      html += `<div class="section-title">Backlinks (${backlinks.length})</div>`;
+      for (const b of backlinks) {
+        html += `<div class="bl" data-path="${b.from}"><div>${b.from}</div><div class="ctx">${(b.context || '').trim()}</div></div>`;
+      }
+    }
+    panel.innerHTML = html;
+    panel.querySelectorAll('.bl').forEach(el =>
+      el.onclick = () => openFile(currentFolder + '/' + el.dataset.path));
+    panel.querySelectorAll('.tag-item').forEach(el =>
+      el.onclick = () => runSearch(el.dataset.tag, 'tag'));
+  } catch { panel.innerHTML = ''; }
 }
 
 // ---- Live reload ----
@@ -349,6 +499,244 @@ document.getElementById('copy-rich').onclick = async () => {
     flashLive('copied as rich text');
   } catch (e) { showError('Copy failed: ' + e); }
 };
+
+// ---- Sidebar tabs ----
+document.querySelectorAll('#tabs button').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.pane).classList.add('active');
+    if (btn.dataset.pane === 'tags-pane') loadTags();
+    if (btn.dataset.pane === 'tasks-pane') loadTasks();
+  };
+});
+function switchTab(pane) { document.querySelector(`#tabs button[data-pane="${pane}"]`).click(); }
+
+// ---- Vault search ----
+async function runSearch(query, mode) {
+  if (!currentFolder) { showError('Open a vault folder first.'); return; }
+  switchTab('search-pane');
+  document.getElementById('search-input').value = query;
+  document.getElementById('search-mode').value = mode;
+  const box = document.getElementById('search-results');
+  box.innerHTML = '<div class="section-title">Searching…</div>';
+  try {
+    const r = await invoke('vault_search', { root: currentFolder, query, mode });
+    const hits = r.hits || [];
+    box.innerHTML = `<div class="section-title">${hits.length} hit(s)</div>`;
+    for (const h of hits) {
+      const div = document.createElement('div');
+      div.className = 'result';
+      const where = h.context ? h.context : (h.tag ? '#' + h.tag : (h.alias || h.value || ''));
+      div.innerHTML = `<div>${h.note}${h.line ? ':' + h.line : ''}</div><div class="where">${where}</div>`;
+      div.onclick = () => openFile(currentFolder + '/' + h.note);
+      box.appendChild(div);
+    }
+  } catch (e) { box.innerHTML = ''; showError(String(e)); }
+}
+document.getElementById('search-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') runSearch(e.target.value, document.getElementById('search-mode').value);
+});
+
+// ---- Tag browser ----
+async function loadTags() {
+  if (!currentFolder) return;
+  const box = document.getElementById('tags-list');
+  try {
+    const v = await invoke('vault_overview', { root: currentFolder });
+    const tags = (v.tags || []).sort((a, b) => b.count - a.count);
+    box.innerHTML = tags.length ? '' : '<div class="section-title">No tags</div>';
+    for (const t of tags) {
+      const span = document.createElement('span');
+      span.className = 'tag-item';
+      span.textContent = `#${t.tag} (${t.count})`;
+      span.onclick = () => runSearch(t.tag, 'tag');
+      box.appendChild(span);
+    }
+  } catch (e) { showError(String(e)); }
+}
+
+// ---- Tasks view ----
+async function loadTasks() {
+  if (!currentFolder) return;
+  const box = document.getElementById('tasks-list');
+  try {
+    const v = await invoke('vault_tasks', { root: currentFolder });
+    const tasks = v.tasks || [];
+    box.innerHTML = `<div class="section-title">${tasks.length} task(s)</div>`;
+    for (const t of tasks) {
+      const div = document.createElement('div');
+      div.className = 'task-item';
+      const due = t.task.due ? ` 📅 ${t.task.due}` : '';
+      div.innerHTML = `<div>[${t.task.state}] ${t.task.text}${due}</div><div class="src">${t.note}:${t.task.line}</div>`;
+      div.onclick = () => openFile(currentFolder + '/' + t.note);
+      box.appendChild(div);
+    }
+  } catch (e) { showError(String(e)); }
+}
+
+// ---- Quick switcher (Cmd/Ctrl+O or Cmd/Ctrl+P) ----
+const switcherOverlay = document.getElementById('switcher-overlay');
+const switcherInput = document.getElementById('switcher-input');
+const switcherResults = document.getElementById('switcher-results');
+let switcherItems = [], switcherSel = 0;
+
+function fuzzyScore(hay, needle) {
+  hay = hay.toLowerCase();
+  if (hay.includes(needle)) return 1000 - hay.indexOf(needle) - hay.length * 0.01;
+  let i = 0;
+  for (const ch of hay) if (ch === needle[i]) i++;
+  return i === needle.length ? 500 - hay.length * 0.01 : -1;
+}
+function renderSwitcher() {
+  const q = switcherInput.value.trim().toLowerCase();
+  let scored = switcherItems.map(it => {
+    const best = Math.max(fuzzyScore(it.title, q), ...(it.aliases || []).map(a => fuzzyScore(a, q)));
+    return { it, score: q ? best : 0 };
+  }).filter(x => x.score >= 0);
+  scored.sort((a, b) => b.score - a.score);
+  scored = scored.slice(0, 12);
+  switcherSel = Math.min(switcherSel, Math.max(0, scored.length - 1));
+  switcherResults.innerHTML = '';
+  scored.forEach((x, i) => {
+    const div = document.createElement('div');
+    div.className = 'result' + (i === switcherSel ? ' sel' : '');
+    const alias = (x.it.aliases || []).length ? ` · ${x.it.aliases.join(', ')}` : '';
+    div.innerHTML = `<div>${x.it.title}</div><div class="where">${x.it.path}${alias}</div>`;
+    div.onclick = () => { closeSwitcher(); openFile(currentFolder + '/' + x.it.path); };
+    switcherResults.appendChild(div);
+  });
+  return scored;
+}
+async function openSwitcher() {
+  if (!currentFolder) { showError('Open a vault folder first.'); return; }
+  try { switcherItems = await invoke('quick_list', { root: currentFolder }); } catch { switcherItems = []; }
+  switcherOverlay.classList.add('show');
+  switcherInput.value = ''; switcherSel = 0;
+  renderSwitcher();
+  switcherInput.focus();
+}
+function closeSwitcher() { switcherOverlay.classList.remove('show'); }
+switcherInput.addEventListener('input', () => { switcherSel = 0; renderSwitcher(); });
+switcherInput.addEventListener('keydown', (e) => {
+  const shown = switcherResults.children.length;
+  if (e.key === 'Escape') closeSwitcher();
+  else if (e.key === 'ArrowDown') { switcherSel = Math.min(switcherSel + 1, shown - 1); renderSwitcher(); }
+  else if (e.key === 'ArrowUp') { switcherSel = Math.max(switcherSel - 1, 0); renderSwitcher(); }
+  else if (e.key === 'Enter') {
+    const sel = switcherResults.children[switcherSel];
+    if (sel) sel.click();
+  }
+});
+switcherOverlay.addEventListener('click', (e) => { if (e.target === switcherOverlay) closeSwitcher(); });
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'o' || e.key === 'p')) { e.preventDefault(); openSwitcher(); }
+});
+
+// ---- Graph view: tiny force simulation on canvas ----
+const graphOverlay = document.getElementById('graph-overlay');
+const graphCanvas = document.getElementById('graph-canvas');
+let graphNodes = [], graphLinks = [], graphAnim = null, dragNode = null;
+
+async function showGraph(focus) {
+  if (!currentFolder) { showError('Open a vault folder first.'); return; }
+  try {
+    const data = await invoke('graph_data', { root: currentFolder, focus: focus || null });
+    graphOverlay.classList.add('show');
+    const rect = graphCanvas.getBoundingClientRect();
+    graphCanvas.width = rect.width * devicePixelRatio;
+    graphCanvas.height = rect.height * devicePixelRatio;
+    const W = graphCanvas.width, H = graphCanvas.height;
+    graphNodes = data.nodes.map((n, i) => ({
+      ...n,
+      x: W / 2 + Math.cos(i * 2.4) * W / 4 * Math.random(),
+      y: H / 2 + Math.sin(i * 2.4) * H / 4 * Math.random(),
+      vx: 0, vy: 0,
+    }));
+    const byId = Object.fromEntries(graphNodes.map(n => [n.id, n]));
+    graphLinks = data.links.map(l => ({ a: byId[l.source], b: byId[l.target] })).filter(l => l.a && l.b);
+    cancelAnimationFrame(graphAnim);
+    let ticks = 0;
+    const step = () => {
+      // repulsion
+      for (const n of graphNodes) {
+        for (const m of graphNodes) {
+          if (n === m) continue;
+          let dx = n.x - m.x, dy = n.y - m.y;
+          const d2 = Math.max(dx * dx + dy * dy, 100);
+          const f = 60000 / d2;
+          const d = Math.sqrt(d2);
+          n.vx += (dx / d) * f; n.vy += (dy / d) * f;
+        }
+        // gravity to center
+        n.vx += (W / 2 - n.x) * 0.002; n.vy += (H / 2 - n.y) * 0.002;
+      }
+      // spring along links
+      for (const { a, b } of graphLinks) {
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+        const f = (d - 140) * 0.01;
+        a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+        b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+      }
+      for (const n of graphNodes) {
+        if (n === dragNode) continue;
+        n.vx *= 0.85; n.vy *= 0.85;
+        n.x += n.vx; n.y += n.vy;
+      }
+      drawGraph();
+      if (++ticks < 300) graphAnim = requestAnimationFrame(step);
+    };
+    step();
+  } catch (e) { showError(String(e)); }
+}
+function drawGraph() {
+  const ctx = graphCanvas.getContext('2d');
+  const css = getComputedStyle(document.documentElement);
+  ctx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
+  ctx.strokeStyle = css.getPropertyValue('--border');
+  ctx.lineWidth = devicePixelRatio;
+  for (const { a, b } of graphLinks) {
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+  ctx.fillStyle = css.getPropertyValue('--accent');
+  ctx.font = `${11 * devicePixelRatio}px -apple-system, sans-serif`;
+  for (const n of graphNodes) {
+    const r = (4 + Math.min(n.links, 8)) * devicePixelRatio;
+    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillText(n.title, n.x + r + 3, n.y + 3);
+    ctx.fillStyle = css.getPropertyValue('--accent');
+  }
+}
+function graphNodeAt(e) {
+  const rect = graphCanvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * devicePixelRatio;
+  const y = (e.clientY - rect.top) * devicePixelRatio;
+  return graphNodes.find(n => (n.x - x) ** 2 + (n.y - y) ** 2 < (14 * devicePixelRatio) ** 2);
+}
+graphCanvas.addEventListener('mousedown', (e) => { dragNode = graphNodeAt(e); });
+graphCanvas.addEventListener('mousemove', (e) => {
+  if (!dragNode) return;
+  const rect = graphCanvas.getBoundingClientRect();
+  dragNode.x = (e.clientX - rect.left) * devicePixelRatio;
+  dragNode.y = (e.clientY - rect.top) * devicePixelRatio;
+  drawGraph();
+});
+graphCanvas.addEventListener('mouseup', (e) => {
+  const n = graphNodeAt(e);
+  if (n && dragNode === n) {
+    graphOverlay.classList.remove('show');
+    openFile(currentFolder + '/' + n.id);
+  }
+  dragNode = null;
+});
+document.getElementById('show-graph').onclick = () => showGraph(null);
+document.getElementById('graph-global').onclick = () => showGraph(null);
+document.getElementById('graph-local').onclick = () => showGraph(currentFile);
+document.getElementById('graph-close').onclick = () => graphOverlay.classList.remove('show');
+graphOverlay.addEventListener('click', (e) => { if (e.target === graphOverlay) graphOverlay.classList.remove('show'); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') graphOverlay.classList.remove('show'); });
 
 // ---- Drag & drop ----
 listen('tauri://drag-drop', async (event) => {

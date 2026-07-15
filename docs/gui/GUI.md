@@ -17,6 +17,12 @@ Phase 5 of the [roadmap](../planning/ROADMAP.md): foundation & viewer. Later pha
 - **Export** — standalone styled HTML (theme + user CSS inlined), Print / save-as-PDF via the system dialog, and copy-as-rich-text to paste into email/docs
 - **Stats footer** — word count, character count, estimated read time
 - **Recent files & folders** — persisted locally, one click to reopen
+- **Wikilink navigation** — `[[target#heading|alias]]` links are clickable and resolve with Obsidian's shortest-path rules; embeds appear as ⧉ links; `.canvas` boards render as structured Markdown
+- **Note panel** — frontmatter properties, tags (click to search), and backlinks with source context for the open note
+- **Vault search tab** — full text, tag (nested-prefix aware), alias, or frontmatter field
+- **Tags & Tasks tabs** — vault-wide tag browser sorted by count; all checkbox tasks with state, due date, and source
+- **Graph view** — force-directed link graph (global or current-note local), drag nodes, click to open
+- **Quick switcher** — Cmd/Ctrl+O (or P) fuzzy-opens notes by title or alias
 
 ## Build & run
 
