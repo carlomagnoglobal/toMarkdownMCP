@@ -135,7 +135,7 @@ them and `vault_path` can be omitted in tool calls — see [USAGE.md](docs/guide
 
 **Guides**: [GETTING_STARTED.md](docs/guides/GETTING_STARTED.md) · [QUICK_START.md](docs/guides/QUICK_START.md) ·
 [INSTALL.md](docs/guides/INSTALL.md) · [USAGE.md](docs/guides/USAGE.md) · [DEPLOYMENT.md](docs/deployment/DEPLOYMENT.md) ·
-[RELEASE.md](docs/deployment/RELEASE.md) · [CHANGELOG.md](CHANGELOG.md)
+[RELEASE.md](docs/deployment/RELEASE.md) · [CHANGELOG.md](CHANGELOG.md) · [ROADMAP.md](docs/planning/ROADMAP.md)
 
 **Feature docs**: [BROWSER_TOOLS.md](docs/tools/BROWSER_TOOLS.md) · [OBSIDIAN_TOOLS.md](docs/tools/OBSIDIAN_TOOLS.md) ·
 [RAG_TOOLS.md](docs/tools/RAG_TOOLS.md) · [SECOND_BRAIN_TOOLS.md](docs/tools/SECOND_BRAIN_TOOLS.md) ·
