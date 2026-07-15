@@ -392,6 +392,20 @@ fn pick_file(app: tauri::AppHandle) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(WatchState::default())
+        .invoke_handler(tauri::generate_handler![
+            list_tree, open_file, pick_folder, pick_file,
+            watch_tree, watch_file, export_html, read_text_file,
+            note_info, vault_overview, vault_search, vault_tasks,
+            resolve_wikilink, graph_data, quick_list
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running toMarkdown Viewer");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -446,18 +460,4 @@ mod tests {
         let r = open_file(format!("{}/Board.canvas", root), Some(root)).unwrap();
         assert!(!r.html.trim().is_empty());
     }
-}
-
-fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .manage(WatchState::default())
-        .invoke_handler(tauri::generate_handler![
-            list_tree, open_file, pick_folder, pick_file,
-            watch_tree, watch_file, export_html, read_text_file,
-            note_info, vault_overview, vault_search, vault_tasks,
-            resolve_wikilink, graph_data, quick_list
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running toMarkdown Viewer");
 }
