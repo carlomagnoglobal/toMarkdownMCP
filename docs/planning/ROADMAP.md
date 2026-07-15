@@ -9,17 +9,17 @@ Current baseline: v0.1.1 on crates.io — 62 MCP tools ([FUNCTIONS_REFERENCE.md]
 - [x] Update [PLANNED_ENHANCEMENTS.md](PLANNED_ENHANCEMENTS.md) to mark shipped items
 - [x] Create this roadmap and link it from the README
 
-## Phase 1 — CLI support (ships as v0.2.0)
+## Phase 1 — CLI support ✅ (code complete; ships as v0.2.0)
 
 Make the binary usable directly from the terminal, not only as an MCP server.
 
-- [ ] Proper CLI via `clap` (derive), preserving existing behavior: no args → MCP server; `tui [PATH]`; `--base-dir`
-- [ ] `convert <SOURCE> [-o out.md] [--type LANG] [--line-numbers]` — file/URL/stdin → Markdown (wraps `convert_from_source` logic)
-- [ ] `batch <DIR> [-o outdir]` — wraps batch conversion
-- [ ] `search <QUERY> --dir <DIR>` — wraps `search_content`
-- [ ] `tools` — print the tool catalog (reuses `get_tool_help`)
-- [ ] CLI arg-parsing unit tests + `convert` integration test on a fixture
-- [ ] Docs: USAGE.md, QUICK_START.md, README
+- [x] Proper CLI via `clap` (derive), preserving existing behavior: no args → MCP server; `tui [PATH]`; `--base-dir`
+- [x] `convert <SOURCE> [-o out.md] [--type LANG] [--line-numbers] [--title T]` — file/URL/stdin → Markdown (wraps `convert_from_source` logic)
+- [x] `batch <FILES>... [-o out.md]` — combined document for up to 10 files (wraps `batch_convert_files`)
+- [x] `search <QUERY> --dir <DIR>` — wraps `search_content`
+- [x] `tools [TOOL_NAME]` — tool catalog / per-tool help (reuses `get_tool_help`; detailed help now falls back to the tools/list schema for every tool)
+- [x] CLI arg-parsing unit tests + CLI integration tests on the fixture vault
+- [x] Docs: USAGE.md, QUICK_START.md, README
 
 ## Phase 2 — MCP protocol depth
 

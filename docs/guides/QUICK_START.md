@@ -16,6 +16,18 @@ Binary will be at: `target/release/to_markdown_mcp`
 ./target/release/to_markdown_mcp --help
 ```
 
+## CLI (no MCP client needed)
+
+```bash
+to_markdown_mcp convert report.pdf                    # any supported format → Markdown on stdout
+to_markdown_mcp convert https://example.com -o page.md
+to_markdown_mcp convert script.py --line-numbers --type python
+to_markdown_mcp batch a.md b.pdf c.docx -o combined.md   # up to 10 files
+to_markdown_mcp search "kubernetes" --dir ./notes
+to_markdown_mcp tools                                  # list all 62 MCP tools
+to_markdown_mcp tools convert_file                     # detailed help for one tool
+```
+
 ## Examples
 
 ### List the 62 available tools

@@ -127,6 +127,15 @@ Claude-backed generation. Call `get_tool_help` (no arguments) for the full list,
 Run `to_markdown_mcp tui [PATH]` for an interactive terminal Markdown viewer over a vault or
 file: file tree, styled rendering, `[[wikilink]]` following, and filename search.
 
+The binary is also a standalone CLI — no MCP client needed:
+
+```bash
+to_markdown_mcp convert report.pdf -o report.md   # file, URL, or '-' (stdin) → Markdown
+to_markdown_mcp batch a.md b.pdf c.docx           # combined document, up to 10 files
+to_markdown_mcp search "query" --dir ./notes      # ranked full-text search
+to_markdown_mcp tools [TOOL_NAME]                 # tool catalog / per-tool help
+```
+
 Start the server with `--base-dir /path/to/vault` (repeatable for multiple vaults) to set
 default directories once in your MCP client config: relative paths then resolve against
 them and `vault_path` can be omitted in tool calls — see [USAGE.md](docs/guides/USAGE.md).

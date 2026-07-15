@@ -8,9 +8,22 @@
 cargo build --release
 ```
 
-The compiled binary is `target/release/to_markdown_mcp` and serves two roles:
+The compiled binary is `target/release/to_markdown_mcp` and serves three roles:
 - **MCP server** (default, no arguments): JSON-RPC 2.0 over stdio
 - **TUI viewer** (`tui <path>`): interactive terminal Markdown/vault browser
+- **CLI** (`convert`, `batch`, `search`, `tools` subcommands): direct terminal use, no MCP client needed
+
+### CLI subcommands
+
+```bash
+to_markdown_mcp convert <SOURCE> [-o FILE] [--type LANG] [--line-numbers] [--title T]
+                        # SOURCE = file path, URL, or '-' for stdin
+to_markdown_mcp batch <FILES>... [-o FILE]      # combined Markdown for up to 10 files
+to_markdown_mcp search <QUERY> --dir <DIR> [--max-results N]
+to_markdown_mcp tools [TOOL_NAME]               # tool catalog / per-tool help
+```
+
+`--base-dir` works with every subcommand, same as in server mode.
 
 ### Talking to the server directly
 

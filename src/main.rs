@@ -95,72 +95,153 @@ fn expand_tilde(p: &str) -> String {
     p.to_string()
 }
 
-/// Pull every `--base-dir <path>` (or `--base-dir=a,b`) out of the arg list,
-/// returning the remaining args. Comma-separated values add multiple dirs.
-fn extract_base_dirs(args: Vec<String>) -> Vec<String> {
-    let mut rest = Vec::new();
+/// Resolve `--base-dir` values (tilde-expanded, canonicalized) and store them
+/// in the process-global BASE_DIRS. Empty input leaves the feature off.
+fn set_base_dirs(values: &[String]) {
     let mut dirs: Vec<std::path::PathBuf> = Vec::new();
-    let mut it = args.into_iter();
-    while let Some(a) = it.next() {
-        let value = if a == "--base-dir" {
-            it.next()
-        } else if let Some(v) = a.strip_prefix("--base-dir=") {
-            Some(v.to_string())
-        } else {
-            rest.push(a);
-            continue;
-        };
-        let Some(value) = value else {
-            eprintln!("warning: --base-dir requires a path argument");
-            continue;
-        };
-        for part in value.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-            let p = std::path::PathBuf::from(expand_tilde(part));
-            if !p.is_dir() {
-                eprintln!("warning: --base-dir '{}' is not an existing directory (kept anyway)", part);
-            }
-            dirs.push(p.canonicalize().unwrap_or(p));
+    for part in values.iter().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        let p = std::path::PathBuf::from(expand_tilde(part));
+        if !p.is_dir() {
+            eprintln!("warning: --base-dir '{}' is not an existing directory (kept anyway)", part);
         }
+        dirs.push(p.canonicalize().unwrap_or(p));
     }
     if !dirs.is_empty() {
         let _ = BASE_DIRS.set(dirs);
     }
-    rest
+}
+
+#[derive(clap::Parser)]
+#[command(
+    name = "to_markdown_mcp",
+    version,
+    about = "Markdown conversion MCP server, vault viewer, and CLI",
+    long_about = "Run with no subcommand to start the MCP server (JSON-RPC over stdio).\n\
+                  Subcommands expose the converters directly from the terminal."
+)]
+struct Cli {
+    /// Default vault/base directory. Repeatable (or comma-separated) for
+    /// multiple vaults; the first is the primary default. Relative tool paths
+    /// resolve against these directories, and vault_path/directory parameters
+    /// may be omitted in tool calls.
+    #[arg(long = "base-dir", global = true, value_delimiter = ',', value_name = "DIR")]
+    base_dir: Vec<String>,
+
+    #[command(subcommand)]
+    command: Option<CliCommand>,
+}
+
+#[derive(clap::Subcommand)]
+enum CliCommand {
+    /// Open the TUI Markdown viewer on a vault dir or file (default: .)
+    Tui {
+        path: Option<String>,
+    },
+    /// Convert a file, URL, or stdin ('-') to Markdown
+    Convert {
+        /// File path, URL (http://...), or '-' for stdin
+        source: String,
+        /// Write output to this file instead of stdout
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<std::path::PathBuf>,
+        /// Override language auto-detection (e.g. python, makefile)
+        #[arg(long = "type", value_name = "LANG")]
+        file_type: Option<String>,
+        /// Add line numbers to code blocks
+        #[arg(long)]
+        line_numbers: bool,
+        /// Title for the Markdown document
+        #[arg(long)]
+        title: Option<String>,
+    },
+    /// Convert multiple files to Markdown in one combined document (up to 10)
+    Batch {
+        /// Files to convert
+        #[arg(required = true)]
+        files: Vec<String>,
+        /// Write combined output to this file instead of stdout
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<std::path::PathBuf>,
+    },
+    /// Search inside converted document content across a directory
+    Search {
+        /// Search terms
+        query: String,
+        /// Directory to search (recursive)
+        #[arg(long, default_value = ".", value_name = "DIR")]
+        dir: String,
+        /// Maximum number of results
+        #[arg(long, default_value_t = 10)]
+        max_results: u32,
+    },
+    /// Print the MCP tool catalog, or detailed help for one tool
+    Tools {
+        tool_name: Option<String>,
+    },
+}
+
+/// Handlers return `Box<dyn Error>` (not Send+Sync); repackage for anyhow.
+fn cli_err(e: Box<dyn std::error::Error>) -> anyhow::Error {
+    anyhow::anyhow!("{}", e)
+}
+
+/// Print to stdout or write to a file when `-o` was given.
+fn emit(output: Option<&std::path::Path>, content: &str) -> Result<()> {
+    match output {
+        Some(path) => {
+            std::fs::write(path, content)?;
+            eprintln!("Wrote {}", path.display());
+        }
+        None => println!("{}", content),
+    }
+    Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // CLI dispatch: no args = MCP stdio server (unchanged default);
-    // `tui <path>` = interactive Markdown/vault viewer.
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let args = extract_base_dirs(args);
-    match args.first().map(|s| s.as_str()) {
+    // CLI dispatch: no subcommand = MCP stdio server (unchanged default).
+    let cli = <Cli as clap::Parser>::parse();
+    set_base_dirs(&cli.base_dir);
+    match cli.command {
         None => {}
-        Some("tui") => {
+        Some(CliCommand::Tui { path }) => {
             let default = base_dirs()
                 .first()
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_else(|| ".".to_string());
-            let path = args.get(1).map(String::as_str).unwrap_or(&default);
-            return tui::run(Path::new(path));
+            let path = path.unwrap_or(default);
+            return tui::run(Path::new(&path));
         }
-        Some("--help") | Some("-h") => {
-            println!("to_markdown_mcp — Markdown conversion MCP server + vault viewer\n");
-            println!("USAGE:");
-            println!("  to_markdown_mcp [--base-dir DIR]...   Run the MCP server (JSON-RPC over stdio)");
-            println!("  to_markdown_mcp tui [PATH]            Open the TUI Markdown viewer on a vault dir or file (default: .)");
-            println!("  to_markdown_mcp --help                Show this help");
-            println!();
-            println!("OPTIONS:");
-            println!("  --base-dir DIR   Default vault/base directory. Repeatable (or comma-separated)");
-            println!("                   for multiple vaults; the first is the primary default.");
-            println!("                   Relative tool paths resolve against these directories, and");
-            println!("                   vault_path/directory parameters may be omitted in tool calls.");
+        Some(CliCommand::Convert { source, output, file_type, line_numbers, title }) => {
+            let mut args = json!({"source": source, "add_line_numbers": line_numbers});
+            if let Some(t) = file_type {
+                args["file_type"] = json!(t);
+            }
+            if let Some(t) = title {
+                args["title"] = json!(t);
+            }
+            let md = handle_convert_from_source(&args).await.map_err(cli_err)?;
+            return emit(output.as_deref(), &md);
+        }
+        Some(CliCommand::Batch { files, output }) => {
+            let args = json!({"file_paths": files});
+            let md = handle_batch_convert_files(&args).map_err(cli_err)?;
+            return emit(output.as_deref(), &md);
+        }
+        Some(CliCommand::Search { query, dir, max_results }) => {
+            let args = json!({"query": query, "directory": dir, "max_results": max_results});
+            let result = handle_search_content(&args).map_err(cli_err)?;
+            println!("{}", result);
             return Ok(());
         }
-        Some(other) => {
-            eprintln!("Unknown argument '{}'. Try --help.", other);
-            std::process::exit(2);
+        Some(CliCommand::Tools { tool_name }) => {
+            let args = match tool_name {
+                Some(name) => json!({"tool_name": name}),
+                None => json!({}),
+            };
+            let help = handle_get_tool_help(&args).map_err(cli_err)?;
+            println!("{}", help);
+            return Ok(());
         }
     }
 
@@ -258,8 +339,10 @@ async fn handle_request(request: &JsonRpcRequest) -> JsonRpcResponse {
     }
 }
 
-fn handle_list_tools(id: &Value) -> JsonRpcResponse {
-    let tools = json!([
+/// The full tools/list array — single source of truth for tool names,
+/// descriptions, and input schemas (also drives get_tool_help fallback).
+fn tool_definitions() -> Value {
+    json!([
         {
             "name": "convert_file",
             "description": "Convert a text, code, HTML, or document file to Markdown format. Supports HTML/HTM/MHTML/webarchive; documents PDF, DOCX, DOC, RTF, ODT; spreadsheets XLSX, XLS, ODS, CSV; presentations PPTX, ODP; email EML; ebooks EPUB, MOBI; RSS/Atom feeds; and markup WIKI, RST, ADOC, ORG, TEX, TEXTILE.",
@@ -1511,13 +1594,15 @@ fn handle_list_tools(id: &Value) -> JsonRpcResponse {
                 "required": []
             }
         }
-    ]);
+    ])
+}
 
+fn handle_list_tools(id: &Value) -> JsonRpcResponse {
     JsonRpcResponse {
         jsonrpc: "2.0".to_string(),
         id: id.clone(),
         result: Some(json!({
-            "tools": tools
+            "tools": tool_definitions()
         })),
         error: None,
     }
@@ -3519,6 +3604,42 @@ fn handle_create_or_append_file(args: &Value) -> Result<String, Box<dyn std::err
     Ok(format!("File {} with mode '{}'", if file_path.exists() { "created/updated" } else { "processed" }, mode))
 }
 
+/// Render detailed help for a tool from its tools/list schema definition:
+/// description plus a parameter table. Returns None for unknown tool names.
+fn schema_help(tool_name: &str) -> Option<String> {
+    let defs = tool_definitions();
+    let tool = defs.as_array()?.iter().find(|t| t["name"] == tool_name)?;
+    let mut help = String::new();
+    if let Some(desc) = tool["description"].as_str() {
+        help.push_str(desc);
+        help.push_str("\n\n");
+    }
+    let schema = &tool["inputSchema"];
+    let required: Vec<&str> = schema["required"]
+        .as_array()
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if let Some(props) = schema["properties"].as_object() {
+        if !props.is_empty() {
+            help.push_str("**Parameters:**\n");
+            help.push_str("| Name | Type | Required | Description |\n");
+            help.push_str("|------|------|----------|-------------|\n");
+            for (name, prop) in props {
+                help.push_str(&format!(
+                    "| {} | {} | {} | {} |\n",
+                    name,
+                    prop["type"].as_str().unwrap_or("-"),
+                    if required.contains(&name.as_str()) { "yes" } else { "no" },
+                    prop["description"].as_str().unwrap_or("-").replace('|', "\\|"),
+                ));
+            }
+        } else {
+            help.push_str("No parameters.\n");
+        }
+    }
+    Some(help)
+}
+
 fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
     let tool_name = args.get("tool_name")
         .and_then(|v| v.as_str());
@@ -3611,9 +3732,12 @@ fn handle_get_tool_help(args: &Value) -> Result<String, Box<dyn std::error::Erro
                 help.push_str("| directory | string | no | . | Root directory to scan |\n\n");
                 help.push_str("**Example:**\n```json\n{\"path\": \"README.md\", \"directory\": \".\"}\n```\n");
             }
-            _ => {
-                help.push_str("Unknown tool. Use get_tool_help without tool_name to see all tools.\n");
-            }
+            // Any tool without a hand-written help block above: render help
+            // straight from its tools/list schema definition.
+            other => match schema_help(other) {
+                Some(text) => help.push_str(&text),
+                None => help.push_str("Unknown tool. Use get_tool_help without tool_name to see all tools.\n"),
+            },
         }
     } else {
         // Summary of all tools
@@ -5017,13 +5141,58 @@ mod base_dir_tests {
     }
 
     #[test]
-    fn extract_base_dirs_parses_and_strips() {
-        // Note: BASE_DIRS is process-global; this test only checks arg stripping
-        // and relies on set-once semantics being tolerant (extract ignores failure).
-        let rest = extract_base_dirs(vec![
-            "--base-dir".into(), "/tmp".into(),
-            "tui".into(), "some/path".into(),
-        ]);
-        assert_eq!(rest, vec!["tui".to_string(), "some/path".to_string()]);
+    fn schema_help_covers_every_tool() {
+        let defs = tool_definitions();
+        for tool in defs.as_array().unwrap() {
+            let name = tool["name"].as_str().unwrap();
+            let help = schema_help(name).unwrap_or_else(|| panic!("no schema help for {}", name));
+            assert!(!help.trim().is_empty(), "empty schema help for {}", name);
+        }
+        assert!(schema_help("definitely_not_a_tool").is_none());
+    }
+
+    #[test]
+    fn cli_structure_is_valid() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn cli_parses_base_dir_with_subcommand() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["to_markdown_mcp", "--base-dir", "/tmp", "tui", "some/path"]).unwrap();
+        assert_eq!(cli.base_dir, vec!["/tmp".to_string()]);
+        assert!(matches!(cli.command, Some(CliCommand::Tui { path: Some(ref p) }) if p == "some/path"));
+
+        // Comma-separated values expand to multiple dirs; global flag also
+        // parses after the subcommand.
+        let cli = Cli::try_parse_from(["to_markdown_mcp", "tui", "--base-dir=/a,/b"]).unwrap();
+        assert_eq!(cli.base_dir, vec!["/a".to_string(), "/b".to_string()]);
+    }
+
+    #[test]
+    fn cli_no_args_means_server_mode() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["to_markdown_mcp"]).unwrap();
+        assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn cli_parses_convert_flags() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "to_markdown_mcp", "convert", "script.py",
+            "-o", "out.md", "--type", "python", "--line-numbers",
+        ]).unwrap();
+        match cli.command {
+            Some(CliCommand::Convert { source, output, file_type, line_numbers, title }) => {
+                assert_eq!(source, "script.py");
+                assert_eq!(output.unwrap().to_str().unwrap(), "out.md");
+                assert_eq!(file_type.as_deref(), Some("python"));
+                assert!(line_numbers);
+                assert!(title.is_none());
+            }
+            _ => panic!("expected Convert subcommand"),
+        }
     }
 }
