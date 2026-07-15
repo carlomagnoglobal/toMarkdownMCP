@@ -8,10 +8,14 @@ Phase 5 of the [roadmap](../planning/ROADMAP.md): foundation & viewer. Later pha
 
 ## Current features
 
-- **File tree sidebar** — open a folder (native picker, drag-and-drop, or recents); directories collapse/expand; hidden and build directories are filtered out
+- **File tree sidebar** — open a folder (native picker, drag-and-drop, or recents); directories collapse/expand; hidden and build directories are filtered out; the tree refreshes automatically when files are added or removed
 - **Rendered Markdown pane** — headings, tables, task lists, footnotes, strikethrough (pulldown-cmark); code and config files render as fenced code blocks with detected language
 - **Any supported format** — non-Markdown files (PDF, DOCX, XLSX, EPUB, HTML, …) are converted to Markdown by the shared pipeline before rendering
-- **Light/dark theme** — follows the OS automatically
+- **Live preview** — the open file is watched (`notify`); edit it in any external editor and the pane re-renders on save, preserving your scroll position (Marked 2 style)
+- **Table of contents** — clickable, indentation-per-level, generated from the rendered headings
+- **Themes** — System / Light / Dark / Sepia, plus a user CSS file that layers on top (persisted and reloaded on start)
+- **Export** — standalone styled HTML (theme + user CSS inlined), Print / save-as-PDF via the system dialog, and copy-as-rich-text to paste into email/docs
+- **Stats footer** — word count, character count, estimated read time
 - **Recent files & folders** — persisted locally, one click to reopen
 
 ## Build & run

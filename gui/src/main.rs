@@ -5,9 +5,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
+use notify::Watcher;
 use pulldown_cmark::{html, Options, Parser};
 use serde::Serialize;
+use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
 
 use to_markdown_mcp::file_type::{detect_language, detect_language_from_filename};
@@ -72,6 +75,9 @@ fn list_tree(root: String) -> Result<Vec<TreeNode>, String> {
 struct Rendered {
     title: String,
     html: String,
+    words: usize,
+    chars: usize,
+    read_minutes: usize,
 }
 
 fn markdown_to_html(md: &str) -> String {
@@ -92,6 +98,8 @@ fn open_file(path: String) -> Result<Rendered, String> {
         return Err(format!("Not a file: {}", path));
     }
     let converted = convert_any_to_markdown(&p).map_err(|e| e.to_string())?;
+    let words = converted.split_whitespace().count();
+    let chars = converted.chars().count();
     let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
     // Markdown-ish output renders directly; code/text gets a fenced block so
     // the viewer shows it monospaced.
@@ -111,7 +119,105 @@ fn open_file(path: String) -> Result<Rendered, String> {
     Ok(Rendered {
         title: p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(path),
         html: markdown_to_html(&md),
+        words,
+        chars,
+        // ~200 words/minute, floor 1 so a short note doesn't show "0 min".
+        read_minutes: (words / 200).max(1),
     })
+}
+
+/// Live watchers: one for the open folder tree, one for the parent of the
+/// open file (editors replace files on save, so the file itself would lose
+/// its inode). Setting a new watcher drops and replaces the previous one.
+#[derive(Default)]
+struct WatchState {
+    tree: Mutex<Option<notify::RecommendedWatcher>>,
+    file: Mutex<Option<notify::RecommendedWatcher>>,
+}
+
+fn make_watcher(
+    app: tauri::AppHandle,
+    event_name: &'static str,
+    target: &Path,
+    mode: notify::RecursiveMode,
+) -> Result<notify::RecommendedWatcher, String> {
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        if let Ok(event) = res {
+            // Only content-affecting events; skip pure access notifications.
+            if matches!(
+                event.kind,
+                notify::EventKind::Create(_) | notify::EventKind::Modify(_) | notify::EventKind::Remove(_)
+            ) {
+                let paths: Vec<String> =
+                    event.paths.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+                let _ = app.emit(event_name, paths);
+            }
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    watcher.watch(target, mode).map_err(|e| e.to_string())?;
+    Ok(watcher)
+}
+
+#[tauri::command]
+fn watch_tree(
+    app: tauri::AppHandle,
+    state: tauri::State<WatchState>,
+    root: String,
+) -> Result<(), String> {
+    let watcher = make_watcher(app, "tree-changed", Path::new(&root), notify::RecursiveMode::Recursive)?;
+    *state.tree.lock().unwrap() = Some(watcher);
+    Ok(())
+}
+
+#[tauri::command]
+fn watch_file(
+    app: tauri::AppHandle,
+    state: tauri::State<WatchState>,
+    path: String,
+) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    let parent = p.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let watcher = make_watcher(app, "file-changed", &parent, notify::RecursiveMode::NonRecursive)?;
+    *state.file.lock().unwrap() = Some(watcher);
+    Ok(())
+}
+
+/// Save a standalone styled HTML export of the current document.
+#[tauri::command]
+fn export_html(
+    app: tauri::AppHandle,
+    title: String,
+    body_html: String,
+    css: String,
+) -> Result<Option<String>, String> {
+    let Some(dest) = app
+        .dialog()
+        .file()
+        .set_file_name(format!("{}.html", title.trim_end_matches(".md")))
+        .add_filter("HTML", &["html"])
+        .blocking_save_file()
+    else {
+        return Ok(None);
+    };
+    let path = dest.into_path().map_err(|e| e.to_string())?;
+    let doc = format!(
+        "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>{}</title>\n<style>\n{}\n</style>\n</head>\n<body>\n<main class=\"content\">\n{}\n</main>\n</body>\n</html>\n",
+        title, css, body_html
+    );
+    std::fs::write(&path, doc).map_err(|e| e.to_string())?;
+    Ok(Some(path.display().to_string()))
+}
+
+/// Read a small text file (user CSS). Capped at 1MB.
+#[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    let p = PathBuf::from(&path);
+    let size = std::fs::metadata(&p).map(|m| m.len()).map_err(|e| e.to_string())?;
+    if size > 1024 * 1024 {
+        return Err("File larger than 1MB".to_string());
+    }
+    std::fs::read_to_string(&p).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -135,7 +241,11 @@ fn pick_file(app: tauri::AppHandle) -> Option<String> {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![list_tree, open_file, pick_folder, pick_file])
+        .manage(WatchState::default())
+        .invoke_handler(tauri::generate_handler![
+            list_tree, open_file, pick_folder, pick_file,
+            watch_tree, watch_file, export_html, read_text_file
+        ])
         .run(tauri::generate_context!())
         .expect("error while running toMarkdown Viewer");
 }

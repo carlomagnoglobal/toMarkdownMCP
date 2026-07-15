@@ -53,14 +53,14 @@ Desktop GUI with functionality on par with **Obsidian, Typora, MacMD Viewer, and
 - [x] Drag-and-drop (files and folders), native open dialogs, persisted recent files
 - [ ] macOS `.app` packaging (`bundle.active` currently false; needs tauri-cli + icon set); Linux/Windows CI builds — deferred to the Phase 9 distribution pass
 
-### Phase 6 — Live preview & watching (Marked 2 parity)
+### Phase 6 — Live preview & watching (Marked 2 parity) ✅
 
-- [ ] File/folder watching with instant re-render (`notify` crate)
-- [ ] Scroll preservation and synced scrolling
-- [ ] Clickable TOC sidebar (reuses `toc_generator.rs` / `heading_analyzer.rs`)
-- [ ] Export styled HTML and PDF; copy-as-rich-text
-- [ ] Bundled CSS themes + user CSS support
-- [ ] Stats footer: words/chars/read-time (reuses `textmetrics.rs`)
+- [x] File and folder watching with debounced re-render (`notify` crate; tree refresh on create/remove, file reload on save)
+- [x] Scroll-position preservation across live reloads (ratio-based)
+- [x] Clickable TOC sidebar built from the rendered headings (JS-side; simpler than round-tripping through `toc_generator.rs`)
+- [x] Export standalone styled HTML (theme + user CSS inlined), Print/save-as-PDF via the system dialog, copy-as-rich-text
+- [x] Bundled themes (System/Light/Dark/Sepia) + user CSS file support, persisted
+- [x] Stats footer: words/chars/read-time
 
 ### Phase 7 — Vault navigation & knowledge (Obsidian parity, read side)
 
