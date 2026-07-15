@@ -25,6 +25,18 @@ to_markdown_mcp tools [TOOL_NAME]               # tool catalog / per-tool help
 
 `--base-dir` works with every subcommand, same as in server mode.
 
+### MCP resources & prompts
+
+When started with `--base-dir`, the server exposes the vault over the full MCP surface, not just tools:
+
+- `resources/list` — every file in the base dir(s) as a `file://` resource (up to 1000)
+- `resources/read` — returns the file's content as Markdown (non-Markdown formats are converted first); reads outside the base dirs are rejected
+- `prompts/list` / `prompts/get` — templates: `summarize_note` (path), `ingest_url` (url, optional save_path), `vault_health` (optional vault_path)
+
+```bash
+printf '%s\n' '{"jsonrpc":"2.0","id":"1","method":"resources/list","params":{}}' | ./target/release/to_markdown_mcp --base-dir ~/vault
+```
+
 ### Talking to the server directly
 
 Every example below is a single JSON line written to stdin; the response comes back on stdout.

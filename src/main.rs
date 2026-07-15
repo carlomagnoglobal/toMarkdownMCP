@@ -309,7 +309,7 @@ async fn handle_request(request: &JsonRpcRequest) -> JsonRpcResponse {
                 id: request_id(request),
                 result: Some(json!({
                     "protocolVersion": version,
-                    "capabilities": { "tools": {} },
+                    "capabilities": { "tools": {}, "resources": {}, "prompts": {} },
                     "serverInfo": {
                         "name": "toMarkdownMCP",
                         "version": env!("CARGO_PKG_VERSION")
@@ -326,6 +326,10 @@ async fn handle_request(request: &JsonRpcRequest) -> JsonRpcResponse {
         },
         "tools/list" => handle_list_tools(&request_id(request)),
         "tools/call" => handle_call_tool(request).await,
+        "resources/list" => handle_list_resources(&request_id(request)),
+        "resources/read" => handle_read_resource(request),
+        "prompts/list" => handle_list_prompts(&request_id(request)),
+        "prompts/get" => handle_get_prompt(request),
         _ => JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
             id: request_id(request),
@@ -1605,6 +1609,200 @@ fn handle_list_tools(id: &Value) -> JsonRpcResponse {
             "tools": tool_definitions()
         })),
         error: None,
+    }
+}
+
+fn rpc_result(id: Value, result: Value) -> JsonRpcResponse {
+    JsonRpcResponse { jsonrpc: "2.0".to_string(), id, result: Some(result), error: None }
+}
+
+fn rpc_error(id: Value, code: i32, message: String) -> JsonRpcResponse {
+    JsonRpcResponse {
+        jsonrpc: "2.0".to_string(),
+        id,
+        result: None,
+        error: Some(JsonRpcError { code, message, data: None }),
+    }
+}
+
+/// Cap on resources/list output so a huge vault can't flood the client.
+const MAX_RESOURCES: usize = 1000;
+
+/// Collect the files of one base dir as MCP resource descriptors.
+fn collect_resources(dir: &std::path::Path, out: &mut Vec<Value>) {
+    let Ok(files) = list_files_in_directory(&dir.to_string_lossy(), true) else {
+        return;
+    };
+    for f in files {
+        if out.len() >= MAX_RESOURCES {
+            return;
+        }
+        let name = f.strip_prefix(dir).unwrap_or(&f).to_string_lossy().into_owned();
+        let mime = if f.extension().is_some_and(|e| e == "md") {
+            "text/markdown".to_string()
+        } else {
+            mime_guess::from_path(&f).first_raw().unwrap_or("application/octet-stream").to_string()
+        };
+        out.push(json!({
+            "uri": format!("file://{}", f.display()),
+            "name": name,
+            "mimeType": mime,
+        }));
+    }
+}
+
+/// MCP resources/list: files under the --base-dir vault(s) as file:// URIs.
+/// Empty when the server was started without --base-dir.
+fn handle_list_resources(id: &Value) -> JsonRpcResponse {
+    let mut resources = Vec::new();
+    for dir in base_dirs() {
+        collect_resources(dir, &mut resources);
+    }
+    rpc_result(id.clone(), json!({ "resources": resources }))
+}
+
+/// Resolve a file:// URI to a path, restricted to the --base-dir vault(s).
+fn resource_path_in(dirs: &[std::path::PathBuf], uri: &str) -> Result<std::path::PathBuf, String> {
+    let raw = uri
+        .strip_prefix("file://")
+        .ok_or_else(|| format!("Unsupported URI scheme: {}", uri))?;
+    if dirs.is_empty() {
+        return Err("Resources unavailable: server started without --base-dir".to_string());
+    }
+    let path = std::path::Path::new(raw)
+        .canonicalize()
+        .map_err(|e| format!("Resource not found: {} ({})", raw, e))?;
+    if !dirs.iter().any(|d| path.starts_with(d)) {
+        return Err(format!("Resource outside the configured base directories: {}", raw));
+    }
+    Ok(path)
+}
+
+/// MCP resources/read: return a vault file's content. Markdown is returned
+/// verbatim; every other supported format is converted to Markdown first.
+fn handle_read_resource(request: &JsonRpcRequest) -> JsonRpcResponse {
+    let id = request_id(request);
+    let Some(uri) = request.params.get("uri").and_then(Value::as_str) else {
+        return rpc_error(id, -32602, "Missing required parameter: uri".to_string());
+    };
+    let path = match resource_path_in(base_dirs(), uri) {
+        Ok(p) => p,
+        Err(msg) => return rpc_error(id, -32602, msg),
+    };
+    let text = if path.extension().is_some_and(|e| e == "md") {
+        match std::fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) => return rpc_error(id, -32603, format!("Failed to read {}: {}", path.display(), e)),
+        }
+    } else {
+        let args = json!({"file_path": path.to_string_lossy(), "include_filename": false});
+        match handle_convert_file(&args) {
+            Ok(t) => t,
+            Err(e) => return rpc_error(id, -32603, format!("Failed to convert {}: {}", path.display(), e)),
+        }
+    };
+    rpc_result(id, json!({
+        "contents": [{ "uri": uri, "mimeType": "text/markdown", "text": text }]
+    }))
+}
+
+/// MCP prompts/list: reusable prompt templates over this server's tools.
+fn prompt_definitions() -> Value {
+    json!([
+        {
+            "name": "summarize_note",
+            "description": "Read and summarize a note or document from the vault",
+            "arguments": [
+                {"name": "path", "description": "Path to the note or document", "required": true}
+            ]
+        },
+        {
+            "name": "ingest_url",
+            "description": "Capture a web page as Markdown and optionally save it into the vault",
+            "arguments": [
+                {"name": "url", "description": "Page URL to capture", "required": true},
+                {"name": "save_path", "description": "Vault-relative path to save the captured Markdown", "required": false}
+            ]
+        },
+        {
+            "name": "vault_health",
+            "description": "Audit the vault: broken links, orphan notes, and near-duplicates",
+            "arguments": [
+                {"name": "vault_path", "description": "Vault root (omit to use the server's base dir)", "required": false}
+            ]
+        }
+    ])
+}
+
+fn handle_list_prompts(id: &Value) -> JsonRpcResponse {
+    rpc_result(id.clone(), json!({ "prompts": prompt_definitions() }))
+}
+
+/// Render one prompt template with its arguments. Returns (description, text).
+fn render_prompt(name: &str, args: &Value) -> Result<(String, String), String> {
+    let arg = |key: &str| args.get(key).and_then(Value::as_str);
+    match name {
+        "summarize_note" => {
+            let path = arg("path").ok_or("Missing required argument: path")?;
+            Ok((
+                "Summarize a vault note or document".to_string(),
+                format!(
+                    "Using the toMarkdownMCP tools, read and summarize the document at '{}'. \
+                     Call get_file_summary first for structure, then summarize_document \
+                     (or ai_summarize when an API key is configured). Present a concise \
+                     summary followed by the key points as bullets.",
+                    path
+                ),
+            ))
+        }
+        "ingest_url" => {
+            let url = arg("url").ok_or("Missing required argument: url")?;
+            let mut text = format!(
+                "Capture the web page {} as Markdown using the browser_capture_markdown tool \
+                 (pass the url directly; set extract_metadata to true).",
+                url
+            );
+            if let Some(save) = arg("save_path") {
+                text.push_str(&format!(
+                    " Then save the captured Markdown to '{}' with create_or_append_file.",
+                    save
+                ));
+            }
+            Ok(("Capture a web page into Markdown".to_string(), text))
+        }
+        "vault_health" => {
+            let target = arg("vault_path")
+                .map(|p| format!("the vault at '{}'", p))
+                .unwrap_or_else(|| "the configured vault".to_string());
+            Ok((
+                "Audit vault link and note health".to_string(),
+                format!(
+                    "Audit {} using obsidian_vault_index with include_orphans set to true, \
+                     then find_duplicates on the same directory. Report broken links, \
+                     ambiguous links, orphan notes, and near-duplicate groups, each with a \
+                     suggested fix.",
+                    target
+                ),
+            ))
+        }
+        other => Err(format!("Unknown prompt: {}", other)),
+    }
+}
+
+fn handle_get_prompt(request: &JsonRpcRequest) -> JsonRpcResponse {
+    let id = request_id(request);
+    let Some(name) = request.params.get("name").and_then(Value::as_str) else {
+        return rpc_error(id, -32602, "Missing required parameter: name".to_string());
+    };
+    let args = request.params.get("arguments").cloned().unwrap_or(json!({}));
+    match render_prompt(name, &args) {
+        Ok((description, text)) => rpc_result(id, json!({
+            "description": description,
+            "messages": [
+                { "role": "user", "content": { "type": "text", "text": text } }
+            ]
+        })),
+        Err(msg) => rpc_error(id, -32602, msg),
     }
 }
 
@@ -5138,6 +5336,61 @@ mod base_dir_tests {
         let mut args = serde_json::json!({"source": "Note A.md"});
         apply_base_dirs_with(&dirs, &mut args);
         assert!(args["source"].as_str().unwrap().ends_with("mini_vault/Note A.md"));
+    }
+
+    #[test]
+    fn collect_resources_lists_vault_files() {
+        let mut out = Vec::new();
+        collect_resources(&fixture_vault(), &mut out);
+        assert!(!out.is_empty(), "fixture vault should yield resources");
+        let names: Vec<&str> = out.iter().filter_map(|r| r["name"].as_str()).collect();
+        assert!(names.iter().any(|n| n.contains("Note A.md")), "names: {:?}", names);
+        for r in &out {
+            assert!(r["uri"].as_str().unwrap().starts_with("file://"));
+            assert!(r["mimeType"].is_string());
+        }
+    }
+
+    #[test]
+    fn resource_path_rejects_escapes_and_bad_schemes() {
+        let dirs = vec![fixture_vault().canonicalize().unwrap()];
+        // Valid file inside the vault resolves.
+        let uri = format!("file://{}", fixture_vault().join("Note A.md").display());
+        assert!(resource_path_in(&dirs, &uri).is_ok());
+        // Outside the vault is rejected even though the file exists.
+        let outside = format!("file://{}", PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml").display());
+        assert!(resource_path_in(&dirs, &outside).is_err());
+        // Traversal out of the vault is rejected after canonicalization.
+        let escape = format!("file://{}", fixture_vault().join("../../../Cargo.toml").display());
+        assert!(resource_path_in(&dirs, &escape).is_err());
+        // Non-file scheme and no-base-dir cases are rejected.
+        assert!(resource_path_in(&dirs, "https://example.com/x.md").is_err());
+        assert!(resource_path_in(&[], &uri).is_err());
+    }
+
+    #[test]
+    fn prompts_render_and_validate() {
+        // Every listed prompt renders with its required args.
+        let (_, text) = render_prompt("summarize_note", &json!({"path": "Note A.md"})).unwrap();
+        assert!(text.contains("Note A.md"));
+        let (_, text) = render_prompt("ingest_url", &json!({"url": "https://example.com", "save_path": "web/page.md"})).unwrap();
+        assert!(text.contains("https://example.com") && text.contains("web/page.md"));
+        let (_, text) = render_prompt("vault_health", &json!({})).unwrap();
+        assert!(text.contains("obsidian_vault_index"));
+        // Missing required arg and unknown prompt fail.
+        assert!(render_prompt("summarize_note", &json!({})).is_err());
+        assert!(render_prompt("nope", &json!({})).is_err());
+        // prompts/list definitions all render (with dummy required args).
+        for p in prompt_definitions().as_array().unwrap() {
+            let name = p["name"].as_str().unwrap();
+            let mut args = serde_json::Map::new();
+            for a in p["arguments"].as_array().unwrap() {
+                if a["required"].as_bool().unwrap_or(false) {
+                    args.insert(a["name"].as_str().unwrap().to_string(), json!("x"));
+                }
+            }
+            assert!(render_prompt(name, &Value::Object(args)).is_ok(), "prompt {} failed", name);
+        }
     }
 
     #[test]

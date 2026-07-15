@@ -139,6 +139,9 @@ to_markdown_mcp tools [TOOL_NAME]                 # tool catalog / per-tool help
 Start the server with `--base-dir /path/to/vault` (repeatable for multiple vaults) to set
 default directories once in your MCP client config: relative paths then resolve against
 them and `vault_path` can be omitted in tool calls — see [USAGE.md](docs/guides/USAGE.md).
+With `--base-dir` set, the server also exposes the vault files as **MCP resources**
+(`resources/list`/`read`, any supported format converted to Markdown on read) and ships
+**MCP prompts** (`summarize_note`, `ingest_url`, `vault_health`).
 
 ## Documentation
 

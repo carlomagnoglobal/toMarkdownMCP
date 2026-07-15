@@ -21,12 +21,12 @@ Make the binary usable directly from the terminal, not only as an MCP server.
 - [x] CLI arg-parsing unit tests + CLI integration tests on the fixture vault
 - [x] Docs: USAGE.md, QUICK_START.md, README
 
-## Phase 2 — MCP protocol depth
+## Phase 2 — MCP protocol depth ✅
 
-- [ ] `resources/list` + `resources/read`: expose `--base-dir` vault files as MCP resources
-- [ ] `prompts/list` + `prompts/get`: prompt templates (summarize note, ingest URL, ...)
-- [ ] Declare new capabilities in the `initialize` response
-- [ ] Regenerate `MCP_TOOL_SCHEMA.json` if the tool list changes
+- [x] `resources/list` + `resources/read`: expose `--base-dir` vault files as MCP resources (`file://` URIs, capped at 1000; reads confined to the base dirs; non-Markdown formats converted on read)
+- [x] `prompts/list` + `prompts/get`: `summarize_note`, `ingest_url`, `vault_health` templates
+- [x] Declare `resources` and `prompts` capabilities in the `initialize` response
+- [x] `MCP_TOOL_SCHEMA.json` unchanged (tool list did not change)
 
 ## Phase 3 — Real embeddings RAG
 
