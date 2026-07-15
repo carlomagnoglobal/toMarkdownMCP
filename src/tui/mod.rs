@@ -558,7 +558,7 @@ fn draw_status(
 ) {
     let lines_total = app.content.lines().count().max(1);
     let pct = if lines_total <= 1 { 100 } else { (app.cursor * 100) / (lines_total - 1) };
-    let minutes = (app.word_count + 219) / 220;
+    let minutes = app.word_count.div_ceil(220);
     let _ = total_rows;
     let right = if app.current.is_some() {
         format!(

@@ -42,9 +42,7 @@ fn strip_markdown(text: &str) -> String {
         let mut l = line.trim_start_matches('#').to_string();
         l = l
             .replace("**", "")
-            .replace('*', "")
-            .replace('`', "")
-            .replace('>', "")
+            .replace(['*', '`', '>'], "")
             .replace('|', " ");
         out.push_str(&l);
         out.push('\n');
@@ -89,7 +87,7 @@ pub fn text_statistics(text: &str, exclude_stopwords: bool, min_length: usize) -
 
     let char_count = text.chars().count();
     let sentence_count = text
-        .split(|c| c == '.' || c == '!' || c == '?')
+        .split(['.', '!', '?'])
         .filter(|s| !s.trim().is_empty())
         .count()
         .max(1);

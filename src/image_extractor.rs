@@ -208,20 +208,14 @@ pub fn process_images_in_html(
         // Use a simple approach: repeatedly find and remove <img...> tags
         let mut result = html_content.to_string();
 
-        loop {
-            // Find the start of an img tag
-            if let Some(start) = result.find("<img") {
-                // Find the end of the img tag (the closing >)
-                if let Some(end) = result[start..].find('>') {
-                    let end_pos = start + end + 1;
-                    // Remove the entire img tag using drain
-                    result.drain(start..end_pos);
-                } else {
-                    // Malformed tag, skip
-                    break;
-                }
+        while let Some(start) = result.find("<img") {
+            // Find the end of the img tag (the closing >)
+            if let Some(end) = result[start..].find('>') {
+                let end_pos = start + end + 1;
+                // Remove the entire img tag using drain
+                result.drain(start..end_pos);
             } else {
-                // No more img tags
+                // Malformed tag, skip
                 break;
             }
         }

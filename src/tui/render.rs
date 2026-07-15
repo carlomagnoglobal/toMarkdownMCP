@@ -90,7 +90,7 @@ impl Theme {
     }
 
     pub fn by_index(i: usize) -> Self {
-        if i % 2 == 0 { Theme::dark() } else { Theme::light() }
+        if i.is_multiple_of(2) { Theme::dark() } else { Theme::light() }
     }
 }
 
@@ -1409,8 +1409,8 @@ mod tests {
     #[test]
     fn raw_document_is_literal() {
         let doc = style_document("# Title\n**bold**", true, 40, &Theme::dark());
-        assert_eq!(row_text(&Line::from(doc.lines[0].clone())), "# Title");
-        assert_eq!(row_text(&Line::from(doc.lines[1].clone())), "**bold**");
+        assert_eq!(row_text(&doc.lines[0].clone()), "# Title");
+        assert_eq!(row_text(&doc.lines[1].clone()), "**bold**");
     }
 }
 

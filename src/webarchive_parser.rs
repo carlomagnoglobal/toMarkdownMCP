@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn test_webarchive_info_generation() {
         // This test verifies the info function works (would need real webarchive for full test)
-        let info_parts = vec!["# Webarchive Information", "## Main Resource", "- **URL:**"];
+        let _info_parts = ["# Webarchive Information", "## Main Resource", "- **URL:**"];
         // Template test - real test would require sample webarchive
     }
 }

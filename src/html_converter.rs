@@ -139,7 +139,7 @@ pub fn html_to_markdown_with_options(
         let metadata = extract_html_metadata(html_content)?;
         if !metadata.is_empty() {
             markdown.push_str(&metadata_to_yaml_frontmatter(&metadata));
-            markdown.push_str("\n");
+            markdown.push('\n');
         }
     }
 
@@ -186,9 +186,9 @@ pub fn html_to_text(html_content: &str) -> Result<String> {
     let mut text = String::new();
     let body_selector = Selector::parse("body").map_err(|_| anyhow!("Invalid selector"))?;
     let body = if let Some(body_elem) = document.select(&body_selector).next() {
-        body_elem.clone()
+        body_elem
     } else {
-        document.root_element().clone()
+        document.root_element()
     };
 
     for node in body.descendants() {
@@ -268,9 +268,7 @@ pub fn extract_html_metadata(html_content: &str) -> Result<BTreeMap<String, Stri
             if let Some(content) = elem.attr("content") {
                 if property.starts_with("og:") && !content.is_empty() {
                     let key = property.replace("og:", "og_");
-                    if !metadata.contains_key(&key) {
-                        metadata.insert(key, content.to_string());
-                    }
+                    metadata.entry(key).or_insert_with(|| content.to_string());
                 }
             }
         }

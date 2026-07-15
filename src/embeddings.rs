@@ -305,7 +305,7 @@ mod tests {
         assert_eq!(reloaded.files.len(), 2);
         // Removing a source drops its entry.
         let mut index = reloaded;
-        let n = index.update(&[a.clone()], &mut embedder, read).unwrap();
+        let n = index.update(std::slice::from_ref(&a), &mut embedder, read).unwrap();
         assert_eq!(n, 0);
         assert_eq!(index.files.len(), 1);
         // Ranking finds the relevant chunk first.

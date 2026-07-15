@@ -34,12 +34,12 @@ Make the binary usable directly from the terminal, not only as an MCP server.
 - [x] Persistent per-directory vector index (`.tomarkdown/embeddings_index.json`) with incremental re-index by mtime and model-change invalidation
 - [x] Wired into `retrieve_context`, `find_related_notes`, `find_duplicates`, `cluster_documents` behind an opt-in `embeddings: true` parameter (no breaking schema changes; `MCP_TOOL_SCHEMA.json` regenerated)
 
-## Phase 4 — Hardening & quality
+## Phase 4 — Hardening & quality ✅
 
-- [ ] Streaming/chunked conversion for >10MB files (see [PLANNED_ENHANCEMENTS.md](PLANNED_ENHANCEMENTS.md))
-- [ ] `cargo clippy --all-targets -D warnings` clean; fmt + clippy in CI
-- [ ] End-to-end JSON-RPC integration test per tool family
-- [ ] Error-message audit: consistent JSON-RPC error codes/messages
+- [x] Large-file gate for >10MB files: plain text/code streams through a single pre-sized buffer; structured formats (HTML/docs/markup) are refused with guidance and a `max_bytes` override on `convert_file`; same gate protects the RAG directory scans
+- [x] `cargo clippy --all-targets -D warnings` clean; clippy enforced in CI (rustfmt deliberately not enforced — the pre-existing style diverges and a repo-wide reformat would bury history)
+- [x] End-to-end JSON-RPC integration tests per tool family (`tests/jsonrpc.rs`), including resources/prompts and error-shape checks
+- [x] Error audit: missing/invalid arguments now return `-32602 Invalid params` naming the parameter; execution failures return `-32603` with the real cause instead of a generic "Internal error"
 
 ## Phases 5–9 — GUI application
 

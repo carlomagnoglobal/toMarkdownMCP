@@ -454,7 +454,7 @@ mod tests {
         assert!(idx.aliases.contains_key("alpha"), "aliases: {:?}", idx.aliases.keys());
 
         // Block anchor indexed
-        assert_eq!(idx.blocks.get("Note B.md").and_then(|b| b.get("quote1")).is_some(), true);
+        assert!(idx.blocks.get("Note B.md").and_then(|b| b.get("quote1")).is_some());
 
         // Backlinks: Note B is linked from Note A (including via alias)
         let bl = idx.backlinks.get("Note B.md").expect("backlinks for Note B");

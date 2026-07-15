@@ -535,7 +535,7 @@ pub fn extract_code_blocks_with_languages(html_content: &str) -> Result<Vec<(Str
         // Skip if already processed as part of <pre>
         let skip = code
             .parent()
-            .and_then(|p| scraper::element_ref::ElementRef::wrap(p))
+            .and_then(scraper::element_ref::ElementRef::wrap)
             .map(|p| p.value().name())
             .map(|name| name == "pre")
             .unwrap_or(false);

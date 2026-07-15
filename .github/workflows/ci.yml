@@ -27,6 +27,9 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.toml') }}
 
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
       - name: Build
         run: cargo build --verbose
 

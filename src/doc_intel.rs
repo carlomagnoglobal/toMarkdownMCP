@@ -48,7 +48,7 @@ pub fn readability(text: &str) -> Readability {
     let words: Vec<String> = tokenize_words(text);
     let word_count = words.len().max(1);
     let sentences = text
-        .split(|c| c == '.' || c == '!' || c == '?')
+        .split(['.', '!', '?'])
         .filter(|s| !s.trim().is_empty())
         .count()
         .max(1);

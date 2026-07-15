@@ -311,7 +311,7 @@ fn org_to_md(input: &str) -> String {
 /// Inline Org: *bold*, /italic/, =code=, ~code~, [[link][label]].
 fn inline_org(s: &str) -> String {
     let mut s = s.to_string();
-    s = s.replace('=', "`").replace('~', "`");
+    s = s.replace(['=', '~'], "`");
     // [[link][label]] -> [label](link)
     while let Some(start) = s.find("[[") {
         if let Some(end) = s[start..].find("]]") {
@@ -355,8 +355,8 @@ fn latex_to_md(input: &str) -> String {
             out.push_str(&format!("{} {}\n\n", "#".repeat(level), inline_latex(text)));
             continue;
         }
-        if trimmed.starts_with("\\item") {
-            out.push_str(&format!("- {}\n", inline_latex(trimmed[5..].trim())));
+        if let Some(item) = trimmed.strip_prefix("\\item") {
+            out.push_str(&format!("- {}\n", inline_latex(item.trim())));
             continue;
         }
         // Skip environment markers we don't translate.

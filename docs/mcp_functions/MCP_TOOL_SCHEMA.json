@@ -72,6 +72,10 @@
             "description": "Include filename as Markdown heading (default: true)",
             "type": "boolean"
           },
+          "max_bytes": {
+            "description": "Size limit in bytes for structured formats (default 10485760 = 10MB); larger plain-text files stream instead",
+            "type": "integer"
+          },
           "preserve_comments": {
             "default": false,
             "description": "Preserve HTML comments in output (default: false)",

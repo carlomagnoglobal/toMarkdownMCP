@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn test_format_number() {
         assert_eq!(format_number(30.0), "30");
-        assert_eq!(format_number(3.14), "3.14");
+        assert_eq!(format_number(2.75), "2.75");
     }
 
     #[test]

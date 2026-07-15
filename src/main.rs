@@ -358,6 +358,10 @@ fn tool_definitions() -> Value {
                         "type": "string",
                         "description": "Path to the file to convert"
                     },
+                    "max_bytes": {
+                        "type": "integer",
+                        "description": "Size limit in bytes for structured formats (default 10485760 = 10MB); larger plain-text files stream instead"
+                    },
                     "include_filename": {
                         "type": "boolean",
                         "description": "Include filename as Markdown heading (default: true)",
@@ -1985,17 +1989,101 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
             })),
             error: None,
         },
-        Err(e) => JsonRpcResponse {
-            jsonrpc: "2.0".to_string(),
-            id: request_id(request),
-            result: None,
-            error: Some(JsonRpcError {
-                code: -32603,
-                message: "Internal error".to_string(),
-                data: Some(json!(e.to_string())),
-            }),
-        },
+        Err(e) => {
+            // JSON-RPC error taxonomy: bad/missing arguments are the
+            // caller's fault (-32602 Invalid params); everything else is a
+            // failed execution (-32603) with the real cause as the message.
+            let msg = e.to_string();
+            let code = match e.downcast_ref::<ConversionError>() {
+                Some(ConversionError::MissingParameter(_)) => -32602,
+                _ => -32603,
+            };
+            JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                id: request_id(request),
+                result: None,
+                error: Some(JsonRpcError {
+                    code,
+                    message: msg.clone(),
+                    data: Some(json!(msg)),
+                }),
+            }
+        }
     }
+}
+
+/// Above this size, structured formats are refused (their parsers hold the
+/// whole transformed document in memory, typically several times the input)
+/// and plain text/code switches to a single-pass buffered read. The
+/// `max_bytes` tool parameter overrides it.
+const LARGE_FILE_BYTES: u64 = 10 * 1024 * 1024;
+
+/// True when the extension belongs to a structured format whose converter
+/// must load and transform the entire file (HTML family, markup, binary docs).
+fn is_structured_ext(ext: Option<&str>) -> bool {
+    let Some(ext) = ext else { return false };
+    matches!(ext, "html" | "htm" | "mhtml" | "webarchive")
+        || markup_converter::is_markup_extension(ext)
+        || document_converter::is_document_extension(ext)
+        || office_converter::is_office_extension(ext)
+        || feed_email_converter::is_feed_email_extension(ext)
+}
+
+fn large_file_error(path: &str, size: u64, limit: u64) -> Box<dyn std::error::Error> {
+    Box::new(ConversionError::ConversionFailed(format!(
+        "{} is {:.1} MB, above the {:.0} MB limit for structured conversion. \
+         Use get_file_summary for an overview, chunk_markdown/extract_chunks_for_rag \
+         for piecewise processing, or pass max_bytes to raise the limit.",
+        path,
+        size as f64 / (1024.0 * 1024.0),
+        limit as f64 / (1024.0 * 1024.0),
+    )))
+}
+
+/// Single-pass fenced-code conversion for large plain-text files: one
+/// pre-sized output buffer, streamed line reads, no intermediate copies.
+fn convert_large_text_file(
+    path: &Path,
+    language: &str,
+    title: &str,
+    add_line_numbers: bool,
+    size_hint: u64,
+) -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::BufRead;
+    let file = std::fs::File::open(path)
+        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+    let mut reader = std::io::BufReader::with_capacity(1 << 20, file);
+    let mut out = String::with_capacity(size_hint as usize + (size_hint / 8) as usize + 128);
+    if !title.is_empty() {
+        out.push_str(&format!("# {}\n\n", title));
+    }
+    out.push_str("```");
+    out.push_str(language);
+    out.push('\n');
+    let mut line = String::new();
+    let mut n = 0usize;
+    loop {
+        line.clear();
+        let read = reader
+            .read_line(&mut line)
+            .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
+        if read == 0 {
+            break;
+        }
+        if add_line_numbers {
+            n += 1;
+            out.push_str(&format!("{:4} | ", n));
+            out.push_str(line.trim_end_matches(['\n', '\r']));
+            out.push('\n');
+        } else {
+            out.push_str(&line);
+        }
+    }
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str("```\n");
+    Ok(out)
 }
 
 /// If the extension is a binary/office document format, convert it to Markdown.
@@ -2019,6 +2107,10 @@ fn try_convert_binary_document(path: &Path) -> Option<Result<String, Box<dyn std
 /// Convert any supported file to Markdown/plain text for RAG/analysis. Unlike
 /// `handle_convert_file`, code/text files are returned as-is (no code fence).
 fn convert_any_to_markdown(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    if size > LARGE_FILE_BYTES && is_structured_ext(path.extension().and_then(|e| e.to_str())) {
+        return Err(large_file_error(&path.display().to_string(), size, LARGE_FILE_BYTES));
+    }
     if let Some(conv) = try_convert_binary_document(path) {
         return conv;
     }
@@ -2141,6 +2233,27 @@ fn handle_convert_file(args: &Value) -> Result<String, Box<dyn std::error::Error
     // Check if this is an HTML-like file
     let extension = path.extension().and_then(|ext| ext.to_str());
     let is_html = matches!(extension, Some("html" | "htm" | "mhtml" | "webarchive"));
+
+    // Large-file gate: refuse structured formats above the limit, stream
+    // plain text/code with a single pre-sized buffer instead.
+    let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let size_limit = args.get("max_bytes").and_then(|v| v.as_u64()).unwrap_or(LARGE_FILE_BYTES);
+    if file_size > size_limit {
+        if is_structured_ext(extension) {
+            return Err(large_file_error(file_path, file_size, size_limit));
+        }
+        let language = if let Some(explicit) = explicit_file_type {
+            explicit.to_string()
+        } else {
+            let detected = detect_language(path);
+            if detected.is_empty() {
+                detect_language_from_filename(path.file_name().and_then(|n| n.to_str()).unwrap_or(""))
+            } else {
+                detected
+            }
+        };
+        return convert_large_text_file(path, &language, filename, add_line_numbers, file_size);
+    }
 
     if is_html {
         // Handle HTML conversion
@@ -2714,6 +2827,7 @@ fn generate_toc_for_markdown(markdown: &str, max_level: usize) -> Result<String,
     Ok(result)
 }
 
+#[allow(clippy::too_many_arguments)] // mirrors the flat HTML-option tool schema
 fn handle_html_file_conversion(
     file_path: &str,
     filename: &str,
@@ -2963,7 +3077,7 @@ fn handle_get_file_summary(args: &Value) -> Result<String, Box<dyn std::error::E
     summary.push_str("## Preview\n\n");
     let preview_text = if is_html {
         // Strip HTML tags for preview - replace < and > with spaces
-        let cleaned = content.replace('<', " ").replace('>', " ");
+        let cleaned = content.replace(['<', '>'], " ");
         let text_only = cleaned
             .lines()
             .filter(|line| !line.trim().is_empty())
@@ -3152,7 +3266,7 @@ fn handle_search_files(args: &Value) -> Result<String, Box<dyn std::error::Error
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     let content_lower = content.to_lowercase();
                     if let Some(pos) = content_lower.find(query_lower) {
-                        let start = if pos > context_chars { pos - context_chars } else { 0 };
+                        let start = pos.saturating_sub(context_chars);
                         let end = (pos + query_lower.len() + context_chars).min(content.len());
                         let snippet = &content[start..end];
 
@@ -3342,7 +3456,7 @@ fn handle_get_vault_statistics(args: &Value) -> Result<String, Box<dyn std::erro
                                 for word in line.split_whitespace() {
                                     if word.starts_with('#') && word.len() > 1 {
                                         let tag = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '-');
-                                        if !tag.is_empty() && tag.chars().next().map_or(false, |c| c.is_alphabetic()) {
+                                        if !tag.is_empty() && tag.chars().next().is_some_and(|c| c.is_alphabetic()) {
                                             *tag_counts.entry(tag.to_string()).or_insert(0) += 1;
                                         }
                                     }
@@ -3416,7 +3530,7 @@ fn handle_extract_active_todos(args: &Value) -> Result<String, Box<dyn std::erro
                     for line in content.lines() {
                         if line.contains("- [ ]") {
                             let path_str = path.to_string_lossy().to_string();
-                            todos_by_file.entry(path_str).or_insert_with(Vec::new).push(line.trim().to_string());
+                            todos_by_file.entry(path_str).or_default().push(line.trim().to_string());
                             *total += 1;
                         }
                     }
@@ -3495,8 +3609,8 @@ fn handle_safe_append_or_replace_section(args: &Value) -> Result<String, Box<dyn
     let start_idx = heading_line_idx.unwrap() + 1;
     let mut end_idx = lines.len();
 
-    for idx in start_idx..lines.len() {
-        if let Some(stripped) = lines[idx].strip_prefix('#') {
+    for (idx, line) in lines.iter().enumerate().skip(start_idx) {
+        if let Some(stripped) = line.strip_prefix('#') {
             let level = stripped.len() - stripped.trim_start_matches('#').len();
             if level > 0 && level <= heading_level {
                 end_idx = idx;
@@ -3639,7 +3753,7 @@ fn handle_upsert_markdown_table(args: &Value) -> Result<String, Box<dyn std::err
     table.push_str("| ");
     table.push_str(&header_strs.join(" | "));
     table.push_str(" |\n");
-    table.push_str("|");
+    table.push('|');
     for _ in 0..col_count {
         table.push_str("---|");
     }
@@ -4056,14 +4170,13 @@ fn handle_delete_file(args: &Value) -> Result<String, Box<dyn std::error::Error>
     let path_obj = Path::new(path);
 
     if path_obj.is_dir() {
-        if !recursive {
-            if path_obj.read_dir()
+        if !recursive
+            && path_obj.read_dir()
                 .map(|mut d| d.next().is_some())
                 .unwrap_or(false)
             {
                 return Err("Directory is not empty. Set recursive=true to delete non-empty directories".into());
             }
-        }
         std::fs::remove_dir_all(path)
             .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
         Ok(format!("✓ Deleted directory '{}'", path))
@@ -4147,7 +4260,7 @@ fn handle_update_note_properties(args: &Value) -> Result<String, Box<dyn std::er
         .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
 
     let lines: Vec<&str> = content.lines().collect();
-    let (_yaml_start, yaml_end) = if lines.len() > 0 && lines[0] == "---" {
+    let (_yaml_start, yaml_end) = if !lines.is_empty() && lines[0] == "---" {
         let mut end = 0;
         for (i, line) in lines.iter().enumerate().skip(1) {
             if *line == "---" {
@@ -4166,8 +4279,8 @@ fn handle_update_note_properties(args: &Value) -> Result<String, Box<dyn std::er
 
     let mut yaml_lines = Vec::new();
     if let Some(end) = yaml_end {
-        for i in 1..end {
-            yaml_lines.push(lines[i].to_string());
+        for line in &lines[1..end] {
+            yaml_lines.push(line.to_string());
         }
     }
 
@@ -4205,11 +4318,11 @@ fn handle_update_note_properties(args: &Value) -> Result<String, Box<dyn std::er
     new_content.push_str("---\n");
 
     if let Some(end) = yaml_end {
-        for i in (end + 1)..lines.len() {
-            new_content.push_str(lines[i]);
+        for line in &lines[end + 1..] {
+            new_content.push_str(line);
             new_content.push('\n');
         }
-    } else if lines.len() > 0 {
+    } else if !lines.is_empty() {
         for line in lines {
             new_content.push_str(line);
             new_content.push('\n');
@@ -4272,7 +4385,7 @@ fn handle_find_note_by_alias_or_title(args: &Value) -> Result<String, Box<dyn st
 
     walk_dir(Path::new(directory), &search_lower, &mut results)?;
 
-    results.sort_by(|a, b| b.0.cmp(&a.0));
+    results.sort_by_key(|r| std::cmp::Reverse(r.0));
     results.truncate(5);
 
     let mut output = format!("# Search Results for: {}\n\n", search_term);
@@ -4593,7 +4706,7 @@ fn handle_search_content(args: &Value) -> Result<String, Box<dyn std::error::Err
         let snippet = first_match_snippet(&content, &query_terms, 200);
         hits.push((file.display().to_string(), score, snippet));
     }
-    hits.sort_by(|a, b| b.1.cmp(&a.1));
+    hits.sort_by_key(|h| std::cmp::Reverse(h.1));
     hits.truncate(max_results);
 
     if output_is_json(args) {
@@ -4827,7 +4940,7 @@ fn handle_find_related_notes(args: &Value) -> Result<String, Box<dyn std::error:
         // Vector path: rank notes by cosine over per-file mean chunk vectors.
         let sources = collect_note_files(Path::new(directory));
         let (index, mut embedder) = updated_vector_index(&sources, Some(Path::new(directory)))?;
-        let tv = embedder.embed(&[target_content.clone()]).map_err(boxed_err)?;
+        let tv = embedder.embed(std::slice::from_ref(&target_content)).map_err(boxed_err)?;
         let mut results: Vec<(String, f64)> = index
             .file_vectors()
             .into_iter()
@@ -5519,6 +5632,35 @@ mod base_dir_tests {
         let mut args = serde_json::json!({"source": "Note A.md"});
         apply_base_dirs_with(&dirs, &mut args);
         assert!(args["source"].as_str().unwrap().ends_with("mini_vault/Note A.md"));
+    }
+
+    #[test]
+    fn large_files_stream_or_are_refused() {
+        let dir = std::env::temp_dir().join(format!("large_file_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // 11 MB of plain text: must stream to a fenced block, not error.
+        let txt = dir.join("big.log");
+        std::fs::write(&txt, "line of log output\n".repeat(600_000)).unwrap();
+        assert!(std::fs::metadata(&txt).unwrap().len() > LARGE_FILE_BYTES);
+        let out = handle_convert_file(&json!({"file_path": txt.to_str().unwrap()})).unwrap();
+        assert!(out.contains("```"));
+        assert!(out.contains("line of log output"));
+        // Same file with a lowered max_bytes and line numbers still streams.
+        let out = handle_convert_file(&json!({
+            "file_path": txt.to_str().unwrap(), "max_bytes": 1024, "add_line_numbers": true
+        })).unwrap();
+        assert!(out.contains("   1 | line of log output"));
+        // An oversized structured file is refused with guidance.
+        let html = dir.join("big.html");
+        std::fs::write(&html, "<p>x</p>".repeat(2_000_000)).unwrap();
+        let err = handle_convert_file(&json!({"file_path": html.to_str().unwrap()}))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("max_bytes"), "unexpected error: {}", err);
+        // convert_any_to_markdown applies the same gate for structured files.
+        let err = convert_any_to_markdown(&html).unwrap_err().to_string();
+        assert!(err.contains("limit"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

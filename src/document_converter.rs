@@ -52,10 +52,8 @@ fn convert_pdf(path: &Path) -> Result<String> {
 
     let normalized = normalize_text(&text);
     if normalized.trim().is_empty() {
-        return Ok(format!(
-            "> **Note:** No extractable text found in this PDF. It may be a scanned/image-only \
-             document (OCR is not supported)."
-        ));
+        return Ok("> **Note:** No extractable text found in this PDF. It may be a scanned/image-only \
+             document (OCR is not supported).".to_string());
     }
     Ok(normalized)
 }
@@ -422,10 +420,8 @@ fn convert_doc(path: &Path) -> Result<String> {
     let text = extract_printable_runs(&bytes);
     let normalized = normalize_text(&text);
     if normalized.trim().len() < 20 {
-        return Ok(format!(
-            "> **Note:** This legacy `.doc` file could not be reliably parsed. Please convert it \
-             to `.docx` and try again (legacy OLE `.doc` is only best-effort supported)."
-        ));
+        return Ok("> **Note:** This legacy `.doc` file could not be reliably parsed. Please convert it \
+             to `.docx` and try again (legacy OLE `.doc` is only best-effort supported).".to_string());
     }
     Ok(normalized)
 }

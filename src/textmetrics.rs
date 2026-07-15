@@ -117,8 +117,10 @@ fn sort_freq(map: HashMap<String, usize>) -> Vec<(String, usize)> {
     v
 }
 
-/// Tokenize + tabulate. Returns (count, exact, method, token_freq).
-fn tokenize(text: &str, spec: &TokenizerSpec) -> Result<(usize, bool, String, Vec<(String, usize)>)> {
+/// Tokenize + tabulate result: (count, exact, method, token_freq).
+type TokenizeResult = (usize, bool, String, Vec<(String, usize)>);
+
+fn tokenize(text: &str, spec: &TokenizerSpec) -> Result<TokenizeResult> {
     match spec {
         TokenizerSpec::OpenAi { model } => {
             let bpe = tiktoken_bpe(model)?;

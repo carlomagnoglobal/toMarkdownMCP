@@ -11,7 +11,7 @@ pub struct Heading {
 
 /// Generate table of contents from Markdown content
 pub fn generate_toc(markdown_content: &str, max_level: usize) -> Result<Vec<Heading>> {
-    if max_level < 1 || max_level > 6 {
+    if !(1..=6).contains(&max_level) {
         return Err(anyhow!("TOC max_level must be between 1 and 6"));
     }
 
@@ -30,7 +30,7 @@ pub fn generate_toc(markdown_content: &str, max_level: usize) -> Result<Vec<Head
         if trimmed.starts_with('#') {
             if let Some((level, text)) = parse_atx_heading(trimmed) {
                 if level <= max_level {
-                    let anchor = generate_anchor(&text, &mut anchor_count);
+                    let anchor = generate_anchor(text, &mut anchor_count);
                     headings.push(Heading {
                         level,
                         text: text.to_string(),
@@ -145,7 +145,7 @@ pub fn format_toc(headings: &[Heading], title: &str) -> String {
         prev_level = heading.level;
     }
 
-    toc.push_str("\n");
+    toc.push('\n');
     toc
 }
 

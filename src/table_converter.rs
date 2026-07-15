@@ -19,7 +19,7 @@ pub enum TableAlignment {
 
 impl TableAlignment {
     /// Convert alignment to markdown format
-    pub fn to_markdown(&self) -> &'static str {
+    pub fn to_markdown(self) -> &'static str {
         match self {
             TableAlignment::Left => ":---",
             TableAlignment::Center => ":---:",
@@ -54,7 +54,7 @@ pub fn parse_html_table(table_elem: &scraper::element_ref::ElementRef) -> Result
 
     let mut headers = Vec::new();
     let mut rows = Vec::new();
-    let align: Vec<TableAlignment>;
+    
     let mut first_data_row = true;
 
     // Process all rows
@@ -101,7 +101,7 @@ pub fn parse_html_table(table_elem: &scraper::element_ref::ElementRef) -> Result
     }
 
     // Initialize alignment (default to left) - all columns left-aligned by default
-    align = vec![TableAlignment::Left; headers.len()];
+    let align: Vec<TableAlignment> = vec![TableAlignment::Left; headers.len()];
 
     // Pad rows to match header count
     for row in &mut rows {
