@@ -8,37 +8,18 @@ use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 use std::path::Path;
 
-mod converter;
-mod embeddings;
-mod file_type;
-mod error;
-mod sources;
-mod html_converter;
-mod toc_generator;
-mod image_extractor;
-mod webarchive_parser;
-mod table_converter;
-mod code_language_detector;
-mod form_extractor;
-mod comment_extractor;
-mod link_extractor;
-mod heading_analyzer;
-mod blockquote_extractor;
-mod definition_list_converter;
-mod document_converter;
-mod office_converter;
-mod feed_email_converter;
-mod markup_converter;
-mod rag;
-mod knowledge;
-mod retrieval;
-mod similarity;
-mod doc_intel;
-mod llm;
-mod browser;
-mod obsidian;
-mod textmetrics;
-mod tui;
+use to_markdown_mcp::{
+    blockquote_extractor, browser, comment_extractor, converter,
+    definition_list_converter, doc_intel, embeddings, error,
+    feed_email_converter, file_type, form_extractor, heading_analyzer, html_converter,
+    image_extractor, knowledge, link_extractor, llm, markup_converter, obsidian,
+    rag, retrieval, similarity, sources, table_converter, textmetrics,
+    toc_generator, tui, webarchive_parser,
+};
+use to_markdown_mcp::pipeline::{
+    convert_any_to_markdown, is_structured_ext, large_file_error, try_convert_binary_document,
+    LARGE_FILE_BYTES,
+};
 
 use converter::convert_to_markdown_with_options;
 use file_type::{detect_language, detect_language_from_filename};
@@ -2012,34 +1993,6 @@ async fn handle_call_tool(request: &JsonRpcRequest) -> JsonRpcResponse {
     }
 }
 
-/// Above this size, structured formats are refused (their parsers hold the
-/// whole transformed document in memory, typically several times the input)
-/// and plain text/code switches to a single-pass buffered read. The
-/// `max_bytes` tool parameter overrides it.
-const LARGE_FILE_BYTES: u64 = 10 * 1024 * 1024;
-
-/// True when the extension belongs to a structured format whose converter
-/// must load and transform the entire file (HTML family, markup, binary docs).
-fn is_structured_ext(ext: Option<&str>) -> bool {
-    let Some(ext) = ext else { return false };
-    matches!(ext, "html" | "htm" | "mhtml" | "webarchive")
-        || markup_converter::is_markup_extension(ext)
-        || document_converter::is_document_extension(ext)
-        || office_converter::is_office_extension(ext)
-        || feed_email_converter::is_feed_email_extension(ext)
-}
-
-fn large_file_error(path: &str, size: u64, limit: u64) -> Box<dyn std::error::Error> {
-    Box::new(ConversionError::ConversionFailed(format!(
-        "{} is {:.1} MB, above the {:.0} MB limit for structured conversion. \
-         Use get_file_summary for an overview, chunk_markdown/extract_chunks_for_rag \
-         for piecewise processing, or pass max_bytes to raise the limit.",
-        path,
-        size as f64 / (1024.0 * 1024.0),
-        limit as f64 / (1024.0 * 1024.0),
-    )))
-}
-
 /// Single-pass fenced-code conversion for large plain-text files: one
 /// pre-sized output buffer, streamed line reads, no intermediate copies.
 fn convert_large_text_file(
@@ -2084,44 +2037,6 @@ fn convert_large_text_file(
     }
     out.push_str("```\n");
     Ok(out)
-}
-
-/// If the extension is a binary/office document format, convert it to Markdown.
-/// Returns None for formats handled by the normal text pipeline.
-fn try_convert_binary_document(path: &Path) -> Option<Result<String, Box<dyn std::error::Error>>> {
-    let ext = path.extension().and_then(|e| e.to_str())?;
-    let map_err = |e: anyhow::Error| {
-        Box::new(ConversionError::ConversionFailed(e.to_string())) as Box<dyn std::error::Error>
-    };
-    if document_converter::is_document_extension(ext) {
-        Some(document_converter::convert_document(path).map_err(map_err))
-    } else if office_converter::is_office_extension(ext) {
-        Some(office_converter::convert_office(path).map_err(map_err))
-    } else if feed_email_converter::is_feed_email_extension(ext) {
-        Some(feed_email_converter::convert_feed_email(path).map_err(map_err))
-    } else {
-        None
-    }
-}
-
-/// Convert any supported file to Markdown/plain text for RAG/analysis. Unlike
-/// `handle_convert_file`, code/text files are returned as-is (no code fence).
-fn convert_any_to_markdown(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    if size > LARGE_FILE_BYTES && is_structured_ext(path.extension().and_then(|e| e.to_str())) {
-        return Err(large_file_error(&path.display().to_string(), size, LARGE_FILE_BYTES));
-    }
-    if let Some(conv) = try_convert_binary_document(path) {
-        return conv;
-    }
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| Box::new(ConversionError::IoError(e.to_string())) as Box<dyn std::error::Error>)?;
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        if markup_converter::is_markup_extension(ext) {
-            return Ok(markup_converter::convert_markup(ext, &content));
-        }
-    }
-    Ok(content)
 }
 
 /// Resolve text content from either an inline `content` arg or a `file_path`

@@ -15,6 +15,7 @@ pub enum ImageFormat {
 
 impl ImageFormat {
     /// Parse from string
+    #[allow(clippy::should_implement_trait)] // callers use the inherent name explicitly
     pub fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "embed" => Ok(ImageFormat::Embed),

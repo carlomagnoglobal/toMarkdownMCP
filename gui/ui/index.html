@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>toMarkdown Viewer</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --border: #d1d9e0;
+    --sidebar-bg: #f6f8fa; --accent: #0969da; --code-bg: #f6f8fa;
+    --hover: #eaeef2; --active: #ddf4ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #f0f6fc; --muted: #9198a1; --border: #3d444d;
+      --sidebar-bg: #010409; --accent: #4493f8; --code-bg: #151b23;
+      --hover: #15191f; --active: #0c2d6b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; display: flex; height: 100vh; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  #sidebar {
+    width: 280px; min-width: 180px; max-width: 50vw; resize: horizontal;
+    overflow: auto; border-right: 1px solid var(--border);
+    background: var(--sidebar-bg); padding: 8px; flex-shrink: 0;
+  }
+  #toolbar { display: flex; gap: 6px; margin-bottom: 8px; }
+  #toolbar button {
+    flex: 1; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--fg); cursor: pointer; font-size: 12px;
+  }
+  #toolbar button:hover { background: var(--hover); }
+  #recents { margin: 0 0 8px; padding: 0; list-style: none; font-size: 12px; }
+  #recents li {
+    padding: 3px 6px; border-radius: 4px; cursor: pointer; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #recents li:hover { background: var(--hover); color: var(--fg); }
+  .recents-title { font-size: 11px; text-transform: uppercase; color: var(--muted); margin: 6px 6px 2px; }
+  ul.tree { list-style: none; padding-left: 14px; margin: 0; font-size: 13px; }
+  ul.tree.root { padding-left: 0; }
+  .node { padding: 2px 6px; border-radius: 4px; cursor: pointer; white-space: nowrap;
+          overflow: hidden; text-overflow: ellipsis; }
+  .node:hover { background: var(--hover); }
+  .node.selected { background: var(--active); }
+  .node.dir { font-weight: 600; }
+  .node.dir::before { content: "▸ "; color: var(--muted); }
+  .node.dir.open::before { content: "▾ "; }
+  li.collapsed > ul { display: none; }
+  #main { flex: 1; overflow-y: auto; }
+  #content { max-width: 860px; margin: 0 auto; padding: 32px 40px 80px; line-height: 1.6; }
+  #placeholder { color: var(--muted); text-align: center; margin-top: 30vh; }
+  #content h1, #content h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; }
+  #content a { color: var(--accent); }
+  #content pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px; overflow-x: auto; font-size: 13px;
+  }
+  #content code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em; }
+  #content :not(pre) > code {
+    background: var(--code-bg); padding: .15em .35em; border-radius: 4px;
+  }
+  #content table { border-collapse: collapse; display: block; overflow-x: auto; }
+  #content th, #content td { border: 1px solid var(--border); padding: 5px 10px; }
+  #content th { background: var(--code-bg); }
+  #content blockquote { border-left: 4px solid var(--border); margin-left: 0; padding-left: 14px; color: var(--muted); }
+  #content img { max-width: 100%; }
+  #error {
+    display: none; margin: 12px; padding: 10px 14px; border: 1px solid #d1242f;
+    border-radius: 6px; color: #d1242f; font-size: 13px;
+  }
+</style>
+</head>
+<body>
+  <div id="sidebar">
+    <div id="toolbar">
+      <button id="open-folder">Open Folder</button>
+      <button id="open-file">Open File</button>
+    </div>
+    <div id="recents-box"></div>
+    <div id="tree-box"></div>
+  </div>
+  <div id="main">
+    <div id="error"></div>
+    <div id="content"><p id="placeholder">Open a folder or file — or drop one here.</p></div>
+  </div>
+<script>
+const invoke = window.__TAURI__.core.invoke;
+const listen = window.__TAURI__.event.listen;
+
+const errBox = document.getElementById('error');
+function showError(msg) { errBox.textContent = msg; errBox.style.display = 'block'; }
+function clearError() { errBox.style.display = 'none'; }
+
+// ---- Recents (localStorage) ----
+function getRecents() { try { return JSON.parse(localStorage.getItem('recents') || '[]'); } catch { return []; } }
+function addRecent(path, kind) {
+  const recents = getRecents().filter(r => r.path !== path);
+  recents.unshift({ path, kind });
+  localStorage.setItem('recents', JSON.stringify(recents.slice(0, 8)));
+  renderRecents();
+}
+function renderRecents() {
+  const box = document.getElementById('recents-box');
+  const recents = getRecents();
+  if (!recents.length) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="recents-title">Recent</div>';
+  const ul = document.createElement('ul');
+  ul.id = 'recents';
+  for (const r of recents) {
+    const li = document.createElement('li');
+    li.textContent = r.path.split('/').pop() + (r.kind === 'dir' ? '/' : '');
+    li.title = r.path;
+    li.onclick = () => r.kind === 'dir' ? openFolder(r.path) : openFile(r.path);
+    ul.appendChild(li);
+  }
+  box.appendChild(ul);
+}
+
+// ---- File tree ----
+function renderTree(nodes, parentEl) {
+  const ul = document.createElement('ul');
+  ul.className = 'tree' + (parentEl.id === 'tree-box' ? ' root' : '');
+  for (const n of nodes) {
+    const li = document.createElement('li');
+    const div = document.createElement('div');
+    div.className = 'node' + (n.is_dir ? ' dir' : '');
+    div.textContent = n.name;
+    div.title = n.path;
+    if (n.is_dir) {
+      li.className = 'collapsed';
+      div.onclick = () => {
+        li.classList.toggle('collapsed');
+        div.classList.toggle('open');
+      };
+    } else {
+      div.onclick = () => {
+        document.querySelectorAll('.node.selected').forEach(e => e.classList.remove('selected'));
+        div.classList.add('selected');
+        openFile(n.path, false);
+      };
+    }
+    li.appendChild(div);
+    if (n.is_dir && n.children.length) renderTree(n.children, li);
+    ul.appendChild(li);
+  }
+  parentEl.appendChild(ul);
+}
+
+async function openFolder(root) {
+  clearError();
+  try {
+    const nodes = await invoke('list_tree', { root });
+    const box = document.getElementById('tree-box');
+    box.innerHTML = '';
+    renderTree(nodes, box);
+    addRecent(root, 'dir');
+  } catch (e) { showError(String(e)); }
+}
+
+async function openFile(path, remember = true) {
+  clearError();
+  try {
+    const r = await invoke('open_file', { path });
+    document.getElementById('content').innerHTML = r.html;
+    document.title = r.title + ' — toMarkdown Viewer';
+    document.getElementById('main').scrollTop = 0;
+    if (remember) addRecent(path, 'file');
+  } catch (e) { showError(String(e)); }
+}
+
+// ---- Toolbar ----
+document.getElementById('open-folder').onclick = async () => {
+  const dir = await invoke('pick_folder');
+  if (dir) openFolder(dir);
+};
+document.getElementById('open-file').onclick = async () => {
+  const f = await invoke('pick_file');
+  if (f) openFile(f);
+};
+
+// ---- Drag & drop (Tauri delivers real paths) ----
+listen('tauri://drag-drop', async (event) => {
+  const paths = event.payload.paths || [];
+  if (!paths.length) return;
+  const p = paths[0];
+  // A dropped directory opens as a tree; a file renders directly.
+  try {
+    await invoke('list_tree', { root: p });
+    openFolder(p);
+  } catch {
+    openFile(p);
+  }
+});
+
+renderRecents();
+</script>
+</body>
+</html>

@@ -22,6 +22,7 @@ impl ExtractedLink {
     }
 
     /// Check if link appears broken (empty href, javascript, etc.)
+    #[allow(dead_code)] // heuristic kept for future link-validation reporting
     fn is_url_broken(url: &str) -> bool {
         url.is_empty() || url == "#" || url.starts_with("javascript:")
     }

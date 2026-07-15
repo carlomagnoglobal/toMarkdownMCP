@@ -127,6 +127,10 @@ Claude-backed generation. Call `get_tool_help` (no arguments) for the full list,
 Run `to_markdown_mcp tui [PATH]` for an interactive terminal Markdown viewer over a vault or
 file: file tree, styled rendering, `[[wikilink]]` following, and filename search.
 
+A desktop GUI viewer (Tauri) lives in `gui/` — file tree, rendered Markdown for any supported
+format, drag-and-drop, light/dark theme. Run it with `cargo run -p to_markdown_gui`; see
+[docs/gui/GUI.md](docs/gui/GUI.md).
+
 The binary is also a standalone CLI — no MCP client needed:
 
 ```bash

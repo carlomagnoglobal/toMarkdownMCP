@@ -1,3 +1,9 @@
+[workspace]
+members = [".", "gui"]
+# Plain cargo build/test targets the MCP crate only; the GUI builds
+# explicitly with `cargo build -p to_markdown_gui`.
+default-members = ["."]
+
 [package]
 name = "to_markdown_mcp"
 version = "0.1.1"

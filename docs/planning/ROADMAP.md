@@ -45,13 +45,13 @@ Make the binary usable directly from the terminal, not only as an MCP server.
 
 Desktop GUI with functionality on par with **Obsidian, Typora, MacMD Viewer, and Marked 2**. Tauri app in a new `gui/` crate (repo becomes a Cargo workspace; shared logic extracted to a library crate both binaries link). GUI MVP (Phase 5) ships as v0.3.0.
 
-### Phase 5 — Foundation & viewer (MacMD Viewer parity)
+### Phase 5 — Foundation & viewer (MacMD Viewer parity) ✅ (packaging pending)
 
-- [ ] Cargo workspace restructuring; shared `lib.rs`
-- [ ] File-tree sidebar, rendered Markdown pane, OS light/dark theme
-- [ ] Open any supported format (PDF/DOCX/HTML/... via conversion)
-- [ ] Drag-and-drop / file association, recent files
-- [ ] macOS `.app` packaging; Linux/Windows best-effort in CI
+- [x] Cargo workspace restructuring: shared `src/lib.rs` + `src/pipeline.rs`; `default-members` keeps plain `cargo build`/`test` on the MCP crate
+- [x] Tauri viewer crate (`gui/`, run with `cargo run -p to_markdown_gui`): file-tree sidebar, rendered Markdown pane (pulldown-cmark), OS light/dark theme — see [docs/gui/GUI.md](../gui/GUI.md)
+- [x] Open any supported format (PDF/DOCX/HTML/... via the shared conversion pipeline; code files render as fenced blocks with detected language)
+- [x] Drag-and-drop (files and folders), native open dialogs, persisted recent files
+- [ ] macOS `.app` packaging (`bundle.active` currently false; needs tauri-cli + icon set); Linux/Windows CI builds — deferred to the Phase 9 distribution pass
 
 ### Phase 6 — Live preview & watching (Marked 2 parity)
 

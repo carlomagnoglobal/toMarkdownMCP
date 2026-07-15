@@ -52,6 +52,7 @@ impl FieldType {
     }
 
     /// Parse from string
+    #[allow(clippy::should_implement_trait)] // callers use the inherent name explicitly
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "password" => FieldType::Password,
