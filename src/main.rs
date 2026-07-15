@@ -9,6 +9,7 @@ use std::io::{BufRead, Write};
 use std::path::Path;
 
 mod converter;
+mod embeddings;
 mod file_type;
 mod error;
 mod sources;
@@ -1102,6 +1103,7 @@ fn tool_definitions() -> Value {
                 "properties": {
                     "file_path": {"type": "string", "description": "The note to find neighbors for"},
                     "directory": {"type": "string", "description": "Vault directory to search", "default": "."},
+                    "embeddings": {"type": "boolean", "description": "Use vector embeddings instead of TF/SimHash heuristics (persistent per-directory index; falls back to hashed vectors when no model is available)", "default": false},
                     "max_results": {"type": "integer", "default": 5},
                     "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
                 },
@@ -1167,6 +1169,7 @@ fn tool_definitions() -> Value {
                     "file_path": {"type": "string", "description": "Single file to retrieve from instead of a directory"},
                     "max_tokens": {"type": "integer", "description": "Context token budget", "default": 2000},
                     "top_k": {"type": "integer", "description": "Max number of chunks", "default": 8},
+                    "embeddings": {"type": "boolean", "description": "Use vector embeddings instead of TF/SimHash heuristics (persistent per-directory index; falls back to hashed vectors when no model is available)", "default": false},
                     "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
                 },
                 "required": ["query"]
@@ -1191,7 +1194,9 @@ fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "directory": {"type": "string", "description": "Directory to scan (recursive)", "default": "."},
-                    "threshold": {"type": "integer", "description": "Max differing bits (0-64); lower is stricter", "default": 3},
+                    "threshold": {"type": "integer", "description": "Max differing bits (0-64); lower is stricter (SimHash mode)", "default": 3},
+                    "min_similarity": {"type": "number", "description": "Minimum cosine similarity to group (embeddings mode)", "default": 0.9},
+                    "embeddings": {"type": "boolean", "description": "Use vector embeddings instead of TF/SimHash heuristics (persistent per-directory index; falls back to hashed vectors when no model is available)", "default": false},
                     "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
                 }
             }
@@ -1204,6 +1209,7 @@ fn tool_definitions() -> Value {
                 "properties": {
                     "directory": {"type": "string", "description": "Directory to cluster (recursive)", "default": "."},
                     "min_similarity": {"type": "number", "description": "Minimum cosine similarity to join a cluster", "default": 0.2},
+                    "embeddings": {"type": "boolean", "description": "Use vector embeddings instead of TF/SimHash heuristics (persistent per-directory index; falls back to hashed vectors when no model is available)", "default": false},
                     "output_format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
                 }
             }
@@ -4752,6 +4758,62 @@ fn handle_extract_keywords(args: &Value) -> Result<String, Box<dyn std::error::E
     Ok(out)
 }
 
+/// `embeddings: true` on the RAG tools switches from TF/SimHash heuristics to
+/// vector similarity (fastembed model when compiled in, hashed vectors
+/// otherwise).
+fn embeddings_requested(args: &Value) -> bool {
+    args.get("embeddings").and_then(Value::as_bool).unwrap_or(false)
+}
+
+fn boxed_err(e: anyhow::Error) -> Box<dyn std::error::Error> {
+    Box::new(ConversionError::ConversionFailed(e.to_string()))
+}
+
+/// Build/refresh the vector index for `sources` and return it with the
+/// embedder. The index persists under `<index_dir>/.tomarkdown/` when a
+/// directory is given; single-file calls stay transient.
+fn updated_vector_index(
+    sources: &[std::path::PathBuf],
+    index_dir: Option<&Path>,
+) -> Result<(embeddings::VectorIndex, Box<dyn embeddings::Embedder>), Box<dyn std::error::Error>> {
+    let mut embedder = embeddings::default_embedder();
+    let mut index = match index_dir {
+        Some(d) => embeddings::VectorIndex::load(d),
+        None => embeddings::VectorIndex::default(),
+    };
+    index
+        .update(sources, embedder.as_mut(), |p| convert_any_to_markdown(p).ok())
+        .map_err(boxed_err)?;
+    if let Some(d) = index_dir {
+        if let Err(e) = index.save(d) {
+            eprintln!("embeddings: could not persist index in {}: {}", d.display(), e);
+        }
+    }
+    Ok((index, embedder))
+}
+
+/// Vector-similarity ranking for retrieve_context, mirroring rank_chunks.
+fn embedding_scored_chunks(
+    sources: &[std::path::PathBuf],
+    index_dir: Option<&Path>,
+    query: &str,
+) -> Result<Vec<retrieval::ScoredChunk>, Box<dyn std::error::Error>> {
+    let (index, mut embedder) = updated_vector_index(sources, index_dir)?;
+    let qv = embedder.embed(&[query.to_string()]).map_err(boxed_err)?;
+    Ok(index
+        .rank(&qv[0])
+        .into_iter()
+        .filter(|(_, _, score)| *score > 0.0)
+        .map(|(source, c, score)| retrieval::ScoredChunk {
+            source,
+            heading_path: c.heading_path.clone(),
+            text: c.text.clone(),
+            score: score as f64,
+            token_estimate: c.token_estimate,
+        })
+        .collect())
+}
+
 fn handle_find_related_notes(args: &Value) -> Result<String, Box<dyn std::error::Error>> {
     let file_path = args.get("file_path").and_then(|v| v.as_str())
         .ok_or_else(|| Box::new(ConversionError::MissingParameter("file_path".to_string())) as Box<dyn std::error::Error>)?;
@@ -4759,10 +4821,39 @@ fn handle_find_related_notes(args: &Value) -> Result<String, Box<dyn std::error:
     let max_results = args.get("max_results").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
 
     let target_content = convert_any_to_markdown(Path::new(file_path))?;
+    let target_canon = std::fs::canonicalize(file_path).ok();
+
+    if embeddings_requested(args) {
+        // Vector path: rank notes by cosine over per-file mean chunk vectors.
+        let sources = collect_note_files(Path::new(directory));
+        let (index, mut embedder) = updated_vector_index(&sources, Some(Path::new(directory)))?;
+        let tv = embedder.embed(&[target_content.clone()]).map_err(boxed_err)?;
+        let mut results: Vec<(String, f64)> = index
+            .file_vectors()
+            .into_iter()
+            .filter(|(p, _)| std::fs::canonicalize(p).ok() != target_canon)
+            .map(|(p, v)| (p, embeddings::cosine(&tv[0], &v) as f64))
+            .filter(|(_, s)| *s > 0.0)
+            .collect();
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(max_results);
+
+        if output_is_json(args) {
+            return Ok(serde_json::to_string_pretty(&json!(results.iter().map(|(p, s)| {
+                json!({"path": p, "score": s, "method": "embeddings"})
+            }).collect::<Vec<_>>()))?);
+        }
+        let mut out = format!("# Notes related to: {} (vector similarity)\n\n", file_path);
+        if results.is_empty() { out.push_str("No related notes found.\n"); }
+        for (p, s) in &results {
+            out.push_str(&format!("- {} (similarity {:.3})\n", p, s));
+        }
+        return Ok(out);
+    }
+
     let target_tf = knowledge::term_frequencies(&target_content);
     let target_tags: std::collections::HashSet<String> = knowledge::extract_tags(&target_content).into_iter().collect();
 
-    let target_canon = std::fs::canonicalize(file_path).ok();
     let mut results: Vec<(String, f64, Vec<String>, Vec<String>)> = Vec::new();
     for f in collect_note_files(Path::new(directory)) {
         if std::fs::canonicalize(&f).ok() == target_canon {
@@ -4884,21 +4975,26 @@ fn handle_retrieve_context(args: &Value) -> Result<String, Box<dyn std::error::E
     let top_k = args.get("top_k").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
 
     // Gather chunks from a single file or a whole directory.
-    let mut all_chunks: Vec<(String, rag::Chunk)> = Vec::new();
-    let sources: Vec<std::path::PathBuf> = if let Some(fp) = args.get("file_path").and_then(|v| v.as_str()) {
-        vec![std::path::PathBuf::from(fp)]
-    } else {
-        let dir = args.get("directory").and_then(|v| v.as_str()).unwrap_or(".");
-        collect_text_files(Path::new(dir))
-    };
-    for path in &sources {
-        let content = match convert_any_to_markdown(path) { Ok(c) => c, Err(_) => continue };
-        for c in rag::chunk_markdown(&content, 512, 64) {
-            all_chunks.push((path.display().to_string(), c));
-        }
-    }
+    let (sources, index_dir): (Vec<std::path::PathBuf>, Option<&str>) =
+        if let Some(fp) = args.get("file_path").and_then(|v| v.as_str()) {
+            (vec![std::path::PathBuf::from(fp)], None)
+        } else {
+            let dir = args.get("directory").and_then(|v| v.as_str()).unwrap_or(".");
+            (collect_text_files(Path::new(dir)), Some(dir))
+        };
 
-    let ranked = retrieval::rank_chunks(query, all_chunks);
+    let ranked = if embeddings_requested(args) {
+        embedding_scored_chunks(&sources, index_dir.map(Path::new), query)?
+    } else {
+        let mut all_chunks: Vec<(String, rag::Chunk)> = Vec::new();
+        for path in &sources {
+            let content = match convert_any_to_markdown(path) { Ok(c) => c, Err(_) => continue };
+            for c in rag::chunk_markdown(&content, 512, 64) {
+                all_chunks.push((path.display().to_string(), c));
+            }
+        }
+        retrieval::rank_chunks(query, all_chunks)
+    };
     let selected = retrieval::select_within_budget(ranked, max_tokens, top_k);
     let context = retrieval::assemble_context(&selected);
     let used_tokens: usize = selected.iter().map(|c| c.token_estimate).sum();
@@ -4976,6 +5072,49 @@ fn handle_find_duplicates(args: &Value) -> Result<String, Box<dyn std::error::Er
     let threshold = args.get("threshold").and_then(|v| v.as_u64()).unwrap_or(3) as u32;
 
     let files = collect_text_files(Path::new(directory));
+
+    if embeddings_requested(args) {
+        // Vector path: group files whose mean chunk vectors exceed
+        // min_similarity (cosine, default 0.9) with a greedy pass.
+        let min_similarity = args.get("min_similarity").and_then(|v| v.as_f64()).unwrap_or(0.9);
+        let (index, _) = updated_vector_index(&files, Some(Path::new(directory)))?;
+        let vectors = index.file_vectors();
+        let mut grouped = vec![false; vectors.len()];
+        let mut groups: Vec<Vec<(String, f64)>> = Vec::new();
+        for i in 0..vectors.len() {
+            if grouped[i] { continue; }
+            let mut group = vec![(vectors[i].0.clone(), 1.0f64)];
+            for j in (i + 1)..vectors.len() {
+                if grouped[j] { continue; }
+                let sim = embeddings::cosine(&vectors[i].1, &vectors[j].1) as f64;
+                if sim >= min_similarity {
+                    grouped[j] = true;
+                    group.push((vectors[j].0.clone(), sim));
+                }
+            }
+            if group.len() > 1 {
+                grouped[i] = true;
+                groups.push(group);
+            }
+        }
+
+        if output_is_json(args) {
+            return Ok(serde_json::to_string_pretty(&json!(groups.iter().map(|g| {
+                json!(g.iter().map(|(p, s)| json!({"path": p, "similarity": s})).collect::<Vec<_>>())
+            }).collect::<Vec<_>>()))?);
+        }
+        let mut out = format!("# Near-duplicate groups in: {} (vector similarity)\n\n**{} group(s)** (min similarity {:.2}, {} files scanned)\n\n", directory, groups.len(), min_similarity, vectors.len());
+        if groups.is_empty() { out.push_str("No near-duplicates found.\n"); }
+        for (i, g) in groups.iter().enumerate() {
+            out.push_str(&format!("## Group {}\n\n", i + 1));
+            for (p, s) in g {
+                out.push_str(&format!("- {} ({:.1}% similar)\n", p, s * 100.0));
+            }
+            out.push('\n');
+        }
+        return Ok(out);
+    }
+
     let mut prints: Vec<(String, u64)> = Vec::new();
     for f in &files {
         if let Ok(content) = convert_any_to_markdown(f) {
@@ -5008,6 +5147,50 @@ fn handle_cluster_documents(args: &Value) -> Result<String, Box<dyn std::error::
     let min_similarity = args.get("min_similarity").and_then(|v| v.as_f64()).unwrap_or(0.2);
 
     let files = collect_text_files(Path::new(directory));
+
+    if embeddings_requested(args) {
+        // Vector path: greedy clustering by cosine over per-file vectors;
+        // labels come from the seed file's stem (no term vectors here).
+        let (index, _) = updated_vector_index(&files, Some(Path::new(directory)))?;
+        let vectors = index.file_vectors();
+        let mut grouped = vec![false; vectors.len()];
+        let mut clusters: Vec<(String, Vec<String>)> = Vec::new();
+        for i in 0..vectors.len() {
+            if grouped[i] { continue; }
+            grouped[i] = true;
+            let mut members = vec![vectors[i].0.clone()];
+            for j in (i + 1)..vectors.len() {
+                if grouped[j] { continue; }
+                if (embeddings::cosine(&vectors[i].1, &vectors[j].1) as f64) >= min_similarity {
+                    grouped[j] = true;
+                    members.push(vectors[j].0.clone());
+                }
+            }
+            let label = Path::new(&vectors[i].0)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| format!("cluster {}", clusters.len() + 1));
+            clusters.push((label, members));
+        }
+
+        if output_is_json(args) {
+            return Ok(serde_json::to_string_pretty(&json!(clusters.iter().map(|(label, members)| json!({
+                "label": label,
+                "members": members,
+                "method": "embeddings",
+            })).collect::<Vec<_>>()))?);
+        }
+        let mut out = format!("# Document clusters in: {} (vector similarity)\n\n**{} cluster(s)** (min similarity {:.2})\n\n", directory, clusters.len(), min_similarity);
+        for (label, members) in &clusters {
+            out.push_str(&format!("## {} ({} docs)\n\n", label, members.len()));
+            for m in members {
+                out.push_str(&format!("- {}\n", m));
+            }
+            out.push('\n');
+        }
+        return Ok(out);
+    }
+
     let mut docs: Vec<similarity::Document> = Vec::new();
     for f in &files {
         if let Ok(content) = convert_any_to_markdown(f) {

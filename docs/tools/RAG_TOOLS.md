@@ -5,6 +5,20 @@ Every tool accepts `output_format: "markdown"` (default, human-readable) or `"js
 (machine-readable), so the MCP serves both humans and machines. All accept either `file_path`
 (any supported format, converted first) or inline `content`.
 
+## Vector embeddings (opt-in)
+
+`retrieve_context`, `find_related_notes`, `find_duplicates`, and `cluster_documents` accept
+`embeddings: true` to rank by vector similarity instead of TF/SimHash heuristics:
+
+- With the `embeddings` cargo feature (`cargo build --features embeddings`), sentences are
+  embedded with all-MiniLM-L6-v2 via fastembed/ONNX (the model downloads on first use).
+- Without the feature — or when the model can't load (e.g. offline) — the tools fall back to
+  deterministic hashed bag-of-words vectors, so `embeddings: true` never fails outright.
+- Chunk vectors persist per directory in `.tomarkdown/embeddings_index.json` and are
+  re-embedded incrementally (only files whose mtime changed). A model switch rebuilds the index.
+- `find_duplicates` uses `min_similarity` (cosine, default 0.9) in embeddings mode instead of
+  the SimHash bit `threshold`.
+
 ## `chunk_markdown`
 Heading-aware, token-bounded chunking.
 

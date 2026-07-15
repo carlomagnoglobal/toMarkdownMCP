@@ -73,7 +73,7 @@ Handles 60+ programming languages, HTML/HTM/MHTML/webarchive, PDF, DOCX/DOC/RTF/
 
 ### 4. RAG & knowledge
 
-`chunk_markdown`, `extract_chunks_for_rag`, `get_document_outline`, `search_content`, `retrieve_context`, `build_knowledge_index`, `extract_tags/keywords/entities/qa_pairs`, `find_related_notes`, `find_duplicates`, `cluster_documents`, `summarize_document`, readability/language/classification, corpus statistics. Most accept `output_format: "json"`. See [RAG_TOOLS.md](../tools/RAG_TOOLS.md) and [SECOND_BRAIN_TOOLS.md](../tools/SECOND_BRAIN_TOOLS.md).
+`chunk_markdown`, `extract_chunks_for_rag`, `get_document_outline`, `search_content`, `retrieve_context`, `build_knowledge_index`, `extract_tags/keywords/entities/qa_pairs`, `find_related_notes`, `find_duplicates`, `cluster_documents`, `summarize_document`, readability/language/classification, corpus statistics. Most accept `output_format: "json"`. Pass `embeddings: true` to `retrieve_context`/`find_related_notes`/`find_duplicates`/`cluster_documents` for vector-similarity ranking with a persistent per-directory index (see [RAG_TOOLS.md](../tools/RAG_TOOLS.md)). Also see [SECOND_BRAIN_TOOLS.md](../tools/SECOND_BRAIN_TOOLS.md).
 
 ### 5. Text analytics — `analyze_text`
 

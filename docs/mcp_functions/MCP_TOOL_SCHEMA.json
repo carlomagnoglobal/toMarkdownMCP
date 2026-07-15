@@ -976,6 +976,11 @@
             "description": "Vault directory to search",
             "type": "string"
           },
+          "embeddings": {
+            "default": false,
+            "description": "Use vector embeddings instead of TF/SimHash heuristics (persistent per-directory index; falls back to hashed vectors when no model is available)",
+            "type": "boolean"
+          },
           "file_path": {
             "description": "The note to find neighbors for",
             "type": "string"
@@ -1106,6 +1111,11 @@
             "description": "Directory to search (recursive)",
             "type": "string"
           },
+          "embeddings": {
+            "default": false,
+            "description": "Use vector embeddings instead of TF/SimHash heuristics (persistent per-directory index; falls back to hashed vectors when no model is available)",
+            "type": "boolean"
+          },
           "file_path": {
             "description": "Single file to retrieve from instead of a directory",
             "type": "string"
@@ -1174,6 +1184,16 @@
             "description": "Directory to scan (recursive)",
             "type": "string"
           },
+          "embeddings": {
+            "default": false,
+            "description": "Use vector embeddings instead of TF/SimHash heuristics (persistent per-directory index; falls back to hashed vectors when no model is available)",
+            "type": "boolean"
+          },
+          "min_similarity": {
+            "default": 0.9,
+            "description": "Minimum cosine similarity to group (embeddings mode)",
+            "type": "number"
+          },
           "output_format": {
             "default": "markdown",
             "enum": [
@@ -1184,7 +1204,7 @@
           },
           "threshold": {
             "default": 3,
-            "description": "Max differing bits (0-64); lower is stricter",
+            "description": "Max differing bits (0-64); lower is stricter (SimHash mode)",
             "type": "integer"
           }
         },
@@ -1200,6 +1220,11 @@
             "default": ".",
             "description": "Directory to cluster (recursive)",
             "type": "string"
+          },
+          "embeddings": {
+            "default": false,
+            "description": "Use vector embeddings instead of TF/SimHash heuristics (persistent per-directory index; falls back to hashed vectors when no model is available)",
+            "type": "boolean"
           },
           "min_similarity": {
             "default": 0.2,

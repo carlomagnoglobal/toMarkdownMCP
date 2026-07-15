@@ -28,11 +28,11 @@ Make the binary usable directly from the terminal, not only as an MCP server.
 - [x] Declare `resources` and `prompts` capabilities in the `initialize` response
 - [x] `MCP_TOOL_SCHEMA.json` unchanged (tool list did not change)
 
-## Phase 3 — Real embeddings RAG
+## Phase 3 — Real embeddings RAG ✅
 
-- [ ] Embeddings trait with a local ONNX backend (`fastembed`) and TF-vector fallback
-- [ ] Persistent vector index on disk with incremental re-index by mtime
-- [ ] Wire into `retrieve_context`, `find_related_notes`, `find_duplicates`, `cluster_documents` behind an opt-in `embeddings: true` parameter (no breaking schema changes)
+- [x] `Embedder` trait (`src/embeddings.rs`) with a fastembed/ONNX backend (all-MiniLM-L6-v2, behind the opt-in `embeddings` cargo feature) and an always-available hashed-vector fallback
+- [x] Persistent per-directory vector index (`.tomarkdown/embeddings_index.json`) with incremental re-index by mtime and model-change invalidation
+- [x] Wired into `retrieve_context`, `find_related_notes`, `find_duplicates`, `cluster_documents` behind an opt-in `embeddings: true` parameter (no breaking schema changes; `MCP_TOOL_SCHEMA.json` regenerated)
 
 ## Phase 4 — Hardening & quality
 

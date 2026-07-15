@@ -20,3 +20,4 @@ Thumbs.db
 # Generated test artifacts
 developer_examples/output.md
 developer_examples/__pycache__/
+.tomarkdown/
