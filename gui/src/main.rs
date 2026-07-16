@@ -64,7 +64,7 @@ fn build_tree(dir: &Path, depth: usize) -> Vec<TreeNode> {
 }
 
 #[tauri::command]
-fn list_tree(root: String) -> Result<Vec<TreeNode>, String> {
+async fn list_tree(root: String) -> Result<Vec<TreeNode>, String> {
     let path = PathBuf::from(&root);
     if !path.is_dir() {
         return Err(format!("Not a directory: {}", root));
@@ -118,7 +118,7 @@ fn linkify_wikilinks(md: &str) -> String {
 }
 
 #[tauri::command]
-fn open_file(path: String, vault_root: Option<String>) -> Result<Rendered, String> {
+async fn open_file(path: String, vault_root: Option<String>) -> Result<Rendered, String> {
     let p = PathBuf::from(&path);
     if !p.is_file() {
         return Err(format!("Not a file: {}", path));
@@ -227,7 +227,7 @@ fn watch_file(
 
 /// Save a standalone styled HTML export of the current document.
 #[tauri::command]
-fn export_html(
+async fn export_html(
     app: tauri::AppHandle,
     title: String,
     body_html: String,
@@ -271,17 +271,17 @@ fn note_info(root: String, path: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn vault_overview(root: String) -> Result<serde_json::Value, String> {
+async fn vault_overview(root: String) -> Result<serde_json::Value, String> {
     vault_tools::vault_index(Path::new(&root), true).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn vault_search(root: String, query: String, mode: String) -> Result<serde_json::Value, String> {
+async fn vault_search(root: String, query: String, mode: String) -> Result<serde_json::Value, String> {
     vault_tools::search(Path::new(&root), &query, &mode, 50).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn vault_tasks(root: String) -> Result<serde_json::Value, String> {
+async fn vault_tasks(root: String) -> Result<serde_json::Value, String> {
     vault_tools::list_tasks(Path::new(&root), None, None).map_err(|e| e.to_string())
 }
 
@@ -308,7 +308,7 @@ fn resolve_wikilink(root: String, target: String, from: String) -> Result<String
 /// Nodes and links for the vault graph view. `focus` narrows to the direct
 /// neighborhood of one note (local graph).
 #[tauri::command]
-fn graph_data(root: String, focus: Option<String>) -> Result<serde_json::Value, String> {
+async fn graph_data(root: String, focus: Option<String>) -> Result<serde_json::Value, String> {
     let idx = vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
     let mut edges: Vec<(String, String)> = Vec::new();
     for (from, links) in &idx.links {
@@ -531,7 +531,7 @@ fn tag_list(root: String) -> Result<Vec<String>, String> {
 
 /// Notes similar to the given one, ranked by TF-cosine over the vault.
 #[tauri::command]
-fn related_notes(root: String, path: String) -> Result<serde_json::Value, String> {
+async fn related_notes(root: String, path: String) -> Result<serde_json::Value, String> {
     use to_markdown_mcp::knowledge;
     let idx = vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
     let target_rel = vault_rel(&root, &path);
@@ -558,7 +558,7 @@ fn related_notes(root: String, path: String) -> Result<serde_json::Value, String
 /// Vector-similarity search over the vault, using the persistent
 /// `.tomarkdown` embedding index (hashed-vector fallback without a model).
 #[tauri::command]
-fn semantic_search(root: String, query: String) -> Result<serde_json::Value, String> {
+async fn semantic_search(root: String, query: String) -> Result<serde_json::Value, String> {
     use to_markdown_mcp::embeddings;
     let rootp = PathBuf::from(&root);
     let idx = vault::get_index(&rootp).map_err(|e| e.to_string())?;
@@ -647,7 +647,7 @@ fn read_text_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn pick_folder(app: tauri::AppHandle) -> Option<String> {
+async fn pick_folder(app: tauri::AppHandle) -> Option<String> {
     app.dialog()
         .file()
         .blocking_pick_folder()
@@ -656,7 +656,7 @@ fn pick_folder(app: tauri::AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
-fn pick_file(app: tauri::AppHandle) -> Option<String> {
+async fn pick_file(app: tauri::AppHandle) -> Option<String> {
     app.dialog()
         .file()
         .blocking_pick_file()
@@ -713,11 +713,11 @@ mod tests {
     #[test]
     fn graph_data_links_fixture_notes() {
         let root = fixture_vault();
-        let g = graph_data(root.clone(), None).unwrap();
+        let g = tauri::async_runtime::block_on(graph_data(root.clone(), None)).unwrap();
         assert!(!g["nodes"].as_array().unwrap().is_empty());
         assert!(!g["links"].as_array().unwrap().is_empty());
         // Local graph keeps only the focused note's neighborhood.
-        let local = graph_data(root.clone(), Some(format!("{}/Note A.md", root))).unwrap();
+        let local = tauri::async_runtime::block_on(graph_data(root.clone(), Some(format!("{}/Note A.md", root)))).unwrap();
         assert!(local["nodes"].as_array().unwrap().len() <= g["nodes"].as_array().unwrap().len());
     }
 
@@ -782,7 +782,7 @@ mod tests {
     #[test]
     fn canvas_files_render() {
         let root = fixture_vault();
-        let r = open_file(format!("{}/Board.canvas", root), Some(root)).unwrap();
+        let r = tauri::async_runtime::block_on(open_file(format!("{}/Board.canvas", root), Some(root))).unwrap();
         assert!(!r.html.trim().is_empty());
     }
 }
