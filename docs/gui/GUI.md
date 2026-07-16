@@ -30,6 +30,7 @@ Phase 5 of the [roadmap](../planning/ROADMAP.md): foundation & viewer. Later pha
 - **Intelligence** — Related-notes in the note panel, a Semantic (vector) search mode using the persistent `.tomarkdown` embedding index, and AI actions (summarize, suggest tags, translate, ask about the document) when an Anthropic API key is set in Settings; results open in an overlay with Copy / Insert-into-note
 - **Editor UX** — synced scrolling between editor and preview, interactive edit preview (checkboxes, wikilinks), Zen and typewriter modes, formatting shortcuts (Cmd+B/I, link, strikethrough, list indent, auto-continued lists), paste-URL-as-link, selection stats
 - **Writing insight** — document statistics overlay (readability, top words) and a keyword-repetition highlighter; hover a wikilink for an Obsidian-style page preview
+- **Vault workflows** — note tabs (Cmd+click, Cmd+W, Cmd+1..9, persisted per vault), daily note (Cmd+D), new-from-template, right-click file management in the tree (new/rename/delete/reveal/pin), clickable inline #tags, outgoing links and unlinked mentions in the note panel, pinned notes, graph filtering, and a multi-vault manager with reopen-on-launch
 - **Command palette** — Cmd/Ctrl+K runs any app action by name
 - **Settings** — Cmd/Ctrl+, for theme, content font size, and the API key (persisted locally)
 

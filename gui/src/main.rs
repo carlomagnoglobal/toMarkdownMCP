@@ -411,8 +411,8 @@ fn toggle_task(path: String, index: usize, vault_root: Option<String>) -> Result
 /// Create a note (optionally from a template / as today's daily note) and
 /// return its absolute path.
 #[tauri::command]
-fn create_note(root: String, title: Option<String>, daily: bool) -> Result<String, String> {
-    let v = vault_tools::create_note_from_template(Path::new(&root), title.as_deref(), None, daily)
+fn create_note(root: String, title: Option<String>, daily: bool, template: Option<String>) -> Result<String, String> {
+    let v = vault_tools::create_note_from_template(Path::new(&root), title.as_deref(), template.as_deref(), daily)
         .map_err(|e| e.to_string())?;
     vault::invalidate(Path::new(&root));
     let rel = v["created"].as_str().ok_or("create returned no path")?;
@@ -689,6 +689,129 @@ fn peek_missing(target: &str) -> serde_json::Value {
     })
 }
 
+// ---- Phase C: vault workflows ----
+
+/// Open (or create) today's daily note per the vault's daily-notes config.
+#[tauri::command]
+fn daily_note(root: String) -> Result<String, String> {
+    let rootp = Path::new(&root);
+    let cfg = to_markdown_mcp::obsidian::config::read_config(rootp).unwrap_or_default();
+    let fmt = to_markdown_mcp::obsidian::config::moment_to_chrono(
+        cfg.daily_notes_format.as_deref().unwrap_or("YYYY-MM-DD"),
+    );
+    let name = chrono::Local::now().format(&fmt).to_string();
+    let folder = cfg.daily_notes_folder.unwrap_or_default();
+    let rel = if folder.is_empty() {
+        format!("{}.md", name)
+    } else {
+        format!("{}/{}.md", folder.trim_end_matches('/'), name)
+    };
+    let abs = rootp.join(&rel);
+    if abs.is_file() {
+        return Ok(abs.to_string_lossy().into_owned());
+    }
+    let v = vault_tools::create_note_from_template(rootp, None, None, true).map_err(|e| e.to_string())?;
+    vault::invalidate(rootp);
+    let rel = v["created"].as_str().ok_or("create returned no path")?;
+    Ok(rootp.join(rel).to_string_lossy().into_owned())
+}
+
+/// Markdown templates in the vault's configured templates folder.
+#[tauri::command]
+fn list_templates(root: String) -> Vec<String> {
+    let rootp = Path::new(&root);
+    let Ok(cfg) = to_markdown_mcp::obsidian::config::read_config(rootp) else { return Vec::new() };
+    let Some(folder) = cfg.templates_folder else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(rootp.join(&folder)) else { return Vec::new() };
+    let mut out: Vec<String> = entries
+        .flatten()
+        .filter_map(|e| {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) != Some("md") {
+                return None;
+            }
+            let stem = p.file_stem()?.to_string_lossy().into_owned();
+            Some(format!("{}/{}", folder.trim_end_matches('/'), stem))
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+#[tauri::command]
+fn new_folder(path: String) -> Result<(), String> {
+    std::fs::create_dir_all(&path).map_err(|e| e.to_string())
+}
+
+/// Delete a file or directory (frontend confirms first).
+#[tauri::command]
+fn delete_path(path: String, vault_root: Option<String>) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    let result = if p.is_dir() {
+        std::fs::remove_dir_all(&p)
+    } else {
+        std::fs::remove_file(&p)
+    };
+    if let Some(root) = vault_root {
+        vault::invalidate(Path::new(&root));
+    }
+    result.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn reveal_in_finder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let status = std::process::Command::new("open").arg("-R").arg(&path).status();
+    #[cfg(target_os = "linux")]
+    let status = std::process::Command::new("xdg-open")
+        .arg(Path::new(&path).parent().unwrap_or(Path::new("/")))
+        .status();
+    #[cfg(target_os = "windows")]
+    let status = std::process::Command::new("explorer").arg("/select,").arg(&path).status();
+    status.map_err(|e| e.to_string()).and_then(|s| {
+        s.success().then_some(()).ok_or_else(|| "could not reveal file".to_string())
+    })
+}
+
+/// Notes that mention this note's title or aliases in plain text without
+/// linking to it (Obsidian's "unlinked mentions").
+#[tauri::command]
+async fn unlinked_mentions(root: String, path: String) -> Result<serde_json::Value, String> {
+    let rootp = PathBuf::from(&root);
+    let idx = vault::get_index(&rootp).map_err(|e| e.to_string())?;
+    let rel = vault_rel(&root, &path).ok_or("File is outside the vault")?;
+    let meta = idx.notes.get(&rel).ok_or("Not an indexed note")?;
+    let mut needles: Vec<String> = vec![meta.title.to_lowercase()];
+    needles.extend(meta.aliases.iter().map(|a| a.to_lowercase()));
+    let linked: std::collections::HashSet<&str> = idx
+        .backlinks
+        .get(&rel)
+        .map(|b| b.iter().map(|l| l.from.as_str()).collect())
+        .unwrap_or_default();
+    let mut hits = Vec::new();
+    for other in idx.notes.keys() {
+        if other == &rel || linked.contains(other.as_str()) {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(rootp.join(other)) else { continue };
+        for (i, line) in content.lines().enumerate() {
+            let ll = line.to_lowercase();
+            if needles.iter().any(|n| ll.contains(n.as_str())) && !line.contains("[[") {
+                hits.push(serde_json::json!({
+                    "note": other,
+                    "line": i + 1,
+                    "context": line.trim().chars().take(120).collect::<String>(),
+                }));
+                break; // one mention per note is enough for the panel
+            }
+        }
+        if hits.len() >= 20 {
+            break;
+        }
+    }
+    Ok(serde_json::json!(hits))
+}
+
 /// Read a small text file (user CSS). Capped at 1MB.
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
@@ -730,7 +853,9 @@ fn main() {
             read_source, save_file, render_markdown, toggle_task,
             create_note, rename_note, set_frontmatter, paste_image, tag_list,
             related_notes, semantic_search, set_api_key, ai_action, syntax_css,
-            doc_stats, peek_note
+            doc_stats, peek_note,
+            daily_note, list_templates, new_folder, delete_path,
+            reveal_in_finder, unlinked_mentions
         ])
         .run(tauri::generate_context!())
         .expect("error while running toMarkdown Viewer");
@@ -865,6 +990,49 @@ mod tests {
             }
         }
         assert!(checked >= 8, "expected to exercise several links, got {}", checked);
+    }
+
+    #[test]
+    fn daily_note_creates_then_reuses() {
+        // Work on a copy so the fixture vault stays pristine.
+        let src = PathBuf::from(fixture_vault());
+        let dst = std::env::temp_dir().join(format!("gui_daily_test_{}", std::process::id()));
+        std::fs::remove_dir_all(&dst).ok();
+        fn cp(a: &Path, b: &Path) {
+            std::fs::create_dir_all(b).unwrap();
+            for e in std::fs::read_dir(a).unwrap().flatten() {
+                let t = b.join(e.file_name());
+                if e.path().is_dir() { cp(&e.path(), &t); } else { std::fs::copy(e.path(), &t).unwrap(); }
+            }
+        }
+        cp(&src, &dst);
+        let root = dst.to_string_lossy().into_owned();
+        let first = daily_note(root.clone()).unwrap();
+        assert!(std::path::Path::new(&first).is_file());
+        let second = daily_note(root).unwrap();
+        assert_eq!(first, second, "existing daily note should be reused");
+        std::fs::remove_dir_all(&dst).ok();
+    }
+
+    #[test]
+    fn templates_listed_from_vault_config() {
+        let templates = list_templates(fixture_vault());
+        assert!(!templates.is_empty(), "fixture vault has a templates folder");
+        assert!(templates.iter().all(|t| t.contains('/')));
+    }
+
+    #[test]
+    fn unlinked_mentions_exclude_linkers() {
+        let root = fixture_vault();
+        let hits = tauri::async_runtime::block_on(unlinked_mentions(
+            root.clone(),
+            format!("{}/Note A.md", root),
+        ))
+        .unwrap();
+        // Every hit must be plain-text (mentioning without a wikilink).
+        for h in hits.as_array().unwrap() {
+            assert!(!h["context"].as_str().unwrap().contains("[["));
+        }
     }
 
     #[test]

@@ -213,6 +213,22 @@ fn transform_inline_line(line: &str, in_comment: &mut bool) -> String {
                 math = Some((false, String::new()));
                 i += 1;
             }
+            _ if chars[i] == '#'
+                && (i == 0 || chars[i - 1].is_whitespace())
+                && i + 1 < chars.len()
+                && (chars[i + 1].is_alphanumeric() || chars[i + 1] == '_') =>
+            {
+                // Inline #tag → clickable anchor (headings have '# ' and never match).
+                let mut j = i + 1;
+                while j < chars.len()
+                    && (chars[j].is_alphanumeric() || matches!(chars[j], '_' | '-' | '/'))
+                {
+                    j += 1;
+                }
+                let tag: String = chars[i + 1..j].iter().collect();
+                result.push_str(&format!("[#{}](hashtag:{})", tag, percent_encode(&tag)));
+                i = j;
+            }
             _ => {
                 result.push(chars[i]);
                 i += 1;
@@ -600,6 +616,13 @@ mod tests {
         // Inline syntax must not fire inside fences.
         let html = render_note("```\n==literal== $a$\n```", &RenderOpts::PLAIN, 0);
         assert!(html.contains("==literal== $a$"));
+    }
+
+    #[test]
+    fn inline_tags_become_clickable_but_headings_do_not() {
+        let html = render_note("# Heading\n\nAbout #project/alpha here.", &RenderOpts::PLAIN, 0);
+        assert!(html.contains("href=\"hashtag:project/alpha\""), "html: {}", html);
+        assert!(html.contains("<h1>Heading</h1>"), "html: {}", html);
     }
 
     #[test]

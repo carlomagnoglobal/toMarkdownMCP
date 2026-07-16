@@ -108,7 +108,16 @@ Full-parity pass against Typora / Obsidian / MacMD Viewer / Marked 2. Each phase
 - [x] Keyword repetition highlighter toggle (top-8 words marked in the preview)
 - [x] Hover page preview on wikilinks (new peek_note command, rendered snippet popover)
 - [x] Dark-mode polish: softer base16-eighties syntax theme, theme-aware Mermaid (re-renders on theme switch), calmer highlight color
-### Phase C — Vault workflows (note tabs, daily note, templates, tree context menu, clickable tags, outgoing/unlinked mentions, pins, graph filter, multi-vault)
+### Phase C — Vault workflows ✅
+- [x] Note tabs (Cmd+click opens in new tab, × / middle-click closes, Cmd+W, Cmd+1..9, persisted per vault)
+- [x] Daily note (Cmd+D, palette): opens today's note or creates it per `.obsidian/daily-notes.json` (with template)
+- [x] New note from template (palette; lists the vault's templates folder)
+- [x] File-tree right-click menu: new note here, new folder, pin/unpin, rename with link rewriting, copy path, reveal in Finder, delete (typed confirmation)
+- [x] Inline `#tags` render as clickable anchors jumping to tag search (headings unaffected)
+- [x] Note panel: outgoing links (click to resolve+open) and unlinked mentions (plain-text title/alias hits in non-linking notes)
+- [x] Pinned notes section at the top of Files (per vault)
+- [x] Graph filter box (name match hides non-matching nodes/edges)
+- [x] Multi-vault manager in Settings + "reopen last vault on launch" toggle
 ### Phase D — In-place WYSIWYG block editor (Typora-style)
 ### Phase E — App integration (file associations, native menu, window state, DOCX/RTF export, packaging)
 

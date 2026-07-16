@@ -235,6 +235,32 @@
     font-size: 12.5px; line-height: 1.5;
   }
   #hover-pop .pop-path { color: var(--muted); font-size: 11px; margin-bottom: 6px; }
+  #tabbar { display: flex; gap: 2px; background: var(--sidebar-bg); border-bottom: 1px solid var(--border);
+            overflow-x: auto; flex-shrink: 0; min-height: 30px; }
+  #tabbar:empty { display: none; }
+  .tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: 12px;
+         border-right: 1px solid var(--border); cursor: pointer; color: var(--muted);
+         white-space: nowrap; max-width: 200px; }
+  .tab.active { background: var(--bg); color: var(--fg); box-shadow: inset 0 -2px var(--accent); }
+  .tab .close { border: none; background: none; color: var(--muted); cursor: pointer;
+                font-size: 13px; padding: 0 2px; border-radius: 3px; }
+  .tab .close:hover { background: var(--hover); color: var(--fg); }
+  .tab span.t { overflow: hidden; text-overflow: ellipsis; }
+  #ctx-menu { position: fixed; z-index: 80; display: none; min-width: 180px; background: var(--bg);
+              border: 1px solid var(--border); border-radius: 8px; padding: 4px;
+              box-shadow: 0 10px 30px rgba(0,0,0,.3); font-size: 13px; }
+  #ctx-menu div { padding: 6px 12px; border-radius: 5px; cursor: pointer; }
+  #ctx-menu div:hover { background: var(--hover); }
+  #ctx-menu div.danger:hover { background: #d1242f22; color: #d1242f; }
+  #pins-box .section-title { margin-top: 0; }
+  .pin-row { display: flex; align-items: center; padding: 2px 6px; border-radius: 4px;
+             cursor: pointer; font-size: 12.5px; }
+  .pin-row:hover { background: var(--hover); }
+  .pin-row .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #graph-filter { padding: 4px 8px; font-size: 12px; border: 1px solid var(--border);
+                  border-radius: 6px; background: var(--bg); color: var(--fg); width: 160px; }
+  #vault-list { margin: 4px 0 0; }
+  #vault-list .pin-row .t { font-size: 12px; }
   #hover-pop img { max-width: 100%; }
   #result-box {
     position: absolute; top: 10vh; left: 50%; transform: translateX(-50%);
@@ -289,6 +315,7 @@
       <button data-pane="tasks-pane">Tasks</button>
     </div>
     <div id="files-pane" class="pane active">
+      <div id="pins-box"></div>
       <div id="recents-box"></div>
       <div id="toc-box"></div>
       <div id="tree-box"></div>
@@ -309,6 +336,7 @@
     <div id="note-panel"></div>
   </div>
   <div id="main">
+    <div id="tabbar"></div>
     <div id="error"></div>
     <div id="scroll">
       <div id="content"><p id="placeholder">Open a folder or file — or drop one here.</p></div>
@@ -334,6 +362,7 @@
   </div>
   <div id="autocomplete"></div>
   <div id="hover-pop"></div>
+  <div id="ctx-menu"></div>
   <div id="prompt-overlay" class="overlay">
     <div id="prompt-box">
       <h3 id="prompt-title"></h3>
@@ -370,6 +399,9 @@
         <input id="set-font" type="number" min="11" max="24" step="1">
         <label for="set-key">Anthropic API key (stored locally; enables AI actions)</label>
         <input id="set-key" type="password" placeholder="sk-ant-…">
+        <label><input id="set-reopen" type="checkbox" style="width:auto;margin-right:6px">Reopen last vault on launch</label>
+        <label>Known vaults</label>
+        <div id="vault-list"></div>
         <div id="prompt-actions" style="margin-top:14px">
           <button id="settings-close" class="primary">Done</button>
         </div>
@@ -380,6 +412,7 @@
     <div id="graph-box">
       <div id="graph-head">
         <strong>Vault graph</strong>
+        <input id="graph-filter" placeholder="Filter notes…">
         <button id="graph-global">Global</button>
         <button id="graph-local">Current note</button>
         <span style="flex:1"></span>
@@ -537,10 +570,11 @@ function renderTree(nodes, parentEl) {
       li.className = 'collapsed';
       div.onclick = () => { li.classList.toggle('collapsed'); div.classList.toggle('open'); };
     } else {
-      div.onclick = () => {
-        document.querySelectorAll('.node.selected').forEach(e => e.classList.remove('selected'));
+      div.onclick = (e) => {
+        document.querySelectorAll('.node.selected').forEach(el => el.classList.remove('selected'));
         div.classList.add('selected');
-        openFile(n.path, false);
+        if (e.metaKey || e.ctrlKey) openInNewTab(n.path);
+        else openFile(n.path, false);
       };
     }
     li.appendChild(div);
@@ -560,6 +594,13 @@ async function openFolder(root) {
     currentFolder = root;
     addRecent(root, 'dir');
     invoke('watch_tree', { root }).catch(() => {});
+    window._quickCache = null; window._tagCache = null;
+    const vaults = JSON.parse(localStorage.getItem('vaults') || '[]').filter(v => v !== root);
+    vaults.unshift(root);
+    localStorage.setItem('vaults', JSON.stringify(vaults.slice(0, 10)));
+    localStorage.setItem('lastVault', root);
+    renderPins();
+    loadTabs();
   } catch (e) { showError(String(e)); }
 }
 
@@ -581,7 +622,69 @@ async function openFile(path, remember = true, preserveScroll = false) {
     if (remember) addRecent(path, 'file');
     invoke('watch_file', { path }).catch(() => {});
     renderNotePanel(path);
+    syncTabs(path);
   } catch (e) { showError(String(e)); }
+}
+
+// ---- Note tabs ----
+let tabs = [], activeTab = -1;
+function tabsKey() { return 'tabs:' + (currentFolder || ''); }
+function saveTabs() {
+  if (currentFolder) localStorage.setItem(tabsKey(), JSON.stringify({ tabs, active: activeTab }));
+}
+function loadTabs() {
+  try {
+    const st = JSON.parse(localStorage.getItem(tabsKey()) || 'null');
+    tabs = (st?.tabs || []).filter(p => typeof p === 'string');
+    activeTab = Math.min(st?.active ?? -1, tabs.length - 1);
+  } catch { tabs = []; activeTab = -1; }
+  renderTabs();
+  if (activeTab >= 0) openFile(tabs[activeTab], false);
+}
+function syncTabs(path) {
+  if (activeTab >= 0 && tabs[activeTab] === path) { renderTabs(); return; }
+  const existing = tabs.indexOf(path);
+  if (existing >= 0) activeTab = existing;
+  else if (activeTab >= 0) tabs[activeTab] = path;
+  else { tabs.push(path); activeTab = tabs.length - 1; }
+  renderTabs();
+  saveTabs();
+}
+function openInNewTab(path) {
+  tabs.push(path);
+  activeTab = tabs.length - 1;
+  renderTabs();
+  openFile(path);
+}
+function closeTab(i) {
+  tabs.splice(i, 1);
+  if (activeTab >= tabs.length) activeTab = tabs.length - 1;
+  else if (i < activeTab) activeTab--;
+  renderTabs();
+  saveTabs();
+  if (activeTab >= 0) openFile(tabs[activeTab], false);
+}
+function renderTabs() {
+  const bar = document.getElementById('tabbar');
+  bar.innerHTML = '';
+  if (tabs.length < 2 && activeTab <= 0 && tabs.length === 0) return;
+  tabs.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'tab' + (i === activeTab ? ' active' : '');
+    const t = document.createElement('span');
+    t.className = 't';
+    t.textContent = p.split('/').pop();
+    t.title = p;
+    const x = document.createElement('button');
+    x.className = 'close';
+    x.textContent = '×';
+    x.title = 'Close tab';
+    x.onclick = (e) => { e.stopPropagation(); closeTab(i); };
+    div.append(t, x);
+    div.onclick = () => { activeTab = i; renderTabs(); saveTabs(); openFile(tabs[i], false); };
+    div.onauxclick = (e) => { if (e.button === 1) closeTab(i); };
+    bar.appendChild(div);
+  });
 }
 
 // ---- Wikilink navigation (delegated click handler) ----
@@ -589,6 +692,11 @@ contentBox.addEventListener('click', async (e) => {
   const a = e.target.closest('a');
   if (!a) return;
   const href = a.getAttribute('href') || '';
+  if (href.startsWith('hashtag:')) {
+    e.preventDefault();
+    runSearch(decodeURIComponent(href.slice(8)), 'tag');
+    return;
+  }
   if (!href.startsWith('wikilink:')) return;
   e.preventDefault();
   if (!currentFolder) { showError('Open the vault folder to follow wikilinks.'); return; }
@@ -629,8 +737,41 @@ async function renderNotePanel(path) {
         html += `<div class="bl" data-path="${b.from}"><div>${b.from}</div><div class="ctx">${(b.context || '').trim()}</div></div>`;
       }
     }
+    const outlinks = note.links || [];
+    if (outlinks.length) {
+      html += `<div class="section-title">Outgoing links (${outlinks.length})</div>`;
+      for (const l of outlinks) {
+        html += `<div class="bl" data-target="${l.target.replaceAll('"', '&quot;')}"><div>${l.embed ? '⧉ ' : ''}${l.target}${l.heading ? ' › ' + l.heading : ''}</div></div>`;
+      }
+    }
     html += '<div class="section-title">Related</div><div id="related-box"><div class="bl" id="find-related">Find related notes…</div></div>';
+    html += '<div class="section-title">Unlinked mentions</div><div id="unlinked-box"><div class="bl" id="find-unlinked">Find unlinked mentions…</div></div>';
     panel.innerHTML = html;
+    panel.querySelectorAll('.bl[data-target]').forEach(el => {
+      el.onclick = async () => {
+        try {
+          const resolved = await invoke('resolve_wikilink',
+            { root: currentFolder, target: el.dataset.target, from: currentFile || '' });
+          openFile(resolved);
+        } catch (err) { showError(String(err)); }
+      };
+    });
+    document.getElementById('find-unlinked').onclick = async () => {
+      const box = document.getElementById('unlinked-box');
+      box.innerHTML = '<div class="section-title">…</div>';
+      try {
+        const hits = await invoke('unlinked_mentions', { root: currentFolder, path });
+        box.innerHTML = hits.length ? '' : '<div class="kv">none found</div>';
+        for (const h of hits) {
+          const div = document.createElement('div');
+          div.className = 'bl';
+          div.dataset.path = h.note;
+          div.innerHTML = `<div>${h.note}:${h.line}</div><div class="ctx">${h.context}</div>`;
+          div.onclick = () => openFile(currentFolder + '/' + h.note);
+          box.appendChild(div);
+        }
+      } catch (e) { box.innerHTML = ''; showError(String(e)); }
+    };
     panel.querySelectorAll('.bl[data-path]').forEach(el =>
       el.onclick = () => openFile(currentFolder + '/' + el.dataset.path));
     panel.querySelectorAll('.tag-item').forEach(el =>
@@ -936,12 +1077,14 @@ function drawGraph() {
   ctx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
   ctx.strokeStyle = css.getPropertyValue('--border');
   ctx.lineWidth = devicePixelRatio;
+  const match = (n) => !graphFilter || n.title.toLowerCase().includes(graphFilter);
   for (const { a, b } of graphLinks) {
+    if (!match(a) || !match(b)) continue;
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   }
   ctx.fillStyle = css.getPropertyValue('--accent');
   ctx.font = `${11 * devicePixelRatio}px -apple-system, sans-serif`;
-  for (const n of graphNodes) {
+  for (const n of graphNodes.filter(match)) {
     const r = (4 + Math.min(n.links, 8)) * devicePixelRatio;
     ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2); ctx.fill();
     ctx.fillText(n.title, n.x + r + 3, n.y + 3);
@@ -1356,6 +1499,8 @@ function openSettings() {
   setTheme.value = localStorage.getItem('theme') || 'system';
   setFont.value = localStorage.getItem('fontSize') || '16';
   setKey.value = localStorage.getItem('apiKey') || '';
+  document.getElementById('set-reopen').checked = !!localStorage.getItem('reopenLast');
+  renderVaultList();
   settingsOverlay.classList.add('show');
 }
 function applySettings() {
@@ -1401,6 +1546,10 @@ const COMMANDS = [
   { label: 'AI: Suggest Tags', run: () => runAi('tag') },
   { label: 'AI: Translate Document…', run: () => runAi('translate', 'Translate to which language?') },
   { label: 'AI: Ask About Document…', run: () => runAi('ask', 'What do you want to know?') },
+  { label: 'Daily Note (Cmd+D)', run: () => openDailyNote() },
+  { label: 'New Note from Template…', run: () => newFromTemplate() },
+  { label: 'Pin/Unpin Current Note', run: () => { if (currentFile) { togglePin(currentFile); } } },
+  { label: 'Open in New Tab (duplicate)', run: () => { if (currentFile) openInNewTab(currentFile); } },
   { label: 'Zen Mode (toggle sidebar)', run: toggleZen },
   { label: 'Typewriter Mode', run: () => { typewriterOn = !typewriterOn; flashLive('typewriter ' + (typewriterOn ? 'on' : 'off')); } },
   { label: 'Document Statistics', run: showDocStats },
@@ -1468,6 +1617,11 @@ editPreview.addEventListener('click', async (e) => {
     return;
   }
   const a = e.target.closest('a');
+  if (a && (a.getAttribute('href') || '').startsWith('hashtag:')) {
+    e.preventDefault();
+    runSearch(decodeURIComponent(a.getAttribute('href').slice(8)), 'tag');
+    return;
+  }
   if (a && (a.getAttribute('href') || '').startsWith('wikilink:')) {
     e.preventDefault();
     if (!currentFolder) return;
@@ -1720,6 +1874,187 @@ document.getElementById('scroll').addEventListener('scroll', hidePopNow, { passi
 bindHoverPreview(contentBox);
 bindHoverPreview(editPreview);
 bindHoverPreview(document.getElementById('note-panel'));
+
+// ==== Phase C: vault workflows ====
+
+// ---- Pinned notes ----
+function pinsKey() { return 'pins:' + (currentFolder || ''); }
+function getPins() { try { return JSON.parse(localStorage.getItem(pinsKey()) || '[]'); } catch { return []; } }
+function togglePin(path) {
+  const pins = getPins();
+  const i = pins.indexOf(path);
+  if (i >= 0) pins.splice(i, 1); else pins.unshift(path);
+  localStorage.setItem(pinsKey(), JSON.stringify(pins));
+  renderPins();
+}
+function renderPins() {
+  const box = document.getElementById('pins-box');
+  const pins = getPins().filter(p => p);
+  if (!pins.length) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="section-title">Pinned</div>';
+  for (const p of pins) {
+    const row = document.createElement('div');
+    row.className = 'pin-row';
+    row.innerHTML = `<span class="t">★ ${p.split('/').pop()}</span>`;
+    row.title = p;
+    const x = document.createElement('button');
+    x.className = 'close'; x.textContent = '×'; x.title = 'Unpin';
+    x.onclick = (e) => { e.stopPropagation(); togglePin(p); };
+    row.appendChild(x);
+    row.onclick = () => openFile(p);
+    box.appendChild(row);
+  }
+}
+
+// ---- File-tree context menu ----
+const ctxMenu = document.getElementById('ctx-menu');
+function hideCtx() { ctxMenu.style.display = 'none'; }
+document.addEventListener('click', hideCtx);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCtx(); });
+function showCtx(x, y, items) {
+  ctxMenu.innerHTML = '';
+  for (const it of items) {
+    const div = document.createElement('div');
+    div.textContent = it.label;
+    if (it.danger) div.className = 'danger';
+    div.onclick = () => { hideCtx(); it.run(); };
+    ctxMenu.appendChild(div);
+  }
+  ctxMenu.style.left = Math.min(x, innerWidth - 200) + 'px';
+  ctxMenu.style.top = Math.min(y, innerHeight - items.length * 32 - 12) + 'px';
+  ctxMenu.style.display = 'block';
+}
+async function refreshTree() {
+  if (!currentFolder) return;
+  try {
+    const nodes = await invoke('list_tree', { root: currentFolder });
+    const box = document.getElementById('tree-box');
+    box.innerHTML = '<div class="section-title">Files</div>';
+    renderTree(nodes, box);
+  } catch {}
+  window._quickCache = null;
+}
+document.getElementById('tree-box').addEventListener('contextmenu', (e) => {
+  const node = e.target.closest('.node');
+  if (!node || !currentFolder) return;
+  e.preventDefault();
+  const path = node.title;
+  const isDir = node.classList.contains('dir');
+  const dirOf = isDir ? path : path.slice(0, path.lastIndexOf('/'));
+  const items = [
+    { label: 'New note here', run: async () => {
+        const name = await ask('New note name');
+        if (!name) return;
+        try {
+          const rel = dirOf.slice(currentFolder.length + 1);
+          const title = rel ? rel + '/' + name : name;
+          const p = await invoke('create_note', { root: currentFolder, title, daily: false, template: null });
+          await refreshTree(); openFile(p); enterEditMode();
+        } catch (err) { showError(String(err)); }
+      } },
+    { label: 'New folder', run: async () => {
+        const name = await ask('New folder name');
+        if (!name) return;
+        try { await invoke('new_folder', { path: dirOf + '/' + name }); refreshTree(); }
+        catch (err) { showError(String(err)); }
+      } },
+  ];
+  if (!isDir && path.endsWith('.md')) {
+    items.push({ label: getPins().includes(path) ? 'Unpin' : 'Pin', run: () => togglePin(path) });
+    items.push({ label: 'Rename (rewrites links)', run: async () => {
+      const base = path.split('/').pop().replace(/\.md$/, '');
+      const newName = await ask('Rename note', { value: base });
+      if (!newName || newName === base) return;
+      try {
+        const np = await invoke('rename_note', { root: currentFolder, path, newName });
+        await refreshTree(); openFile(np);
+      } catch (err) { showError(String(err)); }
+    } });
+  }
+  items.push(
+    { label: 'Copy path', run: () => navigator.clipboard.writeText(path).then(() => flashLive('path copied')) },
+    { label: 'Reveal in Finder', run: () => invoke('reveal_in_finder', { path }).catch(err => showError(String(err))) },
+    { label: 'Delete…', danger: true, run: async () => {
+        const yes = await ask(`Type DELETE to remove ${path.split('/').pop()}`);
+        if (yes !== 'DELETE') return;
+        try {
+          await invoke('delete_path', { path, vaultRoot: currentFolder });
+          if (currentFile === path) { currentFile = null; contentBox.innerHTML = ''; }
+          refreshTree();
+          flashLive('deleted');
+        } catch (err) { showError(String(err)); }
+      } },
+  );
+  showCtx(e.clientX, e.clientY, items);
+});
+
+// ---- Graph filter ----
+let graphFilter = '';
+document.getElementById('graph-filter').addEventListener('input', (e) => {
+  graphFilter = e.target.value.trim().toLowerCase();
+  drawGraph();
+});
+
+// ---- Daily note & templates ----
+async function openDailyNote() {
+  if (!currentFolder) { showError('Open a vault folder first.'); return; }
+  try {
+    const p = await invoke('daily_note', { root: currentFolder });
+    await refreshTree();
+    openFile(p);
+  } catch (e) { showError(String(e)); }
+}
+async function newFromTemplate() {
+  if (!currentFolder) { showError('Open a vault folder first.'); return; }
+  const templates = await invoke('list_templates', { root: currentFolder });
+  if (!templates.length) { showError('No templates folder configured in this vault (.obsidian/templates.json).'); return; }
+  const choice = await ask('Template (' + templates.map(t => t.split('/').pop()).join(', ') + ')', { value: templates[0].split('/').pop() });
+  if (!choice) return;
+  const template = templates.find(t => t.split('/').pop().toLowerCase() === choice.trim().toLowerCase()) || templates[0];
+  const title = await ask('New note title');
+  if (!title) return;
+  try {
+    const p = await invoke('create_note', { root: currentFolder, title, daily: false, template });
+    await refreshTree(); openFile(p); enterEditMode();
+  } catch (e) { showError(String(e)); }
+}
+document.addEventListener('keydown', (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key === 'd') { e.preventDefault(); openDailyNote(); }
+  if (mod && e.key === 'w' && tabs.length) { e.preventDefault(); if (activeTab >= 0) closeTab(activeTab); }
+  if (mod && /^[1-9]$/.test(e.key)) {
+    const i = parseInt(e.key, 10) - 1;
+    if (tabs[i]) { e.preventDefault(); activeTab = i; renderTabs(); saveTabs(); openFile(tabs[i], false); }
+  }
+});
+
+// ---- Multi-vault manager (Settings) ----
+function renderVaultList() {
+  const box = document.getElementById('vault-list');
+  const vaults = JSON.parse(localStorage.getItem('vaults') || '[]');
+  box.innerHTML = vaults.length ? '' : '<div class="pin-row"><span class="t">none yet</span></div>';
+  for (const v of vaults) {
+    const row = document.createElement('div');
+    row.className = 'pin-row';
+    row.innerHTML = `<span class="t">${v}</span>`;
+    const x = document.createElement('button');
+    x.className = 'close'; x.textContent = '×'; x.title = 'Forget vault';
+    x.onclick = (e) => {
+      e.stopPropagation();
+      localStorage.setItem('vaults', JSON.stringify(vaults.filter(o => o !== v)));
+      renderVaultList();
+    };
+    row.appendChild(x);
+    row.onclick = () => { settingsOverlay.classList.remove('show'); openFolder(v); };
+    box.appendChild(row);
+  }
+}
+document.getElementById('set-reopen').addEventListener('change', (e) => {
+  localStorage.setItem('reopenLast', e.target.checked ? '1' : '');
+});
+if (localStorage.getItem('reopenLast') && localStorage.getItem('lastVault')) {
+  openFolder(localStorage.getItem('lastVault'));
+}
 
 // ---- Drag & drop ----
 listen('tauri://drag-drop', async (event) => {
