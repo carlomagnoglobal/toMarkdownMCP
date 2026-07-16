@@ -1645,6 +1645,7 @@ function hidePopSoon() {
   hoverHideTimer = setTimeout(() => { hoverPop.style.display = 'none'; }, 250);
 }
 function hidePopNow() {
+  hoverAnchor = null;
   hoverToken++;
   clearTimeout(hoverTimer);
   clearTimeout(hoverHideTimer);
@@ -1652,35 +1653,64 @@ function hidePopNow() {
 }
 hoverPop.addEventListener('mouseenter', () => clearTimeout(hoverHideTimer));
 hoverPop.addEventListener('mouseleave', hidePopSoon);
+let hoverAnchor = null;
+function showPeekFor(el, root, target) {
+  clearTimeout(hoverHideTimer);
+  clearTimeout(hoverTimer);
+  const token = ++hoverToken;
+  hoverTimer = setTimeout(async () => {
+    try {
+      const peek = await invoke('peek_note', { root, target, from: currentFile });
+      if (token !== hoverToken) return; // pointer moved on — stale response
+      hoverPop.innerHTML = `<div class="pop-path">${peek.path}${peek.truncated ? ' · …' : ''}</div>` + peek.html;
+      postRender(hoverPop);
+      const r = el.getBoundingClientRect();
+      hoverPop.style.left = Math.min(r.left, innerWidth - 400) + 'px';
+      hoverPop.style.top = Math.min(r.bottom + 6, innerHeight - 320) + 'px';
+      hoverPop.style.display = 'block';
+    } catch {}
+  }, 350);
+}
+function hoverTargetOf(el) {
+  // Wikilink anchors carry the target in the href; sidebar rows (backlinks,
+  // related, search results) carry a vault-relative path in data-path.
+  const a = el.closest('a');
+  if (a && (a.getAttribute('href') || '').startsWith('wikilink:')) {
+    try {
+      return decodeURIComponent(a.getAttribute('href').slice('wikilink:'.length)).split('#')[0];
+    } catch {
+      return a.getAttribute('href').slice('wikilink:'.length).split('#')[0];
+    }
+  }
+  const row = el.closest('[data-path]');
+  if (row && row.dataset.path && row.dataset.path.endsWith('.md')) return row.dataset.path;
+  return null;
+}
 function bindHoverPreview(container) {
   container.addEventListener('mouseover', (e) => {
-    const a = e.target.closest('a');
-    if (!a || !(a.getAttribute('href') || '').startsWith('wikilink:') || !currentFolder) return;
-    clearTimeout(hoverHideTimer);
-    clearTimeout(hoverTimer);
-    const token = ++hoverToken;
-    hoverTimer = setTimeout(async () => {
-      const target = decodeURIComponent(a.getAttribute('href').slice('wikilink:'.length)).split('#')[0];
-      try {
-        const peek = await invoke('peek_note', { root: currentFolder, target, from: currentFile });
-        if (token !== hoverToken) return; // pointer moved on — stale response
-        hoverPop.innerHTML = `<div class="pop-path">${peek.path}${peek.truncated ? ' · …' : ''}</div>` + peek.html;
-        postRender(hoverPop);
-        const r = a.getBoundingClientRect();
-        hoverPop.style.left = Math.min(r.left, innerWidth - 400) + 'px';
-        hoverPop.style.top = Math.min(r.bottom + 6, innerHeight - 320) + 'px';
-        hoverPop.style.display = 'block';
-      } catch {}
-    }, 350);
+    if (!currentFolder) return;
+    const el = e.target.closest('a, [data-path]');
+    const target = el && hoverTargetOf(e.target);
+    if (!el || !target) return;
+    // Moving between children of the same element must not restart the peek.
+    if (el === hoverAnchor) {
+      clearTimeout(hoverHideTimer);
+      return;
+    }
+    hoverAnchor = el;
+    showPeekFor(el, currentFolder, target);
   });
   container.addEventListener('mouseout', (e) => {
-    if (e.target.closest('a')) {
-      hoverToken++;
-      clearTimeout(hoverTimer);
-      hidePopSoon();
-    }
+    const el = e.target.closest('a, [data-path]');
+    if (!el || el !== hoverAnchor) return;
+    // Still inside the same element (child-to-child move)? Keep the preview.
+    if (e.relatedTarget && el.contains(e.relatedTarget)) return;
+    hoverAnchor = null;
+    hoverToken++;
+    clearTimeout(hoverTimer);
+    hidePopSoon();
   });
-  // Scrolling or clicking anywhere dismisses immediately.
+  // Scrolling dismisses immediately.
   container.addEventListener('scroll', hidePopNow, { passive: true });
 }
 document.addEventListener('click', (e) => {
@@ -1689,6 +1719,7 @@ document.addEventListener('click', (e) => {
 document.getElementById('scroll').addEventListener('scroll', hidePopNow, { passive: true });
 bindHoverPreview(contentBox);
 bindHoverPreview(editPreview);
+bindHoverPreview(document.getElementById('note-panel'));
 
 // ---- Drag & drop ----
 listen('tauri://drag-drop', async (event) => {

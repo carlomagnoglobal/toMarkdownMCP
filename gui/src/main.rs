@@ -613,7 +613,7 @@ async fn ai_action(kind: String, content: String, extra: Option<String>) -> Resu
 
 /// Marked 2-style document statistics: readability + structure + top words.
 #[tauri::command]
-fn doc_stats(content: String) -> serde_json::Value {
+async fn doc_stats(content: String) -> serde_json::Value {
     use to_markdown_mcp::{doc_intel, rag};
     let r = doc_intel::readability(&content);
     let stats = rag::text_statistics(&content, true, 3);
@@ -640,7 +640,7 @@ fn doc_stats(content: String) -> serde_json::Value {
 /// non-Markdown targets return an informational preview instead of an error
 /// so every hover shows something.
 #[tauri::command]
-fn peek_note(root: String, target: String, from: Option<String>) -> Result<serde_json::Value, String> {
+async fn peek_note(root: String, target: String, from: Option<String>) -> Result<serde_json::Value, String> {
     let rootp = PathBuf::from(&root);
     let idx = vault::get_index(&rootp).map_err(|e| e.to_string())?;
     let from_rel = from.as_deref().and_then(|f| vault_rel(&root, f));
@@ -834,6 +834,37 @@ mod tests {
     fn base64_decodes() {
         assert_eq!(base64_decode("aGVsbG8=").unwrap(), b"hello");
         assert!(base64_decode("!!!").is_none());
+    }
+
+    #[test]
+    fn peek_note_answers_for_every_fixture_wikilink() {
+        use to_markdown_mcp::obsidian::wikilink;
+        let root = fixture_vault();
+        let rootp = PathBuf::from(&root);
+        let mut checked = 0;
+        for entry in std::fs::read_dir(&rootp).unwrap().flatten() {
+            let p = entry.path();
+            if p.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let content = std::fs::read_to_string(&p).unwrap();
+            for link in wikilink::parse_wikilinks(&content) {
+                let v = tauri::async_runtime::block_on(peek_note(
+                    root.clone(),
+                    link.target.clone(),
+                    Some(p.to_string_lossy().into_owned()),
+                ))
+                .unwrap_or_else(|e| panic!("peek failed for [[{}]] in {}: {}", link.target, p.display(), e));
+                assert!(
+                    !v["html"].as_str().unwrap_or_default().trim().is_empty(),
+                    "empty preview for [[{}]] in {}",
+                    link.target,
+                    p.display()
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked >= 8, "expected to exercise several links, got {}", checked);
     }
 
     #[test]
