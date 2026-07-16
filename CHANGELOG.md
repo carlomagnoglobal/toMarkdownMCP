@@ -2,6 +2,40 @@
 
 All notable changes to toMarkdownMCP.
 
+## v0.2.0 — 2026-07-16
+
+### Added — CLI
+
+The binary is now a standalone CLI alongside its MCP-server and TUI roles (argument parsing moved to clap; `--base-dir`, `tui`, and no-args server mode unchanged):
+
+- `convert <SOURCE> [-o FILE] [--type LANG] [--line-numbers] [--title T]` — file, URL, or stdin → Markdown
+- `batch <FILES>... [-o FILE]` — combined document for up to 10 files
+- `search <QUERY> --dir <DIR>` — ranked full-text search
+- `tools [TOOL_NAME]` — tool catalog / per-tool help. Detailed help now works for **all 62 tools**: unknown names fall back to rendering the tool's schema (previously most tools answered "Unknown tool")
+
+### Added — MCP protocol depth
+
+- `resources/list` / `resources/read`: files under the `--base-dir` vault(s) exposed as `file://` resources (capped at 1000; reads confined to the base dirs; non-Markdown formats converted to Markdown on read)
+- `prompts/list` / `prompts/get`: `summarize_note`, `ingest_url`, `vault_health` templates
+- `initialize` now declares `resources` and `prompts` capabilities
+
+### Added — vector embeddings (opt-in)
+
+- `retrieve_context`, `find_related_notes`, `find_duplicates`, `cluster_documents` accept `embeddings: true` for vector-similarity ranking
+- Real sentence embeddings (all-MiniLM-L6-v2 via fastembed/ONNX) behind the optional `embeddings` cargo feature; deterministic hashed-vector fallback otherwise, so the flag never fails outright
+- Chunk vectors persist per directory in `.tomarkdown/embeddings_index.json`, re-embedded incrementally by mtime
+- `find_duplicates` gains `min_similarity` (cosine, default 0.9) for embeddings mode
+
+### Added — desktop GUI (in-repo, not part of the published crate)
+
+`gui/` contains **toMarkdown Viewer**, a Tauri desktop app sharing this crate as a library: file-tree/vault browsing, live preview with file watching, Obsidian-grade navigation (wikilinks, backlinks, tags, graph, quick switcher), Typora-style in-place block editing, callouts/math/Mermaid/syntax-highlighted rendering, AI actions, DOCX/RTF/HTML export, native macOS menu and `.md` file associations. Build with `cargo run -p to_markdown_gui`; bundle with `cargo tauri build` from `gui/`. See `docs/gui/GUI.md`.
+
+### Changed / hardening
+
+- Files over 10 MB: plain text/code streams through a single pre-sized buffer; structured formats (HTML/documents/markup) are refused with guidance and a `max_bytes` override on `convert_file`; the same gate protects RAG directory scans
+- JSON-RPC error taxonomy: missing/invalid arguments return `-32602 Invalid params` naming the parameter; execution failures return `-32603` with the real cause (previously a generic "Internal error")
+- Crate restructured as a library + binary (Cargo workspace); `cargo clippy -D warnings` clean and enforced in CI; end-to-end JSON-RPC integration tests per tool family
+
 ## v0.1.1 — 2026-07-10
 
 ### Fixed — MCP protocol compliance (critical)

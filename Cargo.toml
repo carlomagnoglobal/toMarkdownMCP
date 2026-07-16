@@ -6,7 +6,7 @@ default-members = ["."]
 
 [package]
 name = "to_markdown_mcp"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 description = "MCP server converting anything to Markdown — documents, office files, live web pages (Chromium), Obsidian vaults — plus RAG tools and token analytics. Includes a terminal Markdown viewer."
 license = "MIT"
