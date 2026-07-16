@@ -1635,17 +1635,35 @@ async function toggleKeywords() {
 }
 
 // ---- Hover page preview (Obsidian) ----
+// Race-safe: a token invalidates in-flight peeks once the pointer leaves, and
+// hiding uses a short grace period so crossing the gap into the popup (or
+// brief flickers over the link) doesn't close/reopen it.
 const hoverPop = document.getElementById('hover-pop');
-let hoverTimer = null;
+let hoverTimer = null, hoverToken = 0, hoverHideTimer = null;
+function hidePopSoon() {
+  clearTimeout(hoverHideTimer);
+  hoverHideTimer = setTimeout(() => { hoverPop.style.display = 'none'; }, 250);
+}
+function hidePopNow() {
+  hoverToken++;
+  clearTimeout(hoverTimer);
+  clearTimeout(hoverHideTimer);
+  hoverPop.style.display = 'none';
+}
+hoverPop.addEventListener('mouseenter', () => clearTimeout(hoverHideTimer));
+hoverPop.addEventListener('mouseleave', hidePopSoon);
 function bindHoverPreview(container) {
   container.addEventListener('mouseover', (e) => {
     const a = e.target.closest('a');
     if (!a || !(a.getAttribute('href') || '').startsWith('wikilink:') || !currentFolder) return;
+    clearTimeout(hoverHideTimer);
     clearTimeout(hoverTimer);
+    const token = ++hoverToken;
     hoverTimer = setTimeout(async () => {
       const target = decodeURIComponent(a.getAttribute('href').slice('wikilink:'.length)).split('#')[0];
       try {
         const peek = await invoke('peek_note', { root: currentFolder, target });
+        if (token !== hoverToken) return; // pointer moved on — stale response
         hoverPop.innerHTML = `<div class="pop-path">${peek.path}${peek.truncated ? ' · …' : ''}</div>` + peek.html;
         postRender(hoverPop);
         const r = a.getBoundingClientRect();
@@ -1657,11 +1675,18 @@ function bindHoverPreview(container) {
   });
   container.addEventListener('mouseout', (e) => {
     if (e.target.closest('a')) {
+      hoverToken++;
       clearTimeout(hoverTimer);
-      hoverPop.style.display = 'none';
+      hidePopSoon();
     }
   });
+  // Scrolling or clicking anywhere dismisses immediately.
+  container.addEventListener('scroll', hidePopNow, { passive: true });
 }
+document.addEventListener('click', (e) => {
+  if (!hoverPop.contains(e.target)) hidePopNow();
+});
+document.getElementById('scroll').addEventListener('scroll', hidePopNow, { passive: true });
 bindHoverPreview(contentBox);
 bindHoverPreview(editPreview);
 
