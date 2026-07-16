@@ -9,6 +9,13 @@ COPY Cargo.toml ./
 COPY src ./src
 COPY tests ./tests
 
+# The workspace manifest lists the GUI crate as a member; a stub manifest and
+# entry point satisfy cargo without pulling the Tauri toolchain into the image
+# (default-members means only the MCP crate is actually built).
+RUN mkdir -p gui/src \
+    && printf '[package]\nname = "to_markdown_gui"\nversion = "0.0.0"\nedition = "2021"\npublish = false\n' > gui/Cargo.toml \
+    && printf 'fn main() {}\n' > gui/src/main.rs
+
 RUN cargo build --release --bin to_markdown_mcp
 
 # Stage 2: Runtime
