@@ -126,7 +126,12 @@ Full-parity pass against Typora / Obsidian / MacMD Viewer / Marked 2. Each phase
 - [x] Three view modes — Reading / Live / Split — via the toolbar cycle, Cmd+E (read↔live), Cmd+Shift+E (split), and the palette; vault notes open in Live by default (Settings toggle to disable)
 - [x] Fixed along the way: multi-line `$$ … $$` display math never rendered (line-based inline pass); now collected across lines
 - Deviations: arrow-key navigation into blocks not implemented (click only); autocomplete popup available in Split mode only
-### Phase E — App integration (file associations, native menu, window state, DOCX/RTF export, packaging)
+### Phase E — App integration & distribution ✅ (signing still needs certs)
+- [x] File associations for `.md`/`.markdown` in `tauri.conf.json`; Finder double-click (macOS `RunEvent::Opened`) and CLI-argument opens flow through a pending-opens queue the frontend drains at startup
+- [x] Native macOS menu bar: App/File/Edit/View/Window with predefined Edit roles (native copy/paste/undo), File actions (open, new note, daily note, exports, print), View modes and themes — menu events map onto the existing frontend actions
+- [x] Window size/position persisted via tauri-plugin-window-state; reopen-last-vault was already a setting
+- [x] DOCX export via docx-rs and RTF via a hand-rolled writer, both from one shared pulldown block walker (headings, bold/italic/code, lists, quotes, code blocks, tables; images omitted) — palette + File menu, tested (valid ZIP magic, styled RTF)
+- [x] `gui-release.yml` workflow (manual dispatch or `gui-v*` tags) bundling macOS/Linux/Windows artifacts with tauri-cli; signing/notarization deferred until Apple certificates exist
 
 ## Deferred
 

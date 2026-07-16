@@ -1582,6 +1582,8 @@ const COMMANDS = [
   { label: 'Rename Note (rewrites links)', run: () => document.getElementById('rename-btn').click() },
   { label: 'Edit Properties (frontmatter)', run: () => document.getElementById('edit-props').click() },
   { label: 'Export HTML', run: () => document.getElementById('export-html').click() },
+  { label: 'Export DOCX (Word)…', run: () => exportAs('docx') },
+  { label: 'Export RTF…', run: () => exportAs('rtf') },
   { label: 'Print / Save as PDF', run: () => window.print() },
   { label: 'Copy as Rich Text', run: () => document.getElementById('copy-rich').click() },
   { label: 'AI: Summarize Document', run: () => runAi('summarize') },
@@ -2329,6 +2331,56 @@ async function setViewMode(mode) {
     editor.focus();
   }
 }
+
+// ==== Phase E: native menu, OS opens, DOCX/RTF export ====
+async function currentDocForExport() {
+  if (viewMode === 'live') { await commitActiveBlock(false); return liveDoc; }
+  return currentDocText();
+}
+async function exportAs(kind) {
+  const md = await currentDocForExport();
+  if (!md) { showError('Open a document first.'); return; }
+  const title = (currentFile || 'document').split('/').pop();
+  try {
+    const saved = await invoke(kind === 'docx' ? 'export_docx' : 'export_rtf', { title, md });
+    if (saved) flashLive('exported ' + saved.split('/').pop());
+  } catch (e) { showError(String(e)); }
+}
+
+// Native menu actions map onto existing behaviors.
+const MENU_ACTIONS = {
+  'open-folder': () => document.getElementById('open-folder').click(),
+  'open-file': () => document.getElementById('open-file').click(),
+  'new-note': () => document.getElementById('new-note').click(),
+  'daily-note': () => openDailyNote(),
+  'export-html': () => document.getElementById('export-html').click(),
+  'export-docx': () => exportAs('docx'),
+  'export-rtf': () => exportAs('rtf'),
+  'print': () => window.print(),
+  'mode-read': () => setViewMode('read'),
+  'mode-live': () => setViewMode('live'),
+  'mode-split': () => setViewMode('split'),
+  'zen': () => toggleZen(),
+  'theme-system': () => applyTheme('system'),
+  'theme-light': () => applyTheme('light'),
+  'theme-dark': () => applyTheme('dark'),
+  'theme-sepia': () => applyTheme('sepia'),
+};
+listen('menu-action', (e) => { MENU_ACTIONS[e.payload]?.(); });
+
+// Files opened from the OS (Finder double-click, CLI argument).
+async function handleOsOpen(paths) {
+  const p = (paths || [])[0];
+  if (!p) return;
+  try {
+    await invoke('list_tree', { root: p });
+    openFolder(p);
+  } catch {
+    openFile(p);
+  }
+}
+listen('os-open-file', (e) => handleOsOpen(e.payload));
+invoke('take_pending_opens').then(handleOsOpen).catch(() => {});
 
 // ---- Drag & drop ----
 listen('tauri://drag-drop', async (event) => {

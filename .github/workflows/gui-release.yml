@@ -1,0 +1,68 @@
+name: GUI build
+
+# Manual dispatch (and optionally on gui-v* tags): builds the toMarkdown
+# Viewer desktop bundles and uploads them as workflow artifacts. Signing /
+# notarization is not configured (no certificates); macOS users may need to
+# right-click → Open on first launch.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["gui-v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macos
+          - os: ubuntu-latest
+            name: linux
+          - os: windows-latest
+            name: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Linux webview dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libgtk-3-dev
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-gui-${{ hashFiles('Cargo.toml', 'gui/Cargo.toml') }}
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --locked
+
+      - name: Build bundles
+        working-directory: gui
+        run: cargo tauri build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: toMarkdown-Viewer-${{ matrix.name }}
+          path: |
+            target/release/bundle/**/*.dmg
+            target/release/bundle/**/*.app.tar.gz
+            target/release/bundle/**/*.AppImage
+            target/release/bundle/**/*.deb
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*.exe
+          if-no-files-found: warn

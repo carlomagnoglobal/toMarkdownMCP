@@ -33,7 +33,9 @@ Phase 5 of the [roadmap](../planning/ROADMAP.md): foundation & viewer. Later pha
 - **Writing insight** — document statistics overlay (readability, top words) and a keyword-repetition highlighter; hover a wikilink for an Obsidian-style page preview
 - **Vault workflows** — note tabs (Cmd+click, Cmd+W, Cmd+1..9, persisted per vault), daily note (Cmd+D), new-from-template, right-click file management in the tree (new/rename/delete/reveal/pin), clickable inline #tags, outgoing links and unlinked mentions in the note panel, pinned notes, graph filtering, and a multi-vault manager with reopen-on-launch
 - **Command palette** — Cmd/Ctrl+K runs any app action by name
-- **Settings** — Cmd/Ctrl+, for theme, content font size, and the API key (persisted locally)
+- **Settings** — Cmd/Ctrl+, for theme, content font size, API key, live-editing default, reopen-last-vault, and the known-vaults list
+- **Native integration** — real macOS menu bar (File/Edit/View/Window with native Edit roles), `.md` file associations (Finder double-click opens in the app), window size/position remembered across launches
+- **Export** — HTML, Print/PDF, copy-rich-text, plus DOCX (Word) and RTF via the palette or File menu (text-level fidelity; images omitted)
 
 ## Build & run
 
@@ -44,7 +46,7 @@ cargo build -p to_markdown_gui            # compile
 cargo run -p to_markdown_gui              # launch the viewer
 ```
 
-Packaging a macOS `.app` / installers uses the Tauri CLI: `cargo install tauri-cli`, then `cargo tauri build` from `gui/`. Bundling is enabled with a full icon set (`gui/icons/`, including `.icns`); signing/notarization requires Apple Developer certificates and is not configured.
+Packaging: `cargo tauri build` from `gui/` produces the `.app`/`.dmg` (tauri-cli required: `cargo install tauri-cli --locked`). CI can build macOS/Linux/Windows bundles via the `GUI build` workflow (`.github/workflows/gui-release.yml`, manual dispatch or `gui-v*` tags). Signing/notarization requires Apple Developer certificates and is not configured — right-click → Open on first launch.
 
 ## Architecture
 

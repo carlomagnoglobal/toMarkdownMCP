@@ -16,6 +16,7 @@ use to_markdown_mcp::file_type::{detect_language, detect_language_from_filename}
 use to_markdown_mcp::obsidian::{tools as vault_tools, vault};
 use to_markdown_mcp::pipeline::convert_any_to_markdown;
 
+mod export;
 mod render;
 use render::{render_note, RenderOpts};
 
@@ -834,6 +835,99 @@ async fn unlinked_mentions(root: String, path: String) -> Result<serde_json::Val
     Ok(serde_json::json!(hits))
 }
 
+// ---- Phase E: exports, menu, OS open events ----
+
+#[tauri::command]
+async fn export_docx(app: tauri::AppHandle, title: String, md: String) -> Result<Option<String>, String> {
+    let Some(dest) = app
+        .dialog()
+        .file()
+        .set_file_name(format!("{}.docx", title.trim_end_matches(".md")))
+        .add_filter("Word document", &["docx"])
+        .blocking_save_file()
+    else {
+        return Ok(None);
+    };
+    let path = dest.into_path().map_err(|e| e.to_string())?;
+    let bytes = export::markdown_to_docx(&md, title.trim_end_matches(".md"))?;
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(Some(path.display().to_string()))
+}
+
+#[tauri::command]
+async fn export_rtf(app: tauri::AppHandle, title: String, md: String) -> Result<Option<String>, String> {
+    let Some(dest) = app
+        .dialog()
+        .file()
+        .set_file_name(format!("{}.rtf", title.trim_end_matches(".md")))
+        .add_filter("Rich Text", &["rtf"])
+        .blocking_save_file()
+    else {
+        return Ok(None);
+    };
+    let path = dest.into_path().map_err(|e| e.to_string())?;
+    std::fs::write(&path, export::markdown_to_rtf(&md, title.trim_end_matches(".md")))
+        .map_err(|e| e.to_string())?;
+    Ok(Some(path.display().to_string()))
+}
+
+/// Files handed to the app by the OS (Finder double-click, CLI args) before
+/// the frontend was listening.
+#[derive(Default)]
+struct PendingOpens(Mutex<Vec<String>>);
+
+#[tauri::command]
+fn take_pending_opens(state: tauri::State<PendingOpens>) -> Vec<String> {
+    std::mem::take(&mut *state.0.lock().unwrap())
+}
+
+fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+    let app_menu = Submenu::with_items(app, "toMarkdown", true, &[
+        &PredefinedMenuItem::about(app, None, Some(AboutMetadata::default()))?,
+        &PredefinedMenuItem::separator(app)?,
+        &PredefinedMenuItem::hide(app, None)?,
+        &PredefinedMenuItem::quit(app, None)?,
+    ])?;
+    let file = Submenu::with_items(app, "File", true, &[
+        &MenuItem::with_id(app, "open-folder", "Open Folder…", true, Some("CmdOrCtrl+Shift+O"))?,
+        &MenuItem::with_id(app, "open-file", "Open File…", true, None::<&str>)?,
+        &MenuItem::with_id(app, "new-note", "New Note", true, Some("CmdOrCtrl+N"))?,
+        &MenuItem::with_id(app, "daily-note", "Daily Note", true, None::<&str>)?,
+        &PredefinedMenuItem::separator(app)?,
+        &MenuItem::with_id(app, "export-html", "Export HTML…", true, None::<&str>)?,
+        &MenuItem::with_id(app, "export-docx", "Export DOCX…", true, None::<&str>)?,
+        &MenuItem::with_id(app, "export-rtf", "Export RTF…", true, None::<&str>)?,
+        &MenuItem::with_id(app, "print", "Print / PDF…", true, Some("CmdOrCtrl+P"))?,
+    ])?;
+    let edit = Submenu::with_items(app, "Edit", true, &[
+        &PredefinedMenuItem::undo(app, None)?,
+        &PredefinedMenuItem::redo(app, None)?,
+        &PredefinedMenuItem::separator(app)?,
+        &PredefinedMenuItem::cut(app, None)?,
+        &PredefinedMenuItem::copy(app, None)?,
+        &PredefinedMenuItem::paste(app, None)?,
+        &PredefinedMenuItem::select_all(app, None)?,
+    ])?;
+    let view = Submenu::with_items(app, "View", true, &[
+        &MenuItem::with_id(app, "mode-read", "Reading", true, None::<&str>)?,
+        &MenuItem::with_id(app, "mode-live", "Live Editing", true, Some("CmdOrCtrl+E"))?,
+        &MenuItem::with_id(app, "mode-split", "Split Source", true, Some("CmdOrCtrl+Shift+E"))?,
+        &PredefinedMenuItem::separator(app)?,
+        &MenuItem::with_id(app, "zen", "Zen Mode", true, None::<&str>)?,
+        &PredefinedMenuItem::separator(app)?,
+        &MenuItem::with_id(app, "theme-system", "Theme: System", true, None::<&str>)?,
+        &MenuItem::with_id(app, "theme-light", "Theme: Light", true, None::<&str>)?,
+        &MenuItem::with_id(app, "theme-dark", "Theme: Dark", true, None::<&str>)?,
+        &MenuItem::with_id(app, "theme-sepia", "Theme: Sepia", true, None::<&str>)?,
+    ])?;
+    let window = Submenu::with_items(app, "Window", true, &[
+        &PredefinedMenuItem::minimize(app, None)?,
+        &PredefinedMenuItem::maximize(app, None)?,
+    ])?;
+    Menu::with_items(app, &[&app_menu, &file, &edit, &view, &window])
+}
+
 /// Read a small text file (user CSS). Capped at 1MB.
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
@@ -864,9 +958,27 @@ async fn pick_file(app: tauri::AppHandle) -> Option<String> {
 }
 
 fn main() {
-    tauri::Builder::default()
+    use tauri::Manager;
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(WatchState::default())
+        .manage(PendingOpens::default())
+        .menu(build_menu)
+        .on_menu_event(|app, event| {
+            let _ = app.emit("menu-action", event.id().0.clone());
+        })
+        .setup(|app| {
+            // Files passed as CLI arguments (Linux/Windows file associations).
+            let args: Vec<String> = std::env::args()
+                .skip(1)
+                .filter(|a| Path::new(a).is_file())
+                .collect();
+            if !args.is_empty() {
+                app.state::<PendingOpens>().0.lock().unwrap().extend(args);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             list_tree, open_file, pick_folder, pick_file,
             watch_tree, watch_file, export_html, read_text_file,
@@ -877,10 +989,33 @@ fn main() {
             related_notes, semantic_search, set_api_key, ai_action, syntax_css,
             doc_stats, peek_note,
             daily_note, list_templates, new_folder, delete_path,
-            reveal_in_finder, unlinked_mentions, render_blocks
+            reveal_in_finder, unlinked_mentions, render_blocks,
+            export_docx, export_rtf, take_pending_opens
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running toMarkdown Viewer");
+        .build(tauri::generate_context!())
+        .expect("error while building toMarkdown Viewer");
+    app.run(|app_handle, event| {
+        // Finder double-click / "Open With" on macOS.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Opened { urls } = event {
+            let paths: Vec<String> = urls
+                .iter()
+                .filter_map(|u| u.to_file_path().ok())
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect();
+            if !paths.is_empty() {
+                app_handle
+                    .state::<PendingOpens>()
+                    .0
+                    .lock()
+                    .unwrap()
+                    .extend(paths.clone());
+                let _ = app_handle.emit("os-open-file", paths);
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = (app_handle, event);
+    });
 }
 
 #[cfg(test)]
