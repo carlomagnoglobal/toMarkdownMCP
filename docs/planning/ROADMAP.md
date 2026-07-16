@@ -86,6 +86,22 @@ Desktop GUI with functionality on par with **Obsidian, Typora, MacMD Viewer, and
 - [ ] Large-vault performance pass (virtualized tree) and full accessibility audit — buttons are labeled and overlays are keyboard-dismissable, but no formal audit yet
 - [x] Packaging prepared: bundle enabled in `tauri.conf.json` with a full icon set (`.icns` included); build a `.app`/installers with `cargo install tauri-cli` + `cargo tauri build` from `gui/`. Signing/notarization deferred — needs Apple Developer certificates
 
+## GUI parity plan (post-roadmap, July 2026)
+
+Full-parity pass against Typora / Obsidian / MacMD Viewer / Marked 2. Each phase ends with a manual `cargo run -p to_markdown_gui` check.
+
+### Phase A — Rendering fidelity ✅
+- [x] Local images + `![[image]]` embeds inlined as data URLs; PDF/audio/video embeds
+- [x] syntect syntax highlighting (class-based, light/dark scoped CSS)
+- [x] Callouts, `==highlight==`, `%%comments%%`; `![[Note]]` transclusion (depth-capped)
+- [x] KaTeX math + Mermaid diagrams (vendored under `gui/ui/vendor/`)
+- [x] Fixture additions (`Rendering Demo.md`, `attachments/pixel.png`) + 6 render unit tests
+
+### Phase B — Editor & preview UX (synced scroll, focus/typewriter, shortcuts, stats overlay, keyword highlighter, hover preview)
+### Phase C — Vault workflows (note tabs, daily note, templates, tree context menu, clickable tags, outgoing/unlinked mentions, pins, graph filter, multi-vault)
+### Phase D — In-place WYSIWYG block editor (Typora-style)
+### Phase E — App integration (file associations, native menu, window state, DOCX/RTF export, packaging)
+
 ## Deferred
 
 - mcp.so / Docker Hub MCP Registry submissions — see [PUBLISH_TO_REGISTRIES.md](../deployment/PUBLISH_TO_REGISTRIES.md)

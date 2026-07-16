@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <title>toMarkdown Viewer</title>
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<script src="vendor/katex/katex.min.js"></script>
+<script src="vendor/mermaid.min.js"></script>
 <style>
   :root {
     --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --border: #d1d9e0;
@@ -204,6 +207,23 @@
   }
   #prompt-actions button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   #content input[type="checkbox"] { pointer-events: auto; cursor: pointer; }
+  .callout { border: 1px solid var(--border); border-left: 4px solid var(--accent);
+             border-radius: 6px; padding: 8px 12px; margin: 10px 0; background: var(--code-bg); }
+  .callout-title, .callout summary { font-weight: 600; margin-bottom: 4px; cursor: default; }
+  .callout summary { cursor: pointer; }
+  .callout-warning, .callout-caution, .callout-attention { border-left-color: #d29922; }
+  .callout-danger, .callout-error, .callout-bug { border-left-color: #d1242f; }
+  .callout-tip, .callout-hint, .callout-success, .callout-check { border-left-color: #1a7f37; }
+  .callout-question, .callout-help, .callout-faq { border-left-color: #8250df; }
+  .transclusion { border: 1px dashed var(--border); border-radius: 8px; padding: 8px 14px; margin: 10px 0; }
+  .trans-title { font-size: 12px; margin-bottom: 4px; }
+  .trans-title a { color: var(--muted); text-decoration: none; }
+  .trans-title a:hover { color: var(--accent); }
+  mark { background: #ffd54a66; color: inherit; border-radius: 2px; padding: 0 2px; }
+  .pdf-embed { width: 100%; height: 70vh; border: 1px solid var(--border); border-radius: 6px; }
+  pre.mermaid { background: none; border: none; text-align: center; }
+  .math-block { text-align: center; margin: 12px 0; }
+  audio, video { max-width: 100%; }
   #result-box {
     position: absolute; top: 10vh; left: 50%; transform: translateX(-50%);
     width: min(720px, 86vw); max-height: 74vh; display: flex; flex-direction: column;
@@ -359,6 +379,33 @@
 const invoke = window.__TAURI__.core.invoke;
 const listen = window.__TAURI__.event.listen;
 
+// ---- Post-render: vendored KaTeX math + Mermaid diagrams + syntax CSS ----
+let mermaidSeq = 0;
+if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+async function postRender(container) {
+  if (window.katex) {
+    for (const el of container.querySelectorAll('[data-tex]')) {
+      try {
+        // Rust HTML-escaped then percent-encoded the TeX; the DOM parser
+        // undid the HTML escaping, so one decodeURIComponent remains.
+        katex.render(decodeURIComponent(el.dataset.tex), el,
+          { displayMode: el.classList.contains('math-block'), throwOnError: false });
+      } catch {}
+      delete el.dataset.tex;
+    }
+  }
+  if (window.mermaid) {
+    const nodes = [...container.querySelectorAll('pre.mermaid:not([data-processed])')];
+    for (const n of nodes) n.id = 'mmd-' + (mermaidSeq++);
+    if (nodes.length) { try { await mermaid.run({ nodes }); } catch {} }
+  }
+}
+invoke('syntax_css').then(css => {
+  const st = document.createElement('style');
+  st.textContent = css;
+  document.head.appendChild(st);
+}).catch(() => {});
+
 const errBox = document.getElementById('error');
 const scrollBox = document.getElementById('scroll');
 const contentBox = document.getElementById('content');
@@ -504,6 +551,7 @@ async function openFile(path, remember = true, preserveScroll = false) {
   try {
     const r = await invoke('open_file', { path, vaultRoot: currentFolder });
     contentBox.innerHTML = r.html;
+    postRender(contentBox);
     document.title = r.title + ' — toMarkdown Viewer';
     scrollBox.scrollTop = preserveScroll ? ratio * scrollBox.scrollHeight : 0;
     document.getElementById('stats').textContent =
@@ -993,7 +1041,9 @@ async function saveNow() {
 }
 let saveTimer = null, previewTimer = null;
 async function refreshEditPreview() {
-  editPreview.innerHTML = await invoke('render_markdown', { md: editor.value, vaultRoot: currentFolder });
+  editPreview.innerHTML = await invoke('render_markdown',
+    { md: editor.value, vaultRoot: currentFolder, filePath: currentFile });
+  postRender(editPreview);
 }
 editor.addEventListener('input', () => {
   dirty = true;
@@ -1231,7 +1281,8 @@ async function showResult(title, markdown) {
   lastResultMd = markdown;
   document.getElementById('result-title').textContent = title;
   document.getElementById('result-body').innerHTML =
-    await invoke('render_markdown', { md: markdown, vaultRoot: null });
+    await invoke('render_markdown', { md: markdown, vaultRoot: null, filePath: null });
+  postRender(document.getElementById('result-body'));
   document.getElementById('result-insert').style.display = editMode ? '' : 'none';
   resultOverlay.classList.add('show');
 }

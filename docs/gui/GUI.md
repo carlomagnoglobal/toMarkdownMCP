@@ -10,6 +10,7 @@ Phase 5 of the [roadmap](../planning/ROADMAP.md): foundation & viewer. Later pha
 
 - **File tree sidebar** — open a folder (native picker, drag-and-drop, or recents); directories collapse/expand; hidden and build directories are filtered out; the tree refreshes automatically when files are added or removed
 - **Rendered Markdown pane** — headings, tables, task lists, footnotes, strikethrough (pulldown-cmark); code and config files render as fenced code blocks with detected language
+- **Rendering fidelity** — syntect syntax highlighting (theme-aware), local images/PDF/audio/video inlined as data URLs (`![[image.png]]` embeds render as media), Obsidian callouts (incl. folded), `==highlights==`, `%%comments%%` stripped, `![[Note]]`/`![[Note#Heading]]` transclusion blocks, KaTeX math (`$…$`, `$$…$$`) and Mermaid diagrams via vendored libraries (`gui/ui/vendor/`, no CDN)
 - **Any supported format** — non-Markdown files (PDF, DOCX, XLSX, EPUB, HTML, …) are converted to Markdown by the shared pipeline before rendering
 - **Live preview** — the open file is watched (`notify`); edit it in any external editor and the pane re-renders on save, preserving your scroll position (Marked 2 style)
 - **Table of contents** — clickable, indentation-per-level, generated from the rendered headings

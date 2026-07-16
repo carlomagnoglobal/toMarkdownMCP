@@ -8,14 +8,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use notify::Watcher;
-use pulldown_cmark::{html, Options, Parser};
 use serde::Serialize;
 use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
 
 use to_markdown_mcp::file_type::{detect_language, detect_language_from_filename};
-use to_markdown_mcp::obsidian::{tools as vault_tools, vault, wikilink};
+use to_markdown_mcp::obsidian::{tools as vault_tools, vault};
 use to_markdown_mcp::pipeline::convert_any_to_markdown;
+
+mod render;
+use render::{render_note, RenderOpts};
 
 #[derive(Serialize)]
 struct TreeNode {
@@ -81,42 +83,6 @@ struct Rendered {
     read_minutes: usize,
 }
 
-fn markdown_to_html(md: &str) -> String {
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_TABLES);
-    options.insert(Options::ENABLE_STRIKETHROUGH);
-    options.insert(Options::ENABLE_TASKLISTS);
-    options.insert(Options::ENABLE_FOOTNOTES);
-    let mut out = String::with_capacity(md.len() * 2);
-    html::push_html(&mut out, Parser::new_ext(md, options));
-    out
-}
-
-/// Replace `[[wikilinks]]` with `wikilink:` markdown links so the rendered
-/// HTML gets clickable anchors the frontend resolves against the vault.
-fn linkify_wikilinks(md: &str) -> String {
-    let mut out = md.to_string();
-    for link in wikilink::parse_wikilinks(md) {
-        let mut label = link.alias.clone().unwrap_or_else(|| link.target.clone());
-        if link.alias.is_none() {
-            if let Some(h) = &link.heading {
-                label = format!("{} › {}", label, h);
-            }
-        }
-        if link.embed {
-            label = format!("⧉ {}", label);
-        }
-        // Percent-encode so spaces don't terminate the markdown URL.
-        let href = format!(
-            "wikilink:{}{}",
-            link.target.replace('%', "%25").replace(' ', "%20"),
-            link.heading.as_ref().map(|h| format!("#{}", h.replace('%', "%25").replace(' ', "%20"))).unwrap_or_default(),
-        );
-        out = out.replace(&link.raw, &format!("[{}]({})", label, href));
-    }
-    out
-}
-
 #[tauri::command]
 async fn open_file(path: String, vault_root: Option<String>) -> Result<Rendered, String> {
     let p = PathBuf::from(&path);
@@ -124,6 +90,10 @@ async fn open_file(path: String, vault_root: Option<String>) -> Result<Rendered,
         return Err(format!("Not a file: {}", path));
     }
     let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let opts = RenderOpts {
+        file_dir: p.parent(),
+        vault_root: vault_root.as_deref().map(Path::new),
+    };
     // Obsidian canvas files render via the JsonCanvas→Markdown converter.
     if ext == "canvas" {
         let value = vault_tools::convert_canvas(&p).map_err(|e| e.to_string())?;
@@ -131,7 +101,7 @@ async fn open_file(path: String, vault_root: Option<String>) -> Result<Rendered,
         let words = md.split_whitespace().count();
         return Ok(Rendered {
             title: p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(path),
-            html: markdown_to_html(&linkify_wikilinks(&md)),
+            html: render_note(&md, &opts, 0),
             words,
             chars: md.chars().count(),
             read_minutes: (words / 200).max(1),
@@ -142,10 +112,7 @@ async fn open_file(path: String, vault_root: Option<String>) -> Result<Rendered,
     let chars = converted.chars().count();
     // Markdown-ish output renders directly; code/text gets a fenced block so
     // the viewer shows it monospaced.
-    let md = if matches!(ext, "md" | "markdown") {
-        // Inside a vault, wikilinks become clickable anchors.
-        if vault_root.is_some() { linkify_wikilinks(&converted) } else { converted }
-    } else if to_markdown_mcp::pipeline::is_structured_ext(Some(ext)) {
+    let md = if matches!(ext, "md" | "markdown") || to_markdown_mcp::pipeline::is_structured_ext(Some(ext)) {
         converted
     } else {
         let lang = {
@@ -160,7 +127,7 @@ async fn open_file(path: String, vault_root: Option<String>) -> Result<Rendered,
     };
     Ok(Rendered {
         title: p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(path),
-        html: markdown_to_html(&md),
+        html: render_note(&md, &opts, 0),
         words,
         chars,
         // ~200 words/minute, floor 1 so a short note doesn't show "0 min".
@@ -392,12 +359,19 @@ fn save_file(path: String, content: String, vault_root: Option<String>) -> Resul
 
 /// Render markdown for the edit-mode live preview (same pipeline as open_file).
 #[tauri::command]
-fn render_markdown(md: String, vault_root: Option<String>) -> String {
-    if vault_root.is_some() {
-        markdown_to_html(&linkify_wikilinks(&md))
-    } else {
-        markdown_to_html(&md)
-    }
+fn render_markdown(md: String, vault_root: Option<String>, file_path: Option<String>) -> String {
+    let file_dir = file_path.as_deref().and_then(|p| Path::new(p).parent().map(Path::to_path_buf));
+    let opts = RenderOpts {
+        file_dir: file_dir.as_deref(),
+        vault_root: vault_root.as_deref().map(Path::new),
+    };
+    render_note(&md, &opts, 0)
+}
+
+/// Class-based syntect CSS for both themes; injected once by the frontend.
+#[tauri::command]
+fn syntax_css() -> String {
+    render::syntax_css()
 }
 
 /// Toggle the nth checkbox task in a file (0-indexed, document order),
@@ -675,7 +649,7 @@ fn main() {
             resolve_wikilink, graph_data, quick_list,
             read_source, save_file, render_markdown, toggle_task,
             create_note, rename_note, set_frontmatter, paste_image, tag_list,
-            related_notes, semantic_search, set_api_key, ai_action
+            related_notes, semantic_search, set_api_key, ai_action, syntax_css
         ])
         .run(tauri::generate_context!())
         .expect("error while running toMarkdown Viewer");
@@ -696,7 +670,9 @@ mod tests {
 
     #[test]
     fn wikilinks_become_clickable_anchors() {
-        let html = markdown_to_html(&linkify_wikilinks("See [[Note B|the second]] and [[Note A#Heading]]."));
+        let root = PathBuf::from(fixture_vault());
+        let opts = RenderOpts { file_dir: Some(&root), vault_root: Some(&root) };
+        let html = render_note("See [[Note B|the second]] and [[Note A#Heading]].", &opts, 0);
         assert!(html.contains(r#"href="wikilink:Note%20B""#), "html: {}", html);
         assert!(html.contains(">the second<"));
         assert!(html.contains(r#"href="wikilink:Note%20A#Heading""#));
