@@ -2,7 +2,7 @@
 
 Multi-phase roadmap as of July 2026. Each phase is independently shippable: green `cargo test`, docs updated, committed and pushed to main. Publishing/registry submissions are **deferred** and tracked separately in [docs/deployment/](../deployment/).
 
-Current baseline: v0.1.1 on crates.io — 62 MCP tools ([FUNCTIONS_REFERENCE.md](../mcp_functions/FUNCTIONS_REFERENCE.md)), TUI viewer, 282 tests passing.
+Current baseline: **v0.2.0 on crates.io** (2026-07-16) — 62 MCP tools ([FUNCTIONS_REFERENCE.md](../mcp_functions/FUNCTIONS_REFERENCE.md)), CLI subcommands, MCP resources/prompts, opt-in embeddings, TUI viewer, and the toMarkdown Viewer desktop app (`gui/`, dmg attached to the GitHub release). 325+ tests across the workspace.
 
 ## Phase 0 — Roadmap refresh ✅
 

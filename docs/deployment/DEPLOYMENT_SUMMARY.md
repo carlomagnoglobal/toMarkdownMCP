@@ -1,7 +1,7 @@
 # toMarkdownMCP Deployment Summary
 
-**Date:** 2026-07-06
-**Status:** ✅ All three deployment options configured — first public release v0.1.0
+**Date:** 2026-07-16 (updated)
+**Status:** ✅ v0.2.0 released — crates.io, GitHub binaries + desktop-app dmg, Docker Hub
 
 ---
 
@@ -23,7 +23,7 @@
 ### 3. Docker
 - ✅ Multi-stage `Dockerfile` (rust builder → debian slim runtime)
 - ✅ Chromium bundled in the runtime image so browser tools work in-container (`CHROME` preset)
-- ⬜ Docker Hub publication — manual step, see [DOCKER_HUB_QUICK_START.md](DOCKER_HUB_QUICK_START.md)
+- ✅ Docker Hub publication automated on `v*` tags (plus manual dispatch with a version input); multi-arch amd64/arm64
 
 ## Release state
 
