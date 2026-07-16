@@ -78,13 +78,13 @@ Desktop GUI with functionality on par with **Obsidian, Typora, MacMD Viewer, and
 - [x] Table skeleton insertion, click-to-toggle tasks in the reading view, `[[` wikilink and `#` tag autocomplete with caret-positioned dropdown, paste-image into the vault's attachment folder as `![[embed]]`
 - [x] New note (respects folder-in-title), rename with inbound-link rewriting (`obsidian::tools::rename_note`), YAML frontmatter editor with validation before write
 
-### Phase 9 — GUI intelligence & polish
+### Phase 9 — GUI intelligence & polish ✅ (packaging prepared, distribution deferred)
 
-- [ ] Related-notes pane, semantic search (with Phase 3 embeddings), ai_* actions
-- [ ] Command palette + customizable shortcuts
-- [ ] Settings UI; persisted preferences
-- [ ] Large-vault performance pass; accessibility check
-- [ ] Signed/notarized macOS build (certs permitting); release artifacts for all platforms
+- [x] Related-notes section in the note panel (TF-cosine, click-to-load); semantic search mode in the Search tab over the persistent Phase 3 vector index; AI actions (summarize / suggest tags / translate / ask-about-document) via `llm::complete`, with results in a rendered overlay offering Copy and Insert-into-note
+- [x] Command palette (Cmd/Ctrl+K) covering every app action, including themes and AI (shortcut *customization* not implemented)
+- [x] Settings dialog (Cmd/Ctrl+,): theme, content font size, Anthropic API key — persisted locally and re-applied on launch
+- [ ] Large-vault performance pass (virtualized tree) and full accessibility audit — buttons are labeled and overlays are keyboard-dismissable, but no formal audit yet
+- [x] Packaging prepared: bundle enabled in `tauri.conf.json` with a full icon set (`.icns` included); build a `.app`/installers with `cargo install tauri-cli` + `cargo tauri build` from `gui/`. Signing/notarization deferred — needs Apple Developer certificates
 
 ## Deferred
 

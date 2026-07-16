@@ -527,6 +527,114 @@ fn tag_list(root: String) -> Result<Vec<String>, String> {
     Ok(tags)
 }
 
+// ---- Intelligence (Phase 9) ----
+
+/// Notes similar to the given one, ranked by TF-cosine over the vault.
+#[tauri::command]
+fn related_notes(root: String, path: String) -> Result<serde_json::Value, String> {
+    use to_markdown_mcp::knowledge;
+    let idx = vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
+    let target_rel = vault_rel(&root, &path);
+    let target = convert_any_to_markdown(Path::new(&path)).map_err(|e| e.to_string())?;
+    let ttf = knowledge::term_frequencies(&target);
+    let mut results: Vec<(String, f64)> = idx
+        .notes
+        .keys()
+        .filter(|p| Some(p.as_str()) != target_rel.as_deref())
+        .filter_map(|p| {
+            let content = std::fs::read_to_string(Path::new(&root).join(p)).ok()?;
+            let score = knowledge::cosine_similarity(&ttf, &knowledge::term_frequencies(&content));
+            (score > 0.0).then_some((p.clone(), score))
+        })
+        .collect();
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(8);
+    Ok(serde_json::json!(results
+        .into_iter()
+        .map(|(p, s)| serde_json::json!({"path": p, "score": s}))
+        .collect::<Vec<_>>()))
+}
+
+/// Vector-similarity search over the vault, using the persistent
+/// `.tomarkdown` embedding index (hashed-vector fallback without a model).
+#[tauri::command]
+fn semantic_search(root: String, query: String) -> Result<serde_json::Value, String> {
+    use to_markdown_mcp::embeddings;
+    let rootp = PathBuf::from(&root);
+    let idx = vault::get_index(&rootp).map_err(|e| e.to_string())?;
+    let sources: Vec<PathBuf> = idx.notes.keys().map(|p| rootp.join(p)).collect();
+    let mut embedder = embeddings::default_embedder();
+    let mut vindex = embeddings::VectorIndex::load(&rootp);
+    vindex
+        .update(&sources, embedder.as_mut(), |p| convert_any_to_markdown(p).ok())
+        .map_err(|e| e.to_string())?;
+    let _ = vindex.save(&rootp);
+    let qv = embedder.embed(std::slice::from_ref(&query)).map_err(|e| e.to_string())?;
+    let hits: Vec<serde_json::Value> = vindex
+        .rank(&qv[0])
+        .into_iter()
+        .filter(|(_, _, s)| *s > 0.0)
+        .take(12)
+        .map(|(source, chunk, score)| {
+            let snippet: String = chunk.text.chars().take(160).collect();
+            serde_json::json!({
+                "path": source,
+                "heading": chunk.heading_path.join(" › "),
+                "score": score,
+                "snippet": snippet,
+            })
+        })
+        .collect();
+    Ok(serde_json::json!(hits))
+}
+
+/// Store/clear the Anthropic API key for this process (enables ai actions).
+#[tauri::command]
+fn set_api_key(key: String) {
+    if key.trim().is_empty() {
+        std::env::remove_var("ANTHROPIC_API_KEY");
+    } else {
+        std::env::set_var("ANTHROPIC_API_KEY", key.trim());
+    }
+}
+
+/// Claude-backed actions on the open document (needs the API key).
+#[tauri::command]
+async fn ai_action(kind: String, content: String, extra: Option<String>) -> Result<String, String> {
+    use to_markdown_mcp::llm;
+    if llm::api_key().is_none() {
+        return Err("No Anthropic API key. Add one in Settings (⌘,) to enable AI actions.".to_string());
+    }
+    let doc: String = content.chars().take(40_000).collect();
+    let (system, prompt, max_tokens) = match kind.as_str() {
+        "summarize" => (
+            "You summarize documents faithfully and concisely in Markdown.",
+            format!("Summarize the following document. Lead with a one-paragraph TL;DR, then key points as bullets.\n\n---\n{}", doc),
+            700,
+        ),
+        "tag" => (
+            "You suggest topical tags for notes.",
+            format!("Suggest 3-8 topical tags for this document as a single line of #kebab-case tags, nothing else.\n\n---\n{}", doc),
+            120,
+        ),
+        "translate" => (
+            "You translate documents preserving all Markdown structure.",
+            format!("Translate the following document to {}. Preserve Markdown exactly.\n\n---\n{}", extra.as_deref().unwrap_or("English"), doc),
+            4000,
+        ),
+        "ask" => (
+            "You answer questions grounded strictly in the provided document. Say so when the document doesn't contain the answer.",
+            format!("Document:\n---\n{}\n---\n\nQuestion: {}", doc, extra.as_deref().unwrap_or("Summarize this.")),
+            900,
+        ),
+        other => return Err(format!("Unknown AI action: {}", other)),
+    };
+    let model = llm::resolve_model(None);
+    llm::complete(&prompt, Some(system), &model, max_tokens)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Read a small text file (user CSS). Capped at 1MB.
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
@@ -566,7 +674,8 @@ fn main() {
             note_info, vault_overview, vault_search, vault_tasks,
             resolve_wikilink, graph_data, quick_list,
             read_source, save_file, render_markdown, toggle_task,
-            create_note, rename_note, set_frontmatter, paste_image, tag_list
+            create_note, rename_note, set_frontmatter, paste_image, tag_list,
+            related_notes, semantic_search, set_api_key, ai_action
         ])
         .run(tauri::generate_context!())
         .expect("error while running toMarkdown Viewer");

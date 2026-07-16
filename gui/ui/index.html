@@ -186,7 +186,7 @@
   }
   #autocomplete div { padding: 5px 10px; cursor: pointer; }
   #autocomplete div.sel, #autocomplete div:hover { background: var(--active); }
-  #prompt-box {
+  #prompt-box, .dialog-box {
     position: absolute; top: 20vh; left: 50%; transform: translateX(-50%);
     width: 520px; background: var(--bg); border: 1px solid var(--border);
     border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.3); padding: 14px;
@@ -204,6 +204,25 @@
   }
   #prompt-actions button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   #content input[type="checkbox"] { pointer-events: auto; cursor: pointer; }
+  #result-box {
+    position: absolute; top: 10vh; left: 50%; transform: translateX(-50%);
+    width: min(720px, 86vw); max-height: 74vh; display: flex; flex-direction: column;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.3);
+  }
+  #result-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+                 border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 600; }
+  #result-head button { margin-left: auto; padding: 4px 10px; border: 1px solid var(--border);
+                        border-radius: 6px; background: var(--bg); color: var(--fg);
+                        cursor: pointer; font-size: 12px; }
+  #result-body { overflow-y: auto; padding: 14px 18px; line-height: 1.6; font-size: 14px; }
+  #result-body pre { background: var(--code-bg); border: 1px solid var(--border);
+                     border-radius: 6px; padding: 10px; overflow-x: auto; }
+  #settings-box label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  #settings-box select, #settings-box input {
+    width: 100%; padding: 7px 9px; font-size: 13px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg); color: var(--fg);
+  }
   @media print {
     #sidebar, #statusbar, #error { display: none !important; }
     #main, #scroll { overflow: visible !important; }
@@ -249,6 +268,7 @@
         <option value="tag">Tag</option>
         <option value="alias">Alias</option>
         <option value="field">Frontmatter field</option>
+        <option value="semantic">Semantic (vectors)</option>
       </select>
       <div id="search-results"></div>
     </div>
@@ -296,6 +316,31 @@
     <div id="switcher">
       <input id="switcher-input" placeholder="Open note by title or alias…">
       <div id="switcher-results"></div>
+    </div>
+  </div>
+  <div id="result-overlay" class="overlay">
+    <div id="result-box">
+      <div id="result-head"><span id="result-title"></span><button id="result-insert" style="display:none">Insert into note</button><button id="result-copy">Copy</button><button id="result-close">Close</button></div>
+      <div id="result-body"></div>
+    </div>
+  </div>
+  <div id="settings-overlay" class="overlay">
+    <div class="dialog-box">
+      <div id="settings-box">
+        <h3 style="margin:0 0 4px;font-size:14px">Settings</h3>
+        <label for="set-theme">Theme</label>
+        <select id="set-theme">
+          <option value="system">System</option><option value="light">Light</option>
+          <option value="dark">Dark</option><option value="sepia">Sepia</option>
+        </select>
+        <label for="set-font">Content font size (px)</label>
+        <input id="set-font" type="number" min="11" max="24" step="1">
+        <label for="set-key">Anthropic API key (stored locally; enables AI actions)</label>
+        <input id="set-key" type="password" placeholder="sk-ant-…">
+        <div id="prompt-actions" style="margin-top:14px">
+          <button id="settings-close" class="primary">Done</button>
+        </div>
+      </div>
     </div>
   </div>
   <div id="graph-overlay" class="overlay">
@@ -516,11 +561,27 @@ async function renderNotePanel(path) {
         html += `<div class="bl" data-path="${b.from}"><div>${b.from}</div><div class="ctx">${(b.context || '').trim()}</div></div>`;
       }
     }
+    html += '<div class="section-title">Related</div><div id="related-box"><div class="bl" id="find-related">Find related notes…</div></div>';
     panel.innerHTML = html;
-    panel.querySelectorAll('.bl').forEach(el =>
+    panel.querySelectorAll('.bl[data-path]').forEach(el =>
       el.onclick = () => openFile(currentFolder + '/' + el.dataset.path));
     panel.querySelectorAll('.tag-item').forEach(el =>
       el.onclick = () => runSearch(el.dataset.tag, 'tag'));
+    document.getElementById('find-related').onclick = async () => {
+      const box = document.getElementById('related-box');
+      box.innerHTML = '<div class="section-title">…</div>';
+      try {
+        const rel = await invoke('related_notes', { root: currentFolder, path });
+        box.innerHTML = rel.length ? '' : '<div class="kv">none found</div>';
+        for (const r of rel) {
+          const div = document.createElement('div');
+          div.className = 'bl';
+          div.innerHTML = `<div>${r.path}</div><div class="ctx">similarity ${r.score.toFixed(3)}</div>`;
+          div.onclick = () => openFile(currentFolder + '/' + r.path);
+          box.appendChild(div);
+        }
+      } catch (e) { box.innerHTML = ''; showError(String(e)); }
+    };
   } catch { panel.innerHTML = ''; }
 }
 
@@ -610,6 +671,20 @@ async function runSearch(query, mode) {
   document.getElementById('search-mode').value = mode;
   const box = document.getElementById('search-results');
   box.innerHTML = '<div class="section-title">Searching…</div>';
+  if (mode === 'semantic') {
+    try {
+      const hits = await invoke('semantic_search', { root: currentFolder, query });
+      box.innerHTML = `<div class="section-title">${hits.length} chunk(s) by vector similarity</div>`;
+      for (const h of hits) {
+        const div = document.createElement('div');
+        div.className = 'result';
+        div.innerHTML = `<div>${h.path.split('/').pop()}${h.heading ? ' › ' + h.heading : ''} (${h.score.toFixed(2)})</div><div class="where">${h.snippet}</div>`;
+        div.onclick = () => openFile(h.path);
+        box.appendChild(div);
+      }
+    } catch (e) { box.innerHTML = ''; showError(String(e)); }
+    return;
+  }
   try {
     const r = await invoke('vault_search', { root: currentFolder, query, mode });
     const hits = r.hits || [];
@@ -701,18 +776,25 @@ function renderSwitcher() {
 async function openSwitcher() {
   if (!currentFolder) { showError('Open a vault folder first.'); return; }
   try { switcherItems = await invoke('quick_list', { root: currentFolder }); } catch { switcherItems = []; }
+  window._paletteMode = false;
+  switcherInput.placeholder = 'Open note by title or alias…';
   switcherOverlay.classList.add('show');
   switcherInput.value = ''; switcherSel = 0;
   renderSwitcher();
   switcherInput.focus();
 }
-function closeSwitcher() { switcherOverlay.classList.remove('show'); }
-switcherInput.addEventListener('input', () => { switcherSel = 0; renderSwitcher(); });
+function closeSwitcher() {
+  switcherOverlay.classList.remove('show');
+  if (window._paletteMode) closePalette();
+}
+// The overlay doubles as the command palette; dispatch on the active mode.
+function rerenderOverlay() { window._paletteMode ? renderPalette() : renderSwitcher(); }
+switcherInput.addEventListener('input', () => { switcherSel = 0; rerenderOverlay(); });
 switcherInput.addEventListener('keydown', (e) => {
   const shown = switcherResults.children.length;
   if (e.key === 'Escape') closeSwitcher();
-  else if (e.key === 'ArrowDown') { switcherSel = Math.min(switcherSel + 1, shown - 1); renderSwitcher(); }
-  else if (e.key === 'ArrowUp') { switcherSel = Math.max(switcherSel - 1, 0); renderSwitcher(); }
+  else if (e.key === 'ArrowDown') { switcherSel = Math.min(switcherSel + 1, shown - 1); rerenderOverlay(); }
+  else if (e.key === 'ArrowUp') { switcherSel = Math.max(switcherSel - 1, 0); rerenderOverlay(); }
   else if (e.key === 'Enter') {
     const sel = switcherResults.children[switcherSel];
     if (sel) sel.click();
@@ -1139,6 +1221,144 @@ document.getElementById('edit-props').onclick = async () => {
     flashLive('properties updated');
   } catch (e) { showError(String(e)); }
 };
+
+// ==== Intelligence & polish (Phase 9) ====
+
+// ---- AI result overlay ----
+const resultOverlay = document.getElementById('result-overlay');
+let lastResultMd = '';
+async function showResult(title, markdown) {
+  lastResultMd = markdown;
+  document.getElementById('result-title').textContent = title;
+  document.getElementById('result-body').innerHTML =
+    await invoke('render_markdown', { md: markdown, vaultRoot: null });
+  document.getElementById('result-insert').style.display = editMode ? '' : 'none';
+  resultOverlay.classList.add('show');
+}
+document.getElementById('result-close').onclick = () => resultOverlay.classList.remove('show');
+document.getElementById('result-copy').onclick = async () => {
+  try { await navigator.clipboard.writeText(lastResultMd); flashLive('copied'); } catch {}
+};
+document.getElementById('result-insert').onclick = () => {
+  editor.setRangeText('\n' + lastResultMd + '\n', editor.selectionStart, editor.selectionEnd, 'end');
+  editor.dispatchEvent(new Event('input'));
+  resultOverlay.classList.remove('show');
+};
+resultOverlay.addEventListener('click', (e) => { if (e.target === resultOverlay) resultOverlay.classList.remove('show'); });
+
+// ---- AI actions on the open document ----
+async function currentDocText() {
+  if (editMode) return editor.value;
+  if (!currentFile) return null;
+  return invoke('read_source', { path: currentFile }).catch(() => null);
+}
+async function runAi(kind, extraPromptTitle) {
+  const content = await currentDocText();
+  if (!content) { showError('Open a document first.'); return; }
+  let extra = null;
+  if (extraPromptTitle) {
+    extra = await ask(extraPromptTitle);
+    if (!extra) return;
+  }
+  flashLive('asking Claude…');
+  try {
+    const out = await invoke('ai_action', { kind, content, extra });
+    showResult('AI: ' + kind, out);
+  } catch (e) { showError(String(e)); }
+}
+
+// ---- Settings (Cmd+,) ----
+const settingsOverlay = document.getElementById('settings-overlay');
+const setTheme = document.getElementById('set-theme');
+const setFont = document.getElementById('set-font');
+const setKey = document.getElementById('set-key');
+function openSettings() {
+  setTheme.value = localStorage.getItem('theme') || 'system';
+  setFont.value = localStorage.getItem('fontSize') || '16';
+  setKey.value = localStorage.getItem('apiKey') || '';
+  settingsOverlay.classList.add('show');
+}
+function applySettings() {
+  applyTheme(setTheme.value);
+  const px = Math.max(11, Math.min(24, parseInt(setFont.value, 10) || 16));
+  localStorage.setItem('fontSize', String(px));
+  contentBox.style.fontSize = px + 'px';
+  editPreview.style.fontSize = px + 'px';
+  const key = setKey.value.trim();
+  localStorage.setItem('apiKey', key);
+  invoke('set_api_key', { key }).catch(() => {});
+  settingsOverlay.classList.remove('show');
+}
+document.getElementById('settings-close').onclick = applySettings;
+settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) applySettings(); });
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === ',') { e.preventDefault(); openSettings(); }
+});
+// Restore persisted settings on launch.
+if (localStorage.getItem('fontSize')) {
+  contentBox.style.fontSize = localStorage.getItem('fontSize') + 'px';
+  editPreview.style.fontSize = localStorage.getItem('fontSize') + 'px';
+}
+if (localStorage.getItem('apiKey')) invoke('set_api_key', { key: localStorage.getItem('apiKey') }).catch(() => {});
+
+// ---- Command palette (Cmd+K) ----
+const COMMANDS = [
+  { label: 'Open Folder…', run: () => document.getElementById('open-folder').click() },
+  { label: 'Open File…', run: () => document.getElementById('open-file').click() },
+  { label: 'New Note', run: () => document.getElementById('new-note').click() },
+  { label: 'Toggle Edit Mode', run: () => document.getElementById('edit-toggle').click() },
+  { label: 'Quick Switcher', run: openSwitcher },
+  { label: 'Graph: Global', run: () => showGraph(null) },
+  { label: 'Graph: Current Note', run: () => showGraph(currentFile) },
+  { label: 'Search Vault', run: () => { switchTab('search-pane'); document.getElementById('search-input').focus(); } },
+  { label: 'Semantic Search', run: () => { switchTab('search-pane'); document.getElementById('search-mode').value = 'semantic'; document.getElementById('search-input').focus(); } },
+  { label: 'Rename Note (rewrites links)', run: () => document.getElementById('rename-btn').click() },
+  { label: 'Edit Properties (frontmatter)', run: () => document.getElementById('edit-props').click() },
+  { label: 'Export HTML', run: () => document.getElementById('export-html').click() },
+  { label: 'Print / Save as PDF', run: () => window.print() },
+  { label: 'Copy as Rich Text', run: () => document.getElementById('copy-rich').click() },
+  { label: 'AI: Summarize Document', run: () => runAi('summarize') },
+  { label: 'AI: Suggest Tags', run: () => runAi('tag') },
+  { label: 'AI: Translate Document…', run: () => runAi('translate', 'Translate to which language?') },
+  { label: 'AI: Ask About Document…', run: () => runAi('ask', 'What do you want to know?') },
+  { label: 'Theme: System', run: () => applyTheme('system') },
+  { label: 'Theme: Light', run: () => applyTheme('light') },
+  { label: 'Theme: Dark', run: () => applyTheme('dark') },
+  { label: 'Theme: Sepia', run: () => applyTheme('sepia') },
+  { label: 'Settings…', run: openSettings },
+];
+function openPalette() {
+  switcherOverlay.classList.add('show');
+  switcherInput.value = '';
+  switcherInput.placeholder = 'Run a command…';
+  switcherSel = 0;
+  window._paletteMode = true;
+  renderPalette();
+  switcherInput.focus();
+}
+function renderPalette() {
+  const q = switcherInput.value.trim().toLowerCase();
+  const items = COMMANDS.filter(c => !q || fuzzyScore(c.label, q) >= 0)
+    .sort((a, b) => q ? fuzzyScore(b.label, q) - fuzzyScore(a.label, q) : 0)
+    .slice(0, 14);
+  switcherSel = Math.min(switcherSel, Math.max(0, items.length - 1));
+  switcherResults.innerHTML = '';
+  items.forEach((c, i) => {
+    const div = document.createElement('div');
+    div.className = 'result' + (i === switcherSel ? ' sel' : '');
+    div.innerHTML = `<div>${c.label}</div>`;
+    div.onclick = () => { closePalette(); c.run(); };
+    switcherResults.appendChild(div);
+  });
+}
+function closePalette() {
+  switcherOverlay.classList.remove('show');
+  switcherInput.placeholder = 'Open note by title or alias…';
+  window._paletteMode = false;
+}
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openPalette(); }
+});
 
 // ---- Drag & drop ----
 listen('tauri://drag-drop', async (event) => {

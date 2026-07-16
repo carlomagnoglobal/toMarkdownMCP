@@ -26,6 +26,9 @@ Phase 5 of the [roadmap](../planning/ROADMAP.md): foundation & viewer. Later pha
 - **Editing (Cmd+E)** — split source-editor with instant live preview; autosave (atomic writes, debounced), native undo/redo, find & replace, table skeleton insertion
 - **Vault-aware authoring** — `[[` wikilink and `#` tag autocomplete at the caret, paste an image to file it in the vault's attachment folder as an `![[embed]]`, click checkboxes in the reading view to toggle tasks in the file
 - **Note management** — New Note (folder-in-title supported, templates via vault config), Rename with inbound wikilink rewriting, YAML frontmatter editor with validation
+- **Intelligence** — Related-notes in the note panel, a Semantic (vector) search mode using the persistent `.tomarkdown` embedding index, and AI actions (summarize, suggest tags, translate, ask about the document) when an Anthropic API key is set in Settings; results open in an overlay with Copy / Insert-into-note
+- **Command palette** — Cmd/Ctrl+K runs any app action by name
+- **Settings** — Cmd/Ctrl+, for theme, content font size, and the API key (persisted locally)
 
 ## Build & run
 
@@ -36,7 +39,7 @@ cargo build -p to_markdown_gui            # compile
 cargo run -p to_markdown_gui              # launch the viewer
 ```
 
-Packaging a macOS `.app` / installers uses the Tauri CLI (`cargo install tauri-cli`, then `cargo tauri build` from `gui/`). Bundling is disabled in `gui/tauri.conf.json` (`bundle.active: false`) until the packaging pass.
+Packaging a macOS `.app` / installers uses the Tauri CLI: `cargo install tauri-cli`, then `cargo tauri build` from `gui/`. Bundling is enabled with a full icon set (`gui/icons/`, including `.icns`); signing/notarization requires Apple Developer certificates and is not configured.
 
 ## Architecture
 
