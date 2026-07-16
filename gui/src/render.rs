@@ -46,7 +46,7 @@ pub fn syntax_css() -> String {
     let themes = &SYNTECT.1;
     let light = css_for_theme_with_class_style(&themes.themes["InspiredGitHub"], ClassStyle::Spaced)
         .unwrap_or_default();
-    let dark = css_for_theme_with_class_style(&themes.themes["base16-ocean.dark"], ClassStyle::Spaced)
+    let dark = css_for_theme_with_class_style(&themes.themes["base16-eighties.dark"], ClassStyle::Spaced)
         .unwrap_or_default();
     // Scope: light rules by default and for the light/sepia themes; dark rules
     // under data-theme="dark" and under system-dark when following the OS.

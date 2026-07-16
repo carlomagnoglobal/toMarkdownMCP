@@ -28,6 +28,8 @@ Phase 5 of the [roadmap](../planning/ROADMAP.md): foundation & viewer. Later pha
 - **Vault-aware authoring** — `[[` wikilink and `#` tag autocomplete at the caret, paste an image to file it in the vault's attachment folder as an `![[embed]]`, click checkboxes in the reading view to toggle tasks in the file
 - **Note management** — New Note (folder-in-title supported, templates via vault config), Rename with inbound wikilink rewriting, YAML frontmatter editor with validation
 - **Intelligence** — Related-notes in the note panel, a Semantic (vector) search mode using the persistent `.tomarkdown` embedding index, and AI actions (summarize, suggest tags, translate, ask about the document) when an Anthropic API key is set in Settings; results open in an overlay with Copy / Insert-into-note
+- **Editor UX** — synced scrolling between editor and preview, interactive edit preview (checkboxes, wikilinks), Zen and typewriter modes, formatting shortcuts (Cmd+B/I, link, strikethrough, list indent, auto-continued lists), paste-URL-as-link, selection stats
+- **Writing insight** — document statistics overlay (readability, top words) and a keyword-repetition highlighter; hover a wikilink for an Obsidian-style page preview
 - **Command palette** — Cmd/Ctrl+K runs any app action by name
 - **Settings** — Cmd/Ctrl+, for theme, content font size, and the API key (persisted locally)
 

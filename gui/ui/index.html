@@ -14,9 +14,10 @@
   }
   :root[data-theme="dark"] {
     --bg: #0d1117; --fg: #f0f6fc; --muted: #9198a1; --border: #3d444d;
-    --sidebar-bg: #010409; --accent: #4493f8; --code-bg: #151b23;
+    --sidebar-bg: #010409; --accent: #4493f8; --code-bg: #2d2d2d;
     --hover: #15191f; --active: #0c2d6b;
   }
+  :root[data-theme="dark"] mark { background: #b8860b66; }
   :root[data-theme="sepia"] {
     --bg: #f4ecd8; --fg: #433422; --muted: #8a7a5c; --border: #d8cba8;
     --sidebar-bg: #ede3c8; --accent: #9a6a28; --code-bg: #ece1c4;
@@ -25,9 +26,10 @@
   @media (prefers-color-scheme: dark) {
     :root[data-theme="system"] {
       --bg: #0d1117; --fg: #f0f6fc; --muted: #9198a1; --border: #3d444d;
-      --sidebar-bg: #010409; --accent: #4493f8; --code-bg: #151b23;
+      --sidebar-bg: #010409; --accent: #4493f8; --code-bg: #2d2d2d;
       --hover: #15191f; --active: #0c2d6b;
     }
+    :root[data-theme="system"] mark { background: #b8860b66; }
   }
   * { box-sizing: border-box; }
   body {
@@ -224,6 +226,16 @@
   pre.mermaid { background: none; border: none; text-align: center; }
   .math-block { text-align: center; margin: 12px 0; }
   audio, video { max-width: 100%; }
+  body.zen #sidebar, body.zen #statusbar { display: none; }
+  mark.kw { background: #4493f855; outline: 1px solid #4493f8aa; }
+  #hover-pop {
+    position: fixed; z-index: 70; display: none; width: 380px; max-height: 300px;
+    overflow: hidden; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.3); padding: 10px 14px;
+    font-size: 12.5px; line-height: 1.5;
+  }
+  #hover-pop .pop-path { color: var(--muted); font-size: 11px; margin-bottom: 6px; }
+  #hover-pop img { max-width: 100%; }
   #result-box {
     position: absolute; top: 10vh; left: 50%; transform: translateX(-50%);
     width: min(720px, 86vw); max-height: 74vh; display: flex; flex-direction: column;
@@ -318,9 +330,10 @@
         <div id="edit-preview"></div>
       </div>
     </div>
-    <div id="statusbar"><span id="stats"></span><span id="live" class="live"></span></div>
+    <div id="statusbar"><span id="stats"></span><span id="sel-stats"></span><span id="live" class="live"></span></div>
   </div>
   <div id="autocomplete"></div>
+  <div id="hover-pop"></div>
   <div id="prompt-overlay" class="overlay">
     <div id="prompt-box">
       <h3 id="prompt-title"></h3>
@@ -381,8 +394,12 @@ const listen = window.__TAURI__.event.listen;
 
 // ---- Post-render: vendored KaTeX math + Mermaid diagrams + syntax CSS ----
 let mermaidSeq = 0;
-if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+function effectiveDark() {
+  const t = document.documentElement.dataset.theme;
+  return t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+}
 async function postRender(container) {
+  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: effectiveDark() ? 'dark' : 'neutral' });
   if (window.katex) {
     for (const el of container.querySelectorAll('[data-tex]')) {
       try {
@@ -437,9 +454,12 @@ img{max-width:100%}`;
 }
 const themeSel = document.getElementById('theme');
 function applyTheme(name) {
+  const changed = document.documentElement.dataset.theme !== name;
   document.documentElement.dataset.theme = name;
   localStorage.setItem('theme', name);
   themeSel.value = name;
+  // Mermaid bakes theme colors into rendered SVGs — re-render on change.
+  if (changed && typeof currentFile !== 'undefined' && currentFile) openFile(currentFile, false, true);
 }
 themeSel.onchange = () => applyTheme(themeSel.value);
 applyTheme(localStorage.getItem('theme') || 'system');
@@ -1188,6 +1208,15 @@ editor.addEventListener('click', hideAc);
 
 // ---- Paste image into vault ----
 editor.addEventListener('paste', async (e) => {
+  // Pasting a URL over selected text wraps the selection as a link.
+  const text = e.clipboardData?.getData('text/plain') || '';
+  if (/^https?:\/\/\S+$/.test(text.trim()) && editor.selectionStart !== editor.selectionEnd) {
+    e.preventDefault();
+    const sel = editor.value.slice(editor.selectionStart, editor.selectionEnd);
+    editor.setRangeText(`[${sel}](${text.trim()})`, editor.selectionStart, editor.selectionEnd, 'end');
+    editor.dispatchEvent(new Event('input'));
+    return;
+  }
   if (!currentFolder) return;
   const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
   if (!item) return;
@@ -1372,6 +1401,10 @@ const COMMANDS = [
   { label: 'AI: Suggest Tags', run: () => runAi('tag') },
   { label: 'AI: Translate Document…', run: () => runAi('translate', 'Translate to which language?') },
   { label: 'AI: Ask About Document…', run: () => runAi('ask', 'What do you want to know?') },
+  { label: 'Zen Mode (toggle sidebar)', run: toggleZen },
+  { label: 'Typewriter Mode', run: () => { typewriterOn = !typewriterOn; flashLive('typewriter ' + (typewriterOn ? 'on' : 'off')); } },
+  { label: 'Document Statistics', run: showDocStats },
+  { label: 'Keyword Highlights (toggle)', run: toggleKeywords },
   { label: 'Theme: System', run: () => applyTheme('system') },
   { label: 'Theme: Light', run: () => applyTheme('light') },
   { label: 'Theme: Dark', run: () => applyTheme('dark') },
@@ -1410,6 +1443,227 @@ function closePalette() {
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openPalette(); }
 });
+
+// ==== Phase B: editor & preview UX ====
+
+// ---- Synced scrolling (editor <-> preview) ----
+let scrollSyncing = false;
+function syncScroll(from, to) {
+  if (scrollSyncing) return;
+  scrollSyncing = true;
+  const ratio = from.scrollTop / Math.max(1, from.scrollHeight - from.clientHeight);
+  to.scrollTop = ratio * (to.scrollHeight - to.clientHeight);
+  requestAnimationFrame(() => { scrollSyncing = false; });
+}
+editor.addEventListener('scroll', () => syncScroll(editor, editPreview));
+editPreview.addEventListener('scroll', () => syncScroll(editPreview, editor));
+
+// ---- Interactive edit preview: checkboxes + wikilinks ----
+editPreview.addEventListener('click', async (e) => {
+  const box = e.target.closest('input[type="checkbox"]');
+  if (box) {
+    e.preventDefault();
+    const boxes = [...editPreview.querySelectorAll('input[type="checkbox"]')];
+    toggleTaskInEditor(boxes.indexOf(box));
+    return;
+  }
+  const a = e.target.closest('a');
+  if (a && (a.getAttribute('href') || '').startsWith('wikilink:')) {
+    e.preventDefault();
+    if (!currentFolder) return;
+    const target = decodeURIComponent(a.getAttribute('href').slice('wikilink:'.length)).split('#')[0];
+    try {
+      const resolved = await invoke('resolve_wikilink', { root: currentFolder, target, from: currentFile || '' });
+      await exitEditMode();
+      openFile(resolved);
+    } catch (err) { showError(String(err)); }
+  }
+});
+function toggleTaskInEditor(index) {
+  const lines = editor.value.split('\n');
+  let seen = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trimStart();
+    if (/^[-*+] \[.\]/.test(t)) {
+      if (seen === index) {
+        const pos = lines[i].length - t.length + 3;
+        const state = lines[i][pos] === ' ' ? 'x' : ' ';
+        lines[i] = lines[i].slice(0, pos) + state + lines[i].slice(pos + 1);
+        editor.value = lines.join('\n');
+        editor.dispatchEvent(new Event('input'));
+        return;
+      }
+      seen++;
+    }
+  }
+}
+
+// ---- Zen & typewriter modes ----
+let typewriterOn = false;
+function toggleZen() { document.body.classList.toggle('zen'); }
+function centerCaret() {
+  if (!typewriterOn || !editMode) return;
+  const line = editor.value.slice(0, editor.selectionStart).split('\n').length;
+  const lh = parseFloat(getComputedStyle(editor).lineHeight) || 21;
+  editor.scrollTop = Math.max(0, line * lh - editor.clientHeight / 2);
+}
+editor.addEventListener('input', centerCaret);
+editor.addEventListener('keyup', (e) => {
+  if (['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) centerCaret();
+});
+
+// ---- Formatting shortcuts + list auto-continue ----
+function wrapSelection(before, after) {
+  const { selectionStart: a, selectionEnd: b, value } = editor;
+  const sel = value.slice(a, b);
+  // Toggle off when already wrapped.
+  if (value.slice(a - before.length, a) === before && value.slice(b, b + after.length) === after) {
+    editor.setRangeText(sel, a - before.length, b + after.length, 'select');
+  } else {
+    editor.setRangeText(before + sel + after, a, b, 'select');
+    editor.setSelectionRange(a + before.length, b + before.length);
+  }
+  editor.dispatchEvent(new Event('input'));
+}
+const LIST_RE = /^(\s*)([-*+]|\d+[.)])( \[.\])? /;
+editor.addEventListener('keydown', (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && !e.shiftKey && e.key === 'b') { e.preventDefault(); wrapSelection('**', '**'); return; }
+  if (mod && !e.shiftKey && e.key === 'i') { e.preventDefault(); wrapSelection('*', '*'); return; }
+  if (mod && e.shiftKey && e.key.toLowerCase() === 'x') { e.preventDefault(); wrapSelection('~~', '~~'); return; }
+  if (mod && e.shiftKey && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    const sel = editor.value.slice(editor.selectionStart, editor.selectionEnd) || 'link text';
+    editor.setRangeText(`[${sel}](url)`, editor.selectionStart, editor.selectionEnd, 'end');
+    editor.dispatchEvent(new Event('input'));
+    return;
+  }
+  if (e.key === 'Tab' && !acItems.length) {
+    const { selectionStart: a, value } = editor;
+    const lineStart = value.lastIndexOf('\n', a - 1) + 1;
+    const line = value.slice(lineStart, value.indexOf('\n', a) < 0 ? value.length : value.indexOf('\n', a));
+    if (LIST_RE.test(line)) {
+      e.preventDefault();
+      if (e.shiftKey) {
+        if (line.startsWith('  ')) {
+          editor.setRangeText('', lineStart, lineStart + 2, 'preserve');
+        }
+      } else {
+        editor.setRangeText('  ', lineStart, lineStart, 'preserve');
+      }
+      editor.dispatchEvent(new Event('input'));
+      return;
+    }
+  }
+  if (e.key === 'Enter' && !acItems.length) {
+    const { selectionStart: a, value } = editor;
+    const lineStart = value.lastIndexOf('\n', a - 1) + 1;
+    const line = value.slice(lineStart, a);
+    const m = line.match(LIST_RE);
+    if (m) {
+      e.preventDefault();
+      if (line.trim() === m[0].trim()) {
+        // Empty list item: Enter clears it (like Typora/Obsidian).
+        editor.setRangeText('', lineStart, a, 'end');
+      } else {
+        const marker = m[3] ? `${m[1]}${m[2]} [ ] ` : m[0];
+        editor.setRangeText('\n' + marker, a, a, 'end');
+      }
+      editor.dispatchEvent(new Event('input'));
+    }
+  }
+});
+
+// ---- Selection stats ----
+document.addEventListener('selectionchange', () => {
+  const el = document.getElementById('sel-stats');
+  let text = '';
+  if (editMode && document.activeElement === editor) {
+    text = editor.value.slice(editor.selectionStart, editor.selectionEnd);
+  } else {
+    text = String(window.getSelection() || '');
+  }
+  el.textContent = text.trim()
+    ? `· selection: ${text.trim().split(/\s+/).length} words, ${text.length} chars`
+    : '';
+});
+
+// ---- Document statistics overlay (Marked 2) ----
+async function showDocStats() {
+  const content = await currentDocText();
+  if (!content) { showError('Open a document first.'); return; }
+  const st = await invoke('doc_stats', { content });
+  const top = st.top_words.map(w => `| ${w.word} | ${w.count} |`).join('\n');
+  const md = `**Flesch reading ease:** ${st.flesch_reading_ease.toFixed(1)} — ${st.interpretation}
+
+**Grade level:** ${st.flesch_kincaid_grade.toFixed(1)} · **Words:** ${st.words} (${st.distinct_words} distinct) · **Sentences:** ${st.sentences} · **Avg sentence:** ${st.avg_sentence_length.toFixed(1)} words
+
+| Top word | Count |
+| --- | --- |
+${top}`;
+  showResult('Document statistics', md);
+}
+
+// ---- Keyword repetition highlighter (Marked 2 keyword drawer) ----
+let kwOn = false;
+async function toggleKeywords() {
+  if (kwOn) {
+    kwOn = false;
+    if (currentFile) openFile(currentFile, false, true);
+    return;
+  }
+  const content = await currentDocText();
+  if (!content) return;
+  const st = await invoke('doc_stats', { content });
+  const words = st.top_words.slice(0, 8).map(w => w.word);
+  if (!words.length) return;
+  const re = new RegExp('\\b(' + words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')\\b', 'gi');
+  const walker = document.createTreeWalker(contentBox, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) {
+    const n = walker.currentNode;
+    if (!n.parentElement.closest('pre, code, mark')) nodes.push(n);
+  }
+  for (const n of nodes) {
+    if (!re.test(n.textContent)) continue;
+    const span = document.createElement('span');
+    span.innerHTML = n.textContent.replace(re, '<mark class="kw">$1</mark>');
+    n.replaceWith(span);
+  }
+  kwOn = true;
+  flashLive('highlighting: ' + words.join(', '));
+}
+
+// ---- Hover page preview (Obsidian) ----
+const hoverPop = document.getElementById('hover-pop');
+let hoverTimer = null;
+function bindHoverPreview(container) {
+  container.addEventListener('mouseover', (e) => {
+    const a = e.target.closest('a');
+    if (!a || !(a.getAttribute('href') || '').startsWith('wikilink:') || !currentFolder) return;
+    clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(async () => {
+      const target = decodeURIComponent(a.getAttribute('href').slice('wikilink:'.length)).split('#')[0];
+      try {
+        const peek = await invoke('peek_note', { root: currentFolder, target });
+        hoverPop.innerHTML = `<div class="pop-path">${peek.path}${peek.truncated ? ' · …' : ''}</div>` + peek.html;
+        postRender(hoverPop);
+        const r = a.getBoundingClientRect();
+        hoverPop.style.left = Math.min(r.left, innerWidth - 400) + 'px';
+        hoverPop.style.top = Math.min(r.bottom + 6, innerHeight - 320) + 'px';
+        hoverPop.style.display = 'block';
+      } catch {}
+    }, 350);
+  });
+  container.addEventListener('mouseout', (e) => {
+    if (e.target.closest('a')) {
+      clearTimeout(hoverTimer);
+      hoverPop.style.display = 'none';
+    }
+  });
+}
+bindHoverPreview(contentBox);
+bindHoverPreview(editPreview);
 
 // ---- Drag & drop ----
 listen('tauri://drag-drop', async (event) => {

@@ -97,7 +97,17 @@ Full-parity pass against Typora / Obsidian / MacMD Viewer / Marked 2. Each phase
 - [x] KaTeX math + Mermaid diagrams (vendored under `gui/ui/vendor/`)
 - [x] Fixture additions (`Rendering Demo.md`, `attachments/pixel.png`) + 6 render unit tests
 
-### Phase B — Editor & preview UX (synced scroll, focus/typewriter, shortcuts, stats overlay, keyword highlighter, hover preview)
+### Phase B — Editor & preview UX ✅
+- [x] Synced scrolling editor ↔ preview (percentage, loop-guarded)
+- [x] Interactive edit preview: checkbox toggling writes to the editor buffer; wikilinks navigate (exiting edit mode)
+- [x] Zen mode (hide chrome) + typewriter mode (caret line centered)
+- [x] Formatting shortcuts (Cmd+B/I, Cmd+Shift+K/X), Tab/Shift+Tab list indent, Enter auto-continues lists/checkboxes (empty item clears)
+- [x] Paste URL over selection → markdown link
+- [x] Selection word/char stats in the status bar (both modes)
+- [x] Document statistics overlay (Flesch/grade via doc_intel, top words via rag::text_statistics)
+- [x] Keyword repetition highlighter toggle (top-8 words marked in the preview)
+- [x] Hover page preview on wikilinks (new peek_note command, rendered snippet popover)
+- [x] Dark-mode polish: softer base16-eighties syntax theme, theme-aware Mermaid (re-renders on theme switch), calmer highlight color
 ### Phase C — Vault workflows (note tabs, daily note, templates, tree context menu, clickable tags, outgoing/unlinked mentions, pins, graph filter, multi-vault)
 ### Phase D — In-place WYSIWYG block editor (Typora-style)
 ### Phase E — App integration (file associations, native menu, window state, DOCX/RTF export, packaging)

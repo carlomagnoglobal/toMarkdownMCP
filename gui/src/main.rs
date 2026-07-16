@@ -609,6 +609,57 @@ async fn ai_action(kind: String, content: String, extra: Option<String>) -> Resu
         .map_err(|e| e.to_string())
 }
 
+// ---- Phase B: document stats & hover peek ----
+
+/// Marked 2-style document statistics: readability + structure + top words.
+#[tauri::command]
+fn doc_stats(content: String) -> serde_json::Value {
+    use to_markdown_mcp::{doc_intel, rag};
+    let r = doc_intel::readability(&content);
+    let stats = rag::text_statistics(&content, true, 3);
+    let top_words: Vec<serde_json::Value> = stats
+        .frequencies
+        .iter()
+        .take(15)
+        .map(|(w, c)| serde_json::json!({"word": w, "count": c}))
+        .collect();
+    serde_json::json!({
+        "flesch_reading_ease": r.flesch_reading_ease,
+        "flesch_kincaid_grade": r.flesch_kincaid_grade,
+        "interpretation": doc_intel::flesch_interpretation(r.flesch_reading_ease),
+        "words": r.words,
+        "sentences": r.sentences,
+        "avg_sentence_length": r.avg_sentence_length,
+        "distinct_words": stats.distinct_words,
+        "top_words": top_words,
+    })
+}
+
+/// Rendered snippet of a wikilink target, for the hover page-preview.
+#[tauri::command]
+fn peek_note(root: String, target: String) -> Result<serde_json::Value, String> {
+    let rootp = PathBuf::from(&root);
+    let idx = vault::get_index(&rootp).map_err(|e| e.to_string())?;
+    let rel = match vault::resolve_target(&idx, &target, None) {
+        vault::Resolution::Resolved(r) => r,
+        vault::Resolution::Ambiguous(mut c) => {
+            c.sort_by_key(|p| p.len());
+            c.into_iter().next().ok_or("ambiguous with no candidates")?
+        }
+        vault::Resolution::Broken => return Err(format!("Broken link: {}", target)),
+    };
+    let abs = rootp.join(&rel);
+    let content = std::fs::read_to_string(&abs).map_err(|e| e.to_string())?;
+    let (_, body) = to_markdown_mcp::obsidian::frontmatter::split(&content);
+    let snippet: String = body.lines().take(30).collect::<Vec<_>>().join("\n");
+    let opts = RenderOpts { file_dir: abs.parent(), vault_root: Some(&rootp) };
+    Ok(serde_json::json!({
+        "path": rel,
+        "html": render_note(&snippet, &opts, 1),
+        "truncated": body.lines().count() > 30,
+    }))
+}
+
 /// Read a small text file (user CSS). Capped at 1MB.
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
@@ -649,7 +700,8 @@ fn main() {
             resolve_wikilink, graph_data, quick_list,
             read_source, save_file, render_markdown, toggle_task,
             create_note, rename_note, set_frontmatter, paste_image, tag_list,
-            related_notes, semantic_search, set_api_key, ai_action, syntax_css
+            related_notes, semantic_search, set_api_key, ai_action, syntax_css,
+            doc_stats, peek_note
         ])
         .run(tauri::generate_context!())
         .expect("error while running toMarkdown Viewer");
