@@ -148,6 +148,62 @@
   #graph-head button { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
                        background: var(--bg); color: var(--fg); cursor: pointer; font-size: 12px; }
   #graph-canvas { flex: 1; width: 100%; }
+  #editor-wrap { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+  #editor-wrap.show { display: flex; }
+  #edit-bar {
+    display: flex; gap: 6px; align-items: center; padding: 6px 10px;
+    border-bottom: 1px solid var(--border); background: var(--sidebar-bg); flex-wrap: wrap;
+  }
+  #edit-bar input {
+    padding: 4px 8px; font-size: 12px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg); color: var(--fg); width: 130px;
+  }
+  #edit-bar button {
+    padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--fg); cursor: pointer; font-size: 12px;
+  }
+  #edit-bar button:hover { background: var(--hover); }
+  #save-state { font-size: 11px; color: var(--muted); margin-left: auto; }
+  #edit-split { flex: 1; display: flex; overflow: hidden; }
+  #editor {
+    flex: 1; min-width: 0; resize: none; border: none; outline: none;
+    padding: 20px 24px; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--bg); color: var(--fg); border-right: 1px solid var(--border);
+  }
+  #edit-preview { flex: 1; min-width: 0; overflow-y: auto; padding: 20px 28px; line-height: 1.6; }
+  #edit-preview pre { background: var(--code-bg); border: 1px solid var(--border);
+                      border-radius: 6px; padding: 12px; overflow-x: auto; font-size: 13px; }
+  #edit-preview code { font-family: ui-monospace, Menlo, monospace; font-size: .95em; }
+  #edit-preview table { border-collapse: collapse; }
+  #edit-preview th, #edit-preview td { border: 1px solid var(--border); padding: 5px 10px; }
+  #edit-preview blockquote { border-left: 4px solid var(--border); margin-left: 0;
+                             padding-left: 14px; color: var(--muted); }
+  #edit-preview a { color: var(--accent); }
+  #autocomplete {
+    position: fixed; z-index: 60; display: none; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    max-height: 220px; overflow-y: auto; min-width: 220px; font-size: 13px;
+  }
+  #autocomplete div { padding: 5px 10px; cursor: pointer; }
+  #autocomplete div.sel, #autocomplete div:hover { background: var(--active); }
+  #prompt-box {
+    position: absolute; top: 20vh; left: 50%; transform: translateX(-50%);
+    width: 520px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.3); padding: 14px;
+  }
+  #prompt-box h3 { margin: 0 0 10px; font-size: 14px; }
+  #prompt-box input, #prompt-box textarea {
+    width: 100%; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg); color: var(--fg); margin-bottom: 10px;
+  }
+  #prompt-box textarea { height: 180px; font-family: ui-monospace, Menlo, monospace; resize: vertical; }
+  #prompt-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  #prompt-actions button {
+    padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--fg); cursor: pointer; font-size: 13px;
+  }
+  #prompt-actions button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #content input[type="checkbox"] { pointer-events: auto; cursor: pointer; }
   @media print {
     #sidebar, #statusbar, #error { display: none !important; }
     #main, #scroll { overflow: visible !important; }
@@ -172,6 +228,8 @@
       <button id="print-pdf" title="Print or save as PDF">Print / PDF</button>
       <button id="copy-rich" title="Copy as rich text">Copy Rich</button>
       <button id="show-graph" title="Vault link graph">Graph</button>
+      <button id="edit-toggle" title="Toggle edit mode (Cmd+E)">Edit</button>
+      <button id="new-note" title="Create a note in the vault">New Note</button>
     </div>
     <div id="tabs">
       <button data-pane="files-pane" class="active">Files</button>
@@ -203,7 +261,36 @@
     <div id="scroll">
       <div id="content"><p id="placeholder">Open a folder or file — or drop one here.</p></div>
     </div>
+    <div id="editor-wrap">
+      <div id="edit-bar">
+        <input id="find-input" placeholder="Find">
+        <input id="replace-input" placeholder="Replace">
+        <button id="find-next">Next</button>
+        <button id="replace-one">Replace</button>
+        <button id="replace-all">All</button>
+        <button id="insert-table" title="Insert a table skeleton">Table</button>
+        <button id="edit-props" title="Edit YAML frontmatter">Properties</button>
+        <button id="rename-btn" title="Rename note, rewriting inbound links">Rename</button>
+        <span id="save-state"></span>
+      </div>
+      <div id="edit-split">
+        <textarea id="editor" spellcheck="false"></textarea>
+        <div id="edit-preview"></div>
+      </div>
+    </div>
     <div id="statusbar"><span id="stats"></span><span id="live" class="live"></span></div>
+  </div>
+  <div id="autocomplete"></div>
+  <div id="prompt-overlay" class="overlay">
+    <div id="prompt-box">
+      <h3 id="prompt-title"></h3>
+      <input id="prompt-input" style="display:none">
+      <textarea id="prompt-textarea" style="display:none"></textarea>
+      <div id="prompt-actions">
+        <button id="prompt-cancel">Cancel</button>
+        <button id="prompt-ok" class="primary">OK</button>
+      </div>
+    </div>
   </div>
   <div id="switcher-overlay" class="overlay">
     <div id="switcher">
@@ -446,6 +533,8 @@ function flashLive(msg) {
 }
 listen('file-changed', () => {
   if (!currentFile) return;
+  // Skip reloads caused by our own saves, and never clobber active editing.
+  if (editMode || Date.now() - lastSelfSave < 1500) return;
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(() => {
     openFile(currentFile, false, true);
@@ -737,6 +826,319 @@ document.getElementById('graph-local').onclick = () => showGraph(currentFile);
 document.getElementById('graph-close').onclick = () => graphOverlay.classList.remove('show');
 graphOverlay.addEventListener('click', (e) => { if (e.target === graphOverlay) graphOverlay.classList.remove('show'); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') graphOverlay.classList.remove('show'); });
+
+// ==== Editing (Phase 8) ====
+const editorWrap = document.getElementById('editor-wrap');
+const editor = document.getElementById('editor');
+const editPreview = document.getElementById('edit-preview');
+const saveState = document.getElementById('save-state');
+let editMode = false, dirty = false, lastSelfSave = 0;
+
+// ---- Generic prompt overlay (input or textarea) ----
+const promptOverlay = document.getElementById('prompt-overlay');
+function ask(title, { multiline = false, value = '' } = {}) {
+  return new Promise((resolve) => {
+    document.getElementById('prompt-title').textContent = title;
+    const input = document.getElementById('prompt-input');
+    const ta = document.getElementById('prompt-textarea');
+    input.style.display = multiline ? 'none' : 'block';
+    ta.style.display = multiline ? 'block' : 'none';
+    const field = multiline ? ta : input;
+    field.value = value;
+    promptOverlay.classList.add('show');
+    field.focus();
+    const done = (val) => {
+      promptOverlay.classList.remove('show');
+      document.getElementById('prompt-ok').onclick = null;
+      document.getElementById('prompt-cancel').onclick = null;
+      input.onkeydown = null;
+      resolve(val);
+    };
+    document.getElementById('prompt-ok').onclick = () => done(field.value);
+    document.getElementById('prompt-cancel').onclick = () => done(null);
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') done(field.value);
+      if (e.key === 'Escape') done(null);
+    };
+  });
+}
+
+// ---- Edit mode toggle ----
+async function enterEditMode() {
+  if (!currentFile || !/\.(md|markdown|txt)$/.test(currentFile)) {
+    showError('Edit mode works on Markdown/text files.');
+    return;
+  }
+  try {
+    editor.value = await invoke('read_source', { path: currentFile });
+    editMode = true;
+    document.getElementById('scroll').style.display = 'none';
+    editorWrap.classList.add('show');
+    document.getElementById('edit-toggle').textContent = 'Preview';
+    refreshEditPreview();
+    editor.focus();
+  } catch (e) { showError(String(e)); }
+}
+async function exitEditMode() {
+  if (dirty) await saveNow();
+  editMode = false;
+  editorWrap.classList.remove('show');
+  document.getElementById('scroll').style.display = '';
+  document.getElementById('edit-toggle').textContent = 'Edit';
+  if (currentFile) openFile(currentFile, false, true);
+}
+document.getElementById('edit-toggle').onclick = () => editMode ? exitEditMode() : enterEditMode();
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
+    e.preventDefault();
+    editMode ? exitEditMode() : enterEditMode();
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key === 's' && editMode) {
+    e.preventDefault();
+    saveNow();
+  }
+});
+
+// ---- Autosave + live preview ----
+async function saveNow() {
+  if (!currentFile || !dirty) return;
+  try {
+    lastSelfSave = Date.now();
+    await invoke('save_file', { path: currentFile, content: editor.value, vaultRoot: currentFolder });
+    dirty = false;
+    saveState.textContent = 'saved ' + new Date().toLocaleTimeString();
+  } catch (e) { showError('Save failed: ' + e); }
+}
+let saveTimer = null, previewTimer = null;
+async function refreshEditPreview() {
+  editPreview.innerHTML = await invoke('render_markdown', { md: editor.value, vaultRoot: currentFolder });
+}
+editor.addEventListener('input', () => {
+  dirty = true;
+  saveState.textContent = 'editing…';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveNow, 800);
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(refreshEditPreview, 150);
+  maybeAutocomplete();
+});
+editor.addEventListener('blur', saveNow);
+
+// ---- Find & replace ----
+const findInput = document.getElementById('find-input');
+const replaceInput = document.getElementById('replace-input');
+function findNext() {
+  const q = findInput.value;
+  if (!q) return;
+  const from = editor.selectionEnd;
+  let i = editor.value.indexOf(q, from);
+  if (i < 0) i = editor.value.indexOf(q); // wrap around
+  if (i >= 0) {
+    editor.focus();
+    editor.setSelectionRange(i, i + q.length);
+  }
+}
+document.getElementById('find-next').onclick = findNext;
+findInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') findNext(); });
+document.getElementById('replace-one').onclick = () => {
+  const q = findInput.value;
+  if (!q) return;
+  const sel = editor.value.slice(editor.selectionStart, editor.selectionEnd);
+  if (sel === q) {
+    editor.setRangeText(replaceInput.value, editor.selectionStart, editor.selectionEnd, 'end');
+    editor.dispatchEvent(new Event('input'));
+  }
+  findNext();
+};
+document.getElementById('replace-all').onclick = () => {
+  const q = findInput.value;
+  if (!q) return;
+  editor.value = editor.value.split(q).join(replaceInput.value);
+  editor.dispatchEvent(new Event('input'));
+};
+
+// ---- Insert table ----
+document.getElementById('insert-table').onclick = () => {
+  const skeleton = '\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |\n';
+  editor.setRangeText(skeleton, editor.selectionStart, editor.selectionEnd, 'end');
+  editor.dispatchEvent(new Event('input'));
+  editor.focus();
+};
+
+// ---- Autocomplete for [[wikilinks]] and #tags ----
+const acBox = document.getElementById('autocomplete');
+let acItems = [], acSel = 0, acStart = -1, acKind = null;
+
+function caretViewportPos() {
+  // Mirror-div technique: measure where the caret is inside the textarea.
+  const mirror = document.createElement('div');
+  const style = getComputedStyle(editor);
+  for (const prop of ['font', 'padding', 'border', 'boxSizing', 'lineHeight', 'letterSpacing', 'whiteSpace', 'wordWrap', 'width'])
+    mirror.style[prop] = style[prop];
+  mirror.style.position = 'fixed';
+  mirror.style.visibility = 'hidden';
+  mirror.style.whiteSpace = 'pre-wrap';
+  mirror.style.wordWrap = 'break-word';
+  mirror.textContent = editor.value.slice(0, editor.selectionEnd);
+  const marker = document.createElement('span');
+  marker.textContent = '​';
+  mirror.appendChild(marker);
+  document.body.appendChild(mirror);
+  const eRect = editor.getBoundingClientRect();
+  const mRect = marker.getBoundingClientRect();
+  const miRect = mirror.getBoundingClientRect();
+  const x = eRect.left + (mRect.left - miRect.left);
+  const y = eRect.top + (mRect.top - miRect.top) - editor.scrollTop;
+  document.body.removeChild(mirror);
+  return { x, y };
+}
+async function maybeAutocomplete() {
+  if (!currentFolder) return hideAc();
+  const pos = editor.selectionEnd;
+  const before = editor.value.slice(Math.max(0, pos - 60), pos);
+  const linkMatch = before.match(/\[\[([^\[\]\|#]*)$/);
+  const tagMatch = before.match(/(^|\s)#([A-Za-z0-9_\/-]*)$/);
+  if (linkMatch) {
+    acKind = 'link'; acStart = pos - linkMatch[1].length;
+    if (!window._quickCache) { try { window._quickCache = await invoke('quick_list', { root: currentFolder }); } catch { return hideAc(); } }
+    const q = linkMatch[1].toLowerCase();
+    acItems = window._quickCache
+      .filter(n => n.title.toLowerCase().includes(q) || (n.aliases || []).some(a => a.toLowerCase().includes(q)))
+      .slice(0, 8).map(n => ({ label: n.title, insert: n.title }));
+  } else if (tagMatch) {
+    acKind = 'tag'; acStart = pos - tagMatch[2].length;
+    if (!window._tagCache) { try { window._tagCache = await invoke('tag_list', { root: currentFolder }); } catch { return hideAc(); } }
+    const q = tagMatch[2].toLowerCase();
+    acItems = window._tagCache.filter(t => t.toLowerCase().startsWith(q))
+      .slice(0, 8).map(t => ({ label: '#' + t, insert: t }));
+  } else return hideAc();
+  if (!acItems.length) return hideAc();
+  acSel = 0;
+  renderAc();
+}
+function renderAc() {
+  acBox.innerHTML = '';
+  acItems.forEach((it, i) => {
+    const div = document.createElement('div');
+    div.textContent = it.label;
+    div.className = i === acSel ? 'sel' : '';
+    div.onmousedown = (e) => { e.preventDefault(); acceptAc(i); };
+    acBox.appendChild(div);
+  });
+  const { x, y } = caretViewportPos();
+  acBox.style.left = Math.min(x, innerWidth - 240) + 'px';
+  acBox.style.top = (y + 20) + 'px';
+  acBox.style.display = 'block';
+}
+function hideAc() { acBox.style.display = 'none'; acItems = []; }
+function acceptAc(i) {
+  const it = acItems[i];
+  if (!it) return;
+  const end = editor.selectionEnd;
+  let insert = it.insert;
+  if (acKind === 'link') insert += ']]';
+  editor.setRangeText(insert, acStart, end, 'end');
+  // Skip over an existing ]] the user may have already typed.
+  if (acKind === 'link' && editor.value.slice(editor.selectionEnd, editor.selectionEnd + 2) === ']]')
+    editor.setRangeText('', editor.selectionEnd, editor.selectionEnd + 2, 'end');
+  hideAc();
+  editor.dispatchEvent(new Event('input'));
+  editor.focus();
+}
+editor.addEventListener('keydown', (e) => {
+  if (!acItems.length) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); acSel = (acSel + 1) % acItems.length; renderAc(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); acSel = (acSel - 1 + acItems.length) % acItems.length; renderAc(); }
+  else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); acceptAc(acSel); }
+  else if (e.key === 'Escape') hideAc();
+});
+editor.addEventListener('click', hideAc);
+
+// ---- Paste image into vault ----
+editor.addEventListener('paste', async (e) => {
+  if (!currentFolder) return;
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (!item) return;
+  e.preventDefault();
+  const file = item.getAsFile();
+  const ext = (item.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const base64 = String(reader.result).split(',')[1];
+    try {
+      const embed = await invoke('paste_image', { root: currentFolder, base64Data: base64, extension: ext });
+      editor.setRangeText(embed, editor.selectionStart, editor.selectionEnd, 'end');
+      editor.dispatchEvent(new Event('input'));
+    } catch (err) { showError(String(err)); }
+  };
+  reader.readAsDataURL(file);
+});
+
+// ---- Click-to-toggle tasks in the reading view ----
+contentBox.addEventListener('click', async (e) => {
+  if (e.target.matches('input[type="checkbox"]') && currentFile) {
+    e.preventDefault();
+    const boxes = [...contentBox.querySelectorAll('input[type="checkbox"]')];
+    const index = boxes.indexOf(e.target);
+    try {
+      lastSelfSave = Date.now();
+      await invoke('toggle_task', { path: currentFile, index, vaultRoot: currentFolder });
+      openFile(currentFile, false, true);
+    } catch (err) { showError(String(err)); }
+  }
+});
+
+// ---- New note / rename / properties ----
+document.getElementById('new-note').onclick = async () => {
+  if (!currentFolder) { showError('Open a vault folder first.'); return; }
+  const title = await ask('New note title (may include a folder, e.g. projects/Idea)');
+  if (!title) return;
+  try {
+    const path = await invoke('create_note', { root: currentFolder, title, daily: false });
+    window._quickCache = null;
+    openFolder(currentFolder);
+    await openFile(path);
+    enterEditMode();
+  } catch (e) { showError(String(e)); }
+};
+document.getElementById('rename-btn').onclick = async () => {
+  if (!currentFile || !currentFolder) return;
+  const base = currentFile.split('/').pop().replace(/\.md$/, '');
+  const newName = await ask('Rename note (inbound links will be rewritten)', { value: base });
+  if (!newName || newName === base) return;
+  if (dirty) await saveNow();
+  try {
+    const newPath = await invoke('rename_note', { root: currentFolder, path: currentFile, newName });
+    window._quickCache = null;
+    openFolder(currentFolder);
+    editMode = false;
+    editorWrap.classList.remove('show');
+    document.getElementById('scroll').style.display = '';
+    document.getElementById('edit-toggle').textContent = 'Edit';
+    await openFile(newPath);
+    flashLive('renamed, links rewritten');
+  } catch (e) { showError(String(e)); }
+};
+document.getElementById('edit-props').onclick = async () => {
+  if (!currentFile) return;
+  if (dirty) await saveNow();
+  const source = await invoke('read_source', { path: currentFile });
+  let yaml = '';
+  if (source.startsWith('---\n')) {
+    const end = source.indexOf('\n---', 4);
+    if (end > 0) yaml = source.slice(4, end);
+  }
+  const edited = await ask('Frontmatter properties (YAML; empty removes the block)', { multiline: true, value: yaml });
+  if (edited === null) return;
+  try {
+    await invoke('set_frontmatter', { path: currentFile, yaml: edited, vaultRoot: currentFolder });
+    editor.value = await invoke('read_source', { path: currentFile });
+    dirty = false;
+    refreshEditPreview();
+    renderNotePanel(currentFile);
+    flashLive('properties updated');
+  } catch (e) { showError(String(e)); }
+};
 
 // ---- Drag & drop ----
 listen('tauri://drag-drop', async (event) => {

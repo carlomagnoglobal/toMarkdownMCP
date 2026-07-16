@@ -23,6 +23,9 @@ Phase 5 of the [roadmap](../planning/ROADMAP.md): foundation & viewer. Later pha
 - **Tags & Tasks tabs** — vault-wide tag browser sorted by count; all checkbox tasks with state, due date, and source
 - **Graph view** — force-directed link graph (global or current-note local), drag nodes, click to open
 - **Quick switcher** — Cmd/Ctrl+O (or P) fuzzy-opens notes by title or alias
+- **Editing (Cmd+E)** — split source-editor with instant live preview; autosave (atomic writes, debounced), native undo/redo, find & replace, table skeleton insertion
+- **Vault-aware authoring** — `[[` wikilink and `#` tag autocomplete at the caret, paste an image to file it in the vault's attachment folder as an `![[embed]]`, click checkboxes in the reading view to toggle tasks in the file
+- **Note management** — New Note (folder-in-title supported, templates via vault config), Rename with inbound wikilink rewriting, YAML frontmatter editor with validation
 
 ## Build & run
 

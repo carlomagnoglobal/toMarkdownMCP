@@ -363,6 +363,170 @@ fn quick_list(root: String) -> Result<serde_json::Value, String> {
     Ok(serde_json::json!(items))
 }
 
+// ---- Editing commands (Phase 8) ----
+
+/// Raw source for the editor, capped at the structured-conversion limit.
+#[tauri::command]
+fn read_source(path: String) -> Result<String, String> {
+    let p = PathBuf::from(&path);
+    let size = std::fs::metadata(&p).map(|m| m.len()).map_err(|e| e.to_string())?;
+    if size > to_markdown_mcp::pipeline::LARGE_FILE_BYTES {
+        return Err("File too large to edit here".to_string());
+    }
+    std::fs::read_to_string(&p).map_err(|e| e.to_string())
+}
+
+/// Atomic save: write a temp file next to the target, then rename over it.
+/// Invalidates the vault index so links/backlinks stay fresh.
+#[tauri::command]
+fn save_file(path: String, content: String, vault_root: Option<String>) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    let tmp = p.with_extension("tomarkdown.tmp");
+    std::fs::write(&tmp, &content).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &p).map_err(|e| e.to_string())?;
+    if let Some(root) = vault_root {
+        vault::invalidate(Path::new(&root));
+    }
+    Ok(())
+}
+
+/// Render markdown for the edit-mode live preview (same pipeline as open_file).
+#[tauri::command]
+fn render_markdown(md: String, vault_root: Option<String>) -> String {
+    if vault_root.is_some() {
+        markdown_to_html(&linkify_wikilinks(&md))
+    } else {
+        markdown_to_html(&md)
+    }
+}
+
+/// Toggle the nth checkbox task in a file (0-indexed, document order),
+/// matching how the rendered preview orders its checkboxes.
+#[tauri::command]
+fn toggle_task(path: String, index: usize, vault_root: Option<String>) -> Result<(), String> {
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut seen = 0usize;
+    let mut lines: Vec<String> = content.lines().map(String::from).collect();
+    let mut found = false;
+    for line in lines.iter_mut() {
+        let trimmed = line.trim_start();
+        let is_task = (trimmed.starts_with("- [") || trimmed.starts_with("* [") || trimmed.starts_with("+ ["))
+            && trimmed.as_bytes().get(4) == Some(&b']');
+        if is_task {
+            if seen == index {
+                let state = trimmed.as_bytes()[3] as char;
+                let new_state = if state == ' ' { 'x' } else { ' ' };
+                let pos = line.len() - trimmed.len() + 3;
+                line.replace_range(pos..pos + 1, &new_state.to_string());
+                found = true;
+                break;
+            }
+            seen += 1;
+        }
+    }
+    if !found {
+        return Err(format!("No task #{} in {}", index, path));
+    }
+    let mut out = lines.join("\n");
+    if content.ends_with('\n') {
+        out.push('\n');
+    }
+    save_file(path, out, vault_root)
+}
+
+/// Create a note (optionally from a template / as today's daily note) and
+/// return its absolute path.
+#[tauri::command]
+fn create_note(root: String, title: Option<String>, daily: bool) -> Result<String, String> {
+    let v = vault_tools::create_note_from_template(Path::new(&root), title.as_deref(), None, daily)
+        .map_err(|e| e.to_string())?;
+    vault::invalidate(Path::new(&root));
+    let rel = v["created"].as_str().ok_or("create returned no path")?;
+    Ok(Path::new(&root).join(rel).to_string_lossy().into_owned())
+}
+
+/// Rename/move a note, rewriting every inbound wikilink (real run).
+#[tauri::command]
+fn rename_note(root: String, path: String, new_name: String) -> Result<String, String> {
+    let rel = vault_rel(&root, &path).ok_or("File is outside the vault")?;
+    let v = vault_tools::rename_note(Path::new(&root), &rel, &new_name, false)
+        .map_err(|e| e.to_string())?;
+    vault::invalidate(Path::new(&root));
+    let new_rel = v["renamed_to"].as_str().unwrap_or(&new_name);
+    Ok(Path::new(&root).join(new_rel).to_string_lossy().into_owned())
+}
+
+/// Replace the YAML frontmatter block of a note with the given YAML text
+/// (empty string removes it), leaving the body untouched.
+#[tauri::command]
+fn set_frontmatter(path: String, yaml: String, vault_root: Option<String>) -> Result<(), String> {
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let (_, body) = to_markdown_mcp::obsidian::frontmatter::split(&content);
+    let yaml = yaml.trim();
+    let new_content = if yaml.is_empty() {
+        body.to_string()
+    } else {
+        // Validate before writing so a typo can't corrupt the note.
+        serde_yaml::from_str::<serde_yaml::Value>(yaml).map_err(|e| format!("Invalid YAML: {}", e))?;
+        format!("---\n{}\n---\n{}", yaml, body)
+    };
+    save_file(path, new_content, vault_root)
+}
+
+/// Save a pasted image into the vault's attachment folder and return the
+/// wikilink embed text to insert.
+#[tauri::command]
+fn paste_image(root: String, base64_data: String, extension: String) -> Result<String, String> {
+    let bytes = base64_decode(&base64_data).ok_or("Invalid base64 image data")?;
+    let cfg = to_markdown_mcp::obsidian::config::read_config(Path::new(&root)).unwrap_or_default();
+    let folder = cfg.attachment_folder.unwrap_or_default();
+    let dir = if folder.is_empty() || folder == "/" {
+        PathBuf::from(&root)
+    } else {
+        PathBuf::from(&root).join(folder.trim_start_matches("./"))
+    };
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let name = format!("Pasted image {}.{}", chrono_stamp(), extension);
+    std::fs::write(dir.join(&name), bytes).map_err(|e| e.to_string())?;
+    vault::invalidate(Path::new(&root));
+    Ok(format!("![[{}]]", name))
+}
+
+fn chrono_stamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    format!("{}", secs)
+}
+
+fn base64_decode(data: &str) -> Option<Vec<u8>> {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::with_capacity(data.len() * 3 / 4);
+    let mut buf = 0u32;
+    let mut bits = 0u8;
+    for &b in data.as_bytes() {
+        if b == b'=' || b == b'\n' || b == b'\r' {
+            continue;
+        }
+        let v = TABLE.iter().position(|&t| t == b)? as u32;
+        buf = (buf << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+        }
+    }
+    Some(out)
+}
+
+/// Tag names for the editor's `#` autocomplete.
+#[tauri::command]
+fn tag_list(root: String) -> Result<Vec<String>, String> {
+    let idx = vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
+    let mut tags: Vec<String> = idx.tags.keys().cloned().collect();
+    tags.sort();
+    Ok(tags)
+}
+
 /// Read a small text file (user CSS). Capped at 1MB.
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
@@ -400,7 +564,9 @@ fn main() {
             list_tree, open_file, pick_folder, pick_file,
             watch_tree, watch_file, export_html, read_text_file,
             note_info, vault_overview, vault_search, vault_tasks,
-            resolve_wikilink, graph_data, quick_list
+            resolve_wikilink, graph_data, quick_list,
+            read_source, save_file, render_markdown, toggle_task,
+            create_note, rename_note, set_frontmatter, paste_image, tag_list
         ])
         .run(tauri::generate_context!())
         .expect("error while running toMarkdown Viewer");
@@ -452,6 +618,56 @@ mod tests {
         let info = note_info(root.clone(), format!("{}/Note A.md", root)).unwrap();
         assert_eq!(info["note"]["title"], "Note A");
         assert!(info["backlinks"]["backlink_count"].as_u64().is_some());
+    }
+
+    fn temp_dir() -> PathBuf {
+        let d = std::env::temp_dir().join(format!("gui_edit_test_{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn save_is_atomic_and_roundtrips() {
+        let dir = temp_dir();
+        let f = dir.join("note.md");
+        save_file(f.to_string_lossy().into(), "# Hi\n".into(), None).unwrap();
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "# Hi\n");
+        assert!(!f.with_extension("tomarkdown.tmp").exists());
+    }
+
+    #[test]
+    fn toggle_task_flips_the_right_checkbox() {
+        let dir = temp_dir();
+        let f = dir.join("tasks.md");
+        std::fs::write(&f, "- [ ] first\ntext\n- [x] second\n  - [ ] nested\n").unwrap();
+        let p = f.to_string_lossy().into_owned();
+        toggle_task(p.clone(), 1, None).unwrap();
+        assert!(std::fs::read_to_string(&f).unwrap().contains("- [ ] second"));
+        toggle_task(p.clone(), 2, None).unwrap();
+        assert!(std::fs::read_to_string(&f).unwrap().contains("  - [x] nested"));
+        assert!(toggle_task(p, 9, None).is_err());
+    }
+
+    #[test]
+    fn set_frontmatter_replaces_only_the_yaml_block() {
+        let dir = temp_dir();
+        let f = dir.join("fm.md");
+        std::fs::write(&f, "---\nstatus: old\n---\n# Body\n").unwrap();
+        let p = f.to_string_lossy().into_owned();
+        set_frontmatter(p.clone(), "status: new\ntags: [a]".into(), None).unwrap();
+        let s = std::fs::read_to_string(&f).unwrap();
+        assert!(s.contains("status: new") && s.contains("# Body"));
+        // Invalid YAML is rejected, file untouched.
+        assert!(set_frontmatter(p.clone(), "not: [valid".into(), None).is_err());
+        // Empty removes the block.
+        set_frontmatter(p, String::new(), None).unwrap();
+        assert!(std::fs::read_to_string(&f).unwrap().starts_with("# Body"));
+    }
+
+    #[test]
+    fn base64_decodes() {
+        assert_eq!(base64_decode("aGVsbG8=").unwrap(), b"hello");
+        assert!(base64_decode("!!!").is_none());
     }
 
     #[test]

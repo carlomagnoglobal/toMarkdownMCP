@@ -71,12 +71,12 @@ Desktop GUI with functionality on par with **Obsidian, Typora, MacMD Viewer, and
 - [x] Tasks tab across the vault (state, due date, source line); `.canvas` files render via the JsonCanvas converter
 - [x] Quick switcher (Cmd/Ctrl+O or P): fuzzy match over titles and aliases
 
-### Phase 8 — Editing (Typora / Obsidian parity, write side)
+### Phase 8 — Editing (Typora / Obsidian parity, write side) ✅ (split-view, not in-place WYSIWYG)
 
-- [ ] Typora-style live WYSIWYG editing (Milkdown or CodeMirror 6 live preview)
-- [ ] Autosave, undo/redo, find-and-replace
-- [ ] Table editor, click-to-toggle tasks, wikilink & tag autocomplete, paste-image-into-vault
-- [ ] New note from template, rename with link rewriting, frontmatter property editor
+- [x] Live editing as a split source-editor + instant preview (Cmd+E toggles; no npm/bundler constraint ruled out Milkdown/CodeMirror — in-place WYSIWYG remains a possible later upgrade)
+- [x] Autosave (debounced + on blur, atomic temp-file rename, vault index invalidation, self-save suppression in the file watcher), native undo/redo, find-and-replace bar
+- [x] Table skeleton insertion, click-to-toggle tasks in the reading view, `[[` wikilink and `#` tag autocomplete with caret-positioned dropdown, paste-image into the vault's attachment folder as `![[embed]]`
+- [x] New note (respects folder-in-title), rename with inbound-link rewriting (`obsidian::tools::rename_note`), YAML frontmatter editor with validation before write
 
 ### Phase 9 — GUI intelligence & polish
 
