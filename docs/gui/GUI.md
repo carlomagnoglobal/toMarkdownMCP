@@ -24,7 +24,8 @@ Phase 5 of the [roadmap](../planning/ROADMAP.md): foundation & viewer. Later pha
 - **Tags & Tasks tabs** — vault-wide tag browser sorted by count; all checkbox tasks with state, due date, and source
 - **Graph view** — force-directed link graph (global or current-note local), drag nodes, click to open
 - **Quick switcher** — Cmd/Ctrl+O (or P) fuzzy-opens notes by title or alias
-- **Editing (Cmd+E)** — split source-editor with instant live preview; autosave (atomic writes, debounced), native undo/redo, find & replace, table skeleton insertion
+- **Live editing (Typora-style)** — vault notes open with every block rendered; click any paragraph/heading/fence to edit its Markdown in place, Escape or click away to re-render; autosaves; links/tags/checkboxes stay interactive around the active block. Three modes: Reading / Live (Cmd+E) / Split source (Cmd+Shift+E)
+- **Split editing** — source + instant preview; autosave (atomic writes, debounced), native undo/redo, find & replace, table skeleton insertion; Tab jumps table cells
 - **Vault-aware authoring** — `[[` wikilink and `#` tag autocomplete at the caret, paste an image to file it in the vault's attachment folder as an `![[embed]]`, click checkboxes in the reading view to toggle tasks in the file
 - **Note management** — New Note (folder-in-title supported, templates via vault config), Rename with inbound wikilink rewriting, YAML frontmatter editor with validation
 - **Intelligence** — Related-notes in the note panel, a Semantic (vector) search mode using the persistent `.tomarkdown` embedding index, and AI actions (summarize, suggest tags, translate, ask about the document) when an Anthropic API key is set in Settings; results open in an overlay with Copy / Insert-into-note

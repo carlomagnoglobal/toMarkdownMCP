@@ -118,7 +118,14 @@ Full-parity pass against Typora / Obsidian / MacMD Viewer / Marked 2. Each phase
 - [x] Pinned notes section at the top of Files (per vault)
 - [x] Graph filter box (name match hides non-matching nodes/edges)
 - [x] Multi-vault manager in Settings + "reopen last vault on launch" toggle
-### Phase D — In-place WYSIWYG block editor (Typora-style)
+### Phase D — In-place WYSIWYG block editor (Typora-style) ✅
+- [x] Lossless block splitter in Rust (`render::split_blocks`, property-tested: concat == source for every fixture note + edge cases: frontmatter, fences with blanks, unclosed fences, $$ math, no trailing newline)
+- [x] Live view: all blocks rendered; click a block to edit its raw Markdown in an auto-sized textarea; Escape/blur commits, the doc re-splits and re-renders, autosaves through save_file
+- [x] Links, tags, checkboxes, and hover previews work on inactive blocks like the reading view; "+ Click to write…" appends a block
+- [x] Formatting shortcuts, list auto-continue, paste-image/URL shared with the split editor (element-generic handlers); Tab/Shift+Tab jumps table cells inside a row
+- [x] Three view modes — Reading / Live / Split — via the toolbar cycle, Cmd+E (read↔live), Cmd+Shift+E (split), and the palette; vault notes open in Live by default (Settings toggle to disable)
+- [x] Fixed along the way: multi-line `$$ … $$` display math never rendered (line-based inline pass); now collected across lines
+- Deviations: arrow-key navigation into blocks not implemented (click only); autocomplete popup available in Split mode only
 ### Phase E — App integration (file associations, native menu, window state, DOCX/RTF export, packaging)
 
 ## Deferred

@@ -261,6 +261,32 @@
                   border-radius: 6px; background: var(--bg); color: var(--fg); width: 160px; }
   #vault-list { margin: 4px 0 0; }
   #vault-list .pin-row .t { font-size: 12px; }
+  #live-wrap { flex: 1; display: none; overflow-y: auto; }
+  #live-wrap.show { display: block; }
+  #live-doc { max-width: 860px; margin: 0 auto; padding: 32px 40px 40vh; line-height: 1.6; }
+  #live-doc .block { border-radius: 6px; padding: 2px 8px; margin: 0 -8px; cursor: text; }
+  #live-doc .block:hover { outline: 1px solid var(--border); }
+  #live-doc .block.active { outline: 1px solid var(--accent); }
+  #live-doc .block h1, #live-doc .block h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; }
+  #live-doc .block a { color: var(--accent); }
+  #live-doc .block pre { background: var(--code-bg); border: 1px solid var(--border);
+                         border-radius: 6px; padding: 12px; overflow-x: auto; font-size: 13px; }
+  #live-doc .block code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em; }
+  #live-doc .block :not(pre) > code { background: var(--code-bg); padding: .15em .35em; border-radius: 4px; }
+  #live-doc .block table { border-collapse: collapse; display: block; overflow-x: auto; }
+  #live-doc .block th, #live-doc .block td { border: 1px solid var(--border); padding: 5px 10px; }
+  #live-doc .block th { background: var(--code-bg); }
+  #live-doc .block blockquote { border-left: 4px solid var(--border); margin-left: 0;
+                                padding-left: 14px; color: var(--muted); }
+  #live-doc .block img { max-width: 100%; }
+  #live-doc textarea.block-edit {
+    width: 100%; border: none; outline: none; resize: none; padding: 4px 0;
+    font: 13.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: transparent; color: var(--fg); display: block; overflow: hidden;
+  }
+  #live-doc .block-append { color: var(--muted); font-size: 13px; padding: 8px;
+                            cursor: text; border-radius: 6px; }
+  #live-doc .block-append:hover { outline: 1px dashed var(--border); }
   #hover-pop img { max-width: 100%; }
   #result-box {
     position: absolute; top: 10vh; left: 50%; transform: translateX(-50%);
@@ -358,6 +384,7 @@
         <div id="edit-preview"></div>
       </div>
     </div>
+    <div id="live-wrap"><div id="live-doc"></div></div>
     <div id="statusbar"><span id="stats"></span><span id="sel-stats"></span><span id="live" class="live"></span></div>
   </div>
   <div id="autocomplete"></div>
@@ -400,6 +427,7 @@
         <label for="set-key">Anthropic API key (stored locally; enables AI actions)</label>
         <input id="set-key" type="password" placeholder="sk-ant-…">
         <label><input id="set-reopen" type="checkbox" style="width:auto;margin-right:6px">Reopen last vault on launch</label>
+        <label><input id="set-live" type="checkbox" style="width:auto;margin-right:6px">Open vault notes in Live editing mode</label>
         <label>Known vaults</label>
         <div id="vault-list"></div>
         <div id="prompt-actions" style="margin-top:14px">
@@ -537,9 +565,9 @@ function renderRecents() {
 }
 
 // ---- Table of contents (from rendered headings) ----
-function buildToc() {
+function buildToc(container = contentBox) {
   const box = document.getElementById('toc-box');
-  const headings = contentBox.querySelectorAll('h1, h2, h3, h4');
+  const headings = container.querySelectorAll('h1, h2, h3, h4');
   if (headings.length < 2) { box.innerHTML = ''; return; }
   box.innerHTML = '<div class="section-title">Contents</div>';
   const ul = document.createElement('ul');
@@ -623,6 +651,19 @@ async function openFile(path, remember = true, preserveScroll = false) {
     invoke('watch_file', { path }).catch(() => {});
     renderNotePanel(path);
     syncTabs(path);
+    if (/\.(md|markdown)$/.test(path) && currentFolder) {
+      if (viewMode === 'live') {
+        liveDoc = await invoke('read_source', { path });
+        liveDirty = false;
+        renderLiveDoc(false);
+      } else if (viewMode === 'read' && liveDefaultOn() && Date.now() - (window._noAutoLive || 0) > 600) {
+        setViewMode('live');
+      }
+    } else if (viewMode === 'live') {
+      // Non-markdown target: fall back to the reading view.
+      window._noAutoLive = Date.now();
+      setViewMode('read');
+    }
   } catch (e) { showError(String(e)); }
 }
 
@@ -805,9 +846,18 @@ listen('file-changed', () => {
   if (!currentFile) return;
   // Skip reloads caused by our own saves, and never clobber active editing.
   if (editMode || Date.now() - lastSelfSave < 1500) return;
+  if (viewMode === 'live' && activeBlockEl) return;
   clearTimeout(reloadTimer);
-  reloadTimer = setTimeout(() => {
-    openFile(currentFile, false, true);
+  reloadTimer = setTimeout(async () => {
+    if (viewMode === 'live') {
+      try {
+        liveDoc = await invoke('read_source', { path: currentFile });
+        liveDirty = false;
+        renderLiveDoc();
+      } catch {}
+    } else {
+      openFile(currentFile, false, true);
+    }
     flashLive('reloaded ' + new Date().toLocaleTimeString());
   }, 200);
 });
@@ -1157,38 +1207,26 @@ function ask(title, { multiline = false, value = '' } = {}) {
 }
 
 // ---- Edit mode toggle ----
-async function enterEditMode() {
-  if (!currentFile || !/\.(md|markdown|txt)$/.test(currentFile)) {
-    showError('Edit mode works on Markdown/text files.');
-    return;
-  }
-  try {
-    editor.value = await invoke('read_source', { path: currentFile });
-    editMode = true;
-    document.getElementById('scroll').style.display = 'none';
-    editorWrap.classList.add('show');
-    document.getElementById('edit-toggle').textContent = 'Preview';
-    refreshEditPreview();
-    editor.focus();
-  } catch (e) { showError(String(e)); }
-}
-async function exitEditMode() {
-  if (dirty) await saveNow();
-  editMode = false;
-  editorWrap.classList.remove('show');
-  document.getElementById('scroll').style.display = '';
-  document.getElementById('edit-toggle').textContent = 'Edit';
-  if (currentFile) openFile(currentFile, false, true);
-}
-document.getElementById('edit-toggle').onclick = () => editMode ? exitEditMode() : enterEditMode();
+async function enterEditMode() { await setViewMode('split'); }
+async function exitEditMode() { await setViewMode('read'); }
+document.getElementById('edit-toggle').onclick = () => {
+  // Cycle Read → Live → Split → Read.
+  setViewMode(viewMode === 'read' ? 'live' : viewMode === 'live' ? 'split' : 'read');
+};
 document.addEventListener('keydown', (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && !e.shiftKey && e.key === 'e') {
     e.preventDefault();
-    editMode ? exitEditMode() : enterEditMode();
+    setViewMode(viewMode === 'read' ? 'live' : 'read');
   }
-  if ((e.metaKey || e.ctrlKey) && e.key === 's' && editMode) {
+  if (mod && e.shiftKey && e.key.toLowerCase() === 'e') {
     e.preventDefault();
-    saveNow();
+    setViewMode(viewMode === 'split' ? 'read' : 'split');
+  }
+  if (mod && e.key === 's') {
+    e.preventDefault();
+    if (viewMode === 'split') saveNow();
+    if (viewMode === 'live') { commitActiveBlock(false).then(saveLive); }
   }
 });
 
@@ -1350,14 +1388,14 @@ editor.addEventListener('keydown', (e) => {
 editor.addEventListener('click', hideAc);
 
 // ---- Paste image into vault ----
-editor.addEventListener('paste', async (e) => {
+async function editorPaste(e, el) {
   // Pasting a URL over selected text wraps the selection as a link.
   const text = e.clipboardData?.getData('text/plain') || '';
-  if (/^https?:\/\/\S+$/.test(text.trim()) && editor.selectionStart !== editor.selectionEnd) {
+  if (/^https?:\/\/\S+$/.test(text.trim()) && el.selectionStart !== el.selectionEnd) {
     e.preventDefault();
-    const sel = editor.value.slice(editor.selectionStart, editor.selectionEnd);
-    editor.setRangeText(`[${sel}](${text.trim()})`, editor.selectionStart, editor.selectionEnd, 'end');
-    editor.dispatchEvent(new Event('input'));
+    const sel = el.value.slice(el.selectionStart, el.selectionEnd);
+    el.setRangeText(`[${sel}](${text.trim()})`, el.selectionStart, el.selectionEnd, 'end');
+    el.dispatchEvent(new Event('input'));
     return;
   }
   if (!currentFolder) return;
@@ -1371,12 +1409,13 @@ editor.addEventListener('paste', async (e) => {
     const base64 = String(reader.result).split(',')[1];
     try {
       const embed = await invoke('paste_image', { root: currentFolder, base64Data: base64, extension: ext });
-      editor.setRangeText(embed, editor.selectionStart, editor.selectionEnd, 'end');
-      editor.dispatchEvent(new Event('input'));
+      el.setRangeText(embed, el.selectionStart, el.selectionEnd, 'end');
+      el.dispatchEvent(new Event('input'));
     } catch (err) { showError(String(err)); }
   };
   reader.readAsDataURL(file);
-});
+}
+editor.addEventListener('paste', (e) => editorPaste(e, editor));
 
 // ---- Click-to-toggle tasks in the reading view ----
 contentBox.addEventListener('click', async (e) => {
@@ -1500,6 +1539,7 @@ function openSettings() {
   setFont.value = localStorage.getItem('fontSize') || '16';
   setKey.value = localStorage.getItem('apiKey') || '';
   document.getElementById('set-reopen').checked = !!localStorage.getItem('reopenLast');
+  document.getElementById('set-live').checked = liveDefaultOn();
   renderVaultList();
   settingsOverlay.classList.add('show');
 }
@@ -1531,7 +1571,9 @@ const COMMANDS = [
   { label: 'Open Folder…', run: () => document.getElementById('open-folder').click() },
   { label: 'Open File…', run: () => document.getElementById('open-file').click() },
   { label: 'New Note', run: () => document.getElementById('new-note').click() },
-  { label: 'Toggle Edit Mode', run: () => document.getElementById('edit-toggle').click() },
+  { label: 'View: Reading', run: () => setViewMode('read') },
+  { label: 'View: Live Editing (Cmd+E)', run: () => setViewMode('live') },
+  { label: 'View: Split Source (Cmd+Shift+E)', run: () => setViewMode('split') },
   { label: 'Quick Switcher', run: openSwitcher },
   { label: 'Graph: Global', run: () => showGraph(null) },
   { label: 'Graph: Current Note', run: () => showGraph(currentFile) },
@@ -1667,50 +1709,64 @@ editor.addEventListener('keyup', (e) => {
 });
 
 // ---- Formatting shortcuts + list auto-continue ----
-function wrapSelection(before, after) {
-  const { selectionStart: a, selectionEnd: b, value } = editor;
+function wrapSelection(before, after, el = editor) {
+  const { selectionStart: a, selectionEnd: b, value } = el;
   const sel = value.slice(a, b);
   // Toggle off when already wrapped.
   if (value.slice(a - before.length, a) === before && value.slice(b, b + after.length) === after) {
-    editor.setRangeText(sel, a - before.length, b + after.length, 'select');
+    el.setRangeText(sel, a - before.length, b + after.length, 'select');
   } else {
-    editor.setRangeText(before + sel + after, a, b, 'select');
-    editor.setSelectionRange(a + before.length, b + before.length);
+    el.setRangeText(before + sel + after, a, b, 'select');
+    el.setSelectionRange(a + before.length, b + before.length);
   }
-  editor.dispatchEvent(new Event('input'));
+  el.dispatchEvent(new Event('input'));
 }
 const LIST_RE = /^(\s*)([-*+]|\d+[.)])( \[.\])? /;
-editor.addEventListener('keydown', (e) => {
+function formatKeydown(e, el) {
   const mod = e.metaKey || e.ctrlKey;
-  if (mod && !e.shiftKey && e.key === 'b') { e.preventDefault(); wrapSelection('**', '**'); return; }
-  if (mod && !e.shiftKey && e.key === 'i') { e.preventDefault(); wrapSelection('*', '*'); return; }
-  if (mod && e.shiftKey && e.key.toLowerCase() === 'x') { e.preventDefault(); wrapSelection('~~', '~~'); return; }
+  if (mod && !e.shiftKey && e.key === 'b') { e.preventDefault(); wrapSelection('**', '**', el); return; }
+  if (mod && !e.shiftKey && e.key === 'i') { e.preventDefault(); wrapSelection('*', '*', el); return; }
+  if (mod && e.shiftKey && e.key.toLowerCase() === 'x') { e.preventDefault(); wrapSelection('~~', '~~', el); return; }
   if (mod && e.shiftKey && e.key.toLowerCase() === 'k') {
     e.preventDefault();
-    const sel = editor.value.slice(editor.selectionStart, editor.selectionEnd) || 'link text';
-    editor.setRangeText(`[${sel}](url)`, editor.selectionStart, editor.selectionEnd, 'end');
-    editor.dispatchEvent(new Event('input'));
+    const sel = el.value.slice(el.selectionStart, el.selectionEnd) || 'link text';
+    el.setRangeText(`[${sel}](url)`, el.selectionStart, el.selectionEnd, 'end');
+    el.dispatchEvent(new Event('input'));
     return;
   }
   if (e.key === 'Tab' && !acItems.length) {
-    const { selectionStart: a, value } = editor;
+    const { selectionStart: a, value } = el;
     const lineStart = value.lastIndexOf('\n', a - 1) + 1;
-    const line = value.slice(lineStart, value.indexOf('\n', a) < 0 ? value.length : value.indexOf('\n', a));
+    const lineEnd = value.indexOf('\n', a) < 0 ? value.length : value.indexOf('\n', a);
+    const line = value.slice(lineStart, lineEnd);
+    // Inside a table row: Tab jumps to the next cell, Shift+Tab to the previous.
+    if (line.includes('|')) {
+      e.preventDefault();
+      if (e.shiftKey) {
+        const prev = value.lastIndexOf('|', Math.max(0, a - 2));
+        const prev2 = prev > 0 ? value.lastIndexOf('|', prev - 1) : -1;
+        if (prev2 >= 0) el.setSelectionRange(prev2 + 2, prev2 + 2);
+      } else {
+        const next = value.indexOf('|', a);
+        if (next >= 0 && next + 2 <= value.length) el.setSelectionRange(next + 2, next + 2);
+      }
+      return;
+    }
     if (LIST_RE.test(line)) {
       e.preventDefault();
       if (e.shiftKey) {
         if (line.startsWith('  ')) {
-          editor.setRangeText('', lineStart, lineStart + 2, 'preserve');
+          el.setRangeText('', lineStart, lineStart + 2, 'preserve');
         }
       } else {
-        editor.setRangeText('  ', lineStart, lineStart, 'preserve');
+        el.setRangeText('  ', lineStart, lineStart, 'preserve');
       }
-      editor.dispatchEvent(new Event('input'));
+      el.dispatchEvent(new Event('input'));
       return;
     }
   }
   if (e.key === 'Enter' && !acItems.length) {
-    const { selectionStart: a, value } = editor;
+    const { selectionStart: a, value } = el;
     const lineStart = value.lastIndexOf('\n', a - 1) + 1;
     const line = value.slice(lineStart, a);
     const m = line.match(LIST_RE);
@@ -1718,15 +1774,16 @@ editor.addEventListener('keydown', (e) => {
       e.preventDefault();
       if (line.trim() === m[0].trim()) {
         // Empty list item: Enter clears it (like Typora/Obsidian).
-        editor.setRangeText('', lineStart, a, 'end');
+        el.setRangeText('', lineStart, a, 'end');
       } else {
         const marker = m[3] ? `${m[1]}${m[2]} [ ] ` : m[0];
-        editor.setRangeText('\n' + marker, a, a, 'end');
+        el.setRangeText('\n' + marker, a, a, 'end');
       }
-      editor.dispatchEvent(new Event('input'));
+      el.dispatchEvent(new Event('input'));
     }
   }
-});
+}
+editor.addEventListener('keydown', (e) => formatKeydown(e, editor));
 
 // ---- Selection stats ----
 document.addEventListener('selectionchange', () => {
@@ -2052,8 +2109,225 @@ function renderVaultList() {
 document.getElementById('set-reopen').addEventListener('change', (e) => {
   localStorage.setItem('reopenLast', e.target.checked ? '1' : '');
 });
+document.getElementById('set-live').addEventListener('change', (e) => {
+  localStorage.setItem('liveDefault', e.target.checked ? '1' : '0');
+});
 if (localStorage.getItem('reopenLast') && localStorage.getItem('lastVault')) {
   openFolder(localStorage.getItem('lastVault'));
+}
+
+// ==== Phase D: in-place live editing (Typora-style blocks) ====
+const liveWrap = document.getElementById('live-wrap');
+const liveDocEl = document.getElementById('live-doc');
+let viewMode = 'read'; // read | live | split
+let liveDoc = '';
+let liveBlocks = [];
+let activeBlockEl = null;
+let liveSaveTimer = null;
+let liveDirty = false;
+
+function liveDefaultOn() { return localStorage.getItem('liveDefault') !== '0'; }
+
+async function saveLive() {
+  if (!liveDirty || !currentFile) return;
+  try {
+    lastSelfSave = Date.now();
+    await invoke('save_file', { path: currentFile, content: liveDoc, vaultRoot: currentFolder });
+    liveDirty = false;
+    saveState.textContent = 'saved ' + new Date().toLocaleTimeString();
+    flashLive('saved');
+  } catch (e) { showError('Save failed: ' + e); }
+}
+function scheduleLiveSave() {
+  liveDirty = true;
+  clearTimeout(liveSaveTimer);
+  liveSaveTimer = setTimeout(saveLive, 800);
+}
+
+async function renderLiveDoc(preserveScroll = true) {
+  const ratio = preserveScroll && liveWrap.scrollHeight > 0
+    ? liveWrap.scrollTop / liveWrap.scrollHeight : 0;
+  liveBlocks = await invoke('render_blocks',
+    { md: liveDoc, vaultRoot: currentFolder, filePath: currentFile });
+  liveDocEl.innerHTML = '';
+  activeBlockEl = null;
+  liveBlocks.forEach((b, i) => {
+    const div = document.createElement('div');
+    div.className = 'block';
+    div.dataset.i = i;
+    div.innerHTML = b.html || '<span style="color:var(--muted)">·</span>';
+    liveDocEl.appendChild(div);
+  });
+  const add = document.createElement('div');
+  add.className = 'block-append';
+  add.textContent = '+ Click to write…';
+  add.onclick = () => appendBlock();
+  liveDocEl.appendChild(add);
+  postRender(liveDocEl);
+  buildToc(liveDocEl);
+  liveWrap.scrollTop = ratio * liveWrap.scrollHeight;
+}
+
+function autosize(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 'px';
+}
+
+async function commitActiveBlock(rerender = true) {
+  if (!activeBlockEl) return;
+  const ta = activeBlockEl.querySelector('textarea.block-edit');
+  if (!ta) { activeBlockEl = null; return; }
+  const i = parseInt(activeBlockEl.dataset.i, 10);
+  const oldText = liveBlocks[i]?.text ?? '';
+  const newText = ta.value;
+  const el = activeBlockEl;
+  activeBlockEl = null;
+  if (newText === oldText) {
+    el.classList.remove('active');
+    el.innerHTML = liveBlocks[i].html;
+    postRender(el);
+    return;
+  }
+  liveBlocks[i].text = newText;
+  liveDoc = liveBlocks.map(b => b.text).join('');
+  scheduleLiveSave();
+  if (rerender) await renderLiveDoc();
+}
+
+function activateBlock(el) {
+  if (activeBlockEl === el) return;
+  commitActiveBlock(false).then(() => {
+    const i = parseInt(el.dataset.i, 10);
+    el.classList.add('active');
+    el.innerHTML = '';
+    const ta = document.createElement('textarea');
+    ta.className = 'block-edit';
+    ta.value = liveBlocks[i].text;
+    el.appendChild(ta);
+    activeBlockEl = el;
+    autosize(ta);
+    ta.focus();
+    // Caret at the end of the content (before trailing blank lines).
+    const end = ta.value.replace(/\n+$/, '').length;
+    ta.setSelectionRange(end, end);
+    ta.addEventListener('input', () => autosize(ta));
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); commitActiveBlock(); return; }
+      formatKeydown(e, ta);
+    });
+    ta.addEventListener('paste', (e) => editorPaste(e, ta));
+    ta.addEventListener('blur', () => {
+      // Delay so clicks on other blocks activate them after this commit.
+      setTimeout(() => { if (activeBlockEl === el) commitActiveBlock(); }, 120);
+    });
+  });
+}
+
+function appendBlock() {
+  commitActiveBlock(false).then(() => {
+    if (liveDoc && !liveDoc.endsWith('\n')) liveDoc += '\n';
+    if (liveDoc && !liveDoc.endsWith('\n\n')) liveDoc += '\n';
+    liveBlocks.push({ text: '', html: '' });
+    const div = document.createElement('div');
+    div.className = 'block';
+    div.dataset.i = liveBlocks.length - 1;
+    liveDocEl.insertBefore(div, liveDocEl.lastElementChild);
+    activateBlock(div);
+  });
+}
+
+liveDocEl.addEventListener('click', async (e) => {
+  // Links, tags, and checkboxes behave like the reading view.
+  const a = e.target.closest('a');
+  if (a) {
+    const href = a.getAttribute('href') || '';
+    if (href.startsWith('hashtag:')) {
+      e.preventDefault();
+      runSearch(decodeURIComponent(href.slice(8)), 'tag');
+      return;
+    }
+    if (href.startsWith('wikilink:')) {
+      e.preventDefault();
+      if (!currentFolder) return;
+      const target = decodeURIComponent(href.slice('wikilink:'.length)).split('#')[0];
+      try {
+        await commitActiveBlock(false);
+        const resolved = await invoke('resolve_wikilink', { root: currentFolder, target, from: currentFile || '' });
+        openFile(resolved);
+      } catch (err) { showError(String(err)); }
+      return;
+    }
+    return; // external links: default behavior
+  }
+  if (e.target.matches('input[type="checkbox"]')) {
+    e.preventDefault();
+    const boxes = [...liveDocEl.querySelectorAll('input[type="checkbox"]')];
+    const index = boxes.indexOf(e.target);
+    const flipped = flipTaskInString(liveDoc, index);
+    if (flipped !== null) {
+      liveDoc = flipped;
+      scheduleLiveSave();
+      renderLiveDoc();
+    }
+    return;
+  }
+  const block = e.target.closest('.block');
+  if (block && !activeBlockEl?.contains(e.target)) activateBlock(block);
+});
+bindHoverPreview(liveDocEl);
+
+function flipTaskInString(str, index) {
+  const lines = str.split('\n');
+  let seen = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trimStart();
+    if (/^[-*+] \[.\]/.test(t)) {
+      if (seen === index) {
+        const pos = lines[i].length - t.length + 3;
+        const state = lines[i][pos] === ' ' ? 'x' : ' ';
+        lines[i] = lines[i].slice(0, pos) + state + lines[i].slice(pos + 1);
+        return lines.join('\n');
+      }
+      seen++;
+    }
+  }
+  return null;
+}
+
+// ---- View modes: read / live / split ----
+async function setViewMode(mode) {
+  if (mode === viewMode) return;
+  // Leave the current mode cleanly.
+  if (viewMode === 'split') { if (dirty) await saveNow(); editMode = false; editorWrap.classList.remove('show'); }
+  if (viewMode === 'live') { await commitActiveBlock(false); await saveLive(); liveWrap.classList.remove('show'); }
+  document.getElementById('scroll').style.display = 'none';
+  viewMode = mode;
+  const btn = document.getElementById('edit-toggle');
+  if (mode === 'read') {
+    document.getElementById('scroll').style.display = '';
+    btn.textContent = 'Edit';
+    window._noAutoLive = Date.now();
+    if (currentFile) openFile(currentFile, false, true);
+  } else if (mode === 'live') {
+    if (!currentFile || !/\.(md|markdown)$/.test(currentFile)) {
+      document.getElementById('scroll').style.display = '';
+      viewMode = 'read';
+      showError('Live editing works on Markdown files.');
+      return;
+    }
+    liveDoc = await invoke('read_source', { path: currentFile });
+    liveDirty = false;
+    liveWrap.classList.add('show');
+    btn.textContent = 'Reading';
+    renderLiveDoc(false);
+  } else if (mode === 'split') {
+    editMode = true;
+    editor.value = await invoke('read_source', { path: currentFile });
+    editorWrap.classList.add('show');
+    btn.textContent = 'Live';
+    refreshEditPreview();
+    editor.focus();
+  }
 }
 
 // ---- Drag & drop ----

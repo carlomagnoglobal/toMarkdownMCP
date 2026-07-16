@@ -127,8 +127,27 @@ fn apply_inline_syntax(md: &str) -> String {
     let mut out = Vec::new();
     let mut in_fence = false;
     let mut in_comment = false;
+    let mut math_block: Option<Vec<String>> = None;
     for line in md.lines() {
         let trimmed = line.trim_start();
+        // Multi-line display math: standalone $$ lines delimit a block.
+        if let Some(buf) = &mut math_block {
+            if trimmed == "$$" {
+                let tex = buf.join("\n");
+                out.push(format!(
+                    "<div class=\"math-block\" data-tex=\"{}\"></div>",
+                    percent_encode(&escape_html(&tex))
+                ));
+                math_block = None;
+            } else {
+                buf.push(line.to_string());
+            }
+            continue;
+        }
+        if !in_fence && trimmed == "$$" {
+            math_block = Some(Vec::new());
+            continue;
+        }
         if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
             in_fence = !in_fence;
             out.push(line.to_string());
@@ -139,6 +158,11 @@ fn apply_inline_syntax(md: &str) -> String {
             continue;
         }
         out.push(transform_inline_line(line, &mut in_comment));
+    }
+    // Unterminated $$ block degrades to literal lines.
+    if let Some(buf) = math_block {
+        out.push("$$".to_string());
+        out.extend(buf);
     }
     out.join("\n")
 }
@@ -579,6 +603,108 @@ fn resolve_src(src: &str, opts: &RenderOpts) -> String {
     }
 }
 
+// ---- Block splitting (live editor) ----
+
+/// Split source into editable blocks, losslessly: concatenating the returned
+/// strings reproduces the input byte-for-byte. A block is a run of non-blank
+/// lines (fences, frontmatter, and $$ math kept whole) plus its trailing
+/// blank lines.
+pub fn split_blocks(src: &str) -> Vec<String> {
+    // Split keeping line endings so reassembly is exact.
+    let mut lines: Vec<&str> = Vec::new();
+    let mut rest = src;
+    while !rest.is_empty() {
+        match rest.find('\n') {
+            Some(i) => {
+                lines.push(&rest[..=i]);
+                rest = &rest[i + 1..];
+            }
+            None => {
+                lines.push(rest);
+                rest = "";
+            }
+        }
+    }
+    let is_blank = |l: &str| l.trim().is_empty();
+    let mut blocks: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut i = 0;
+    let mut in_content = false; // current holds non-blank content
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        if is_blank(line) {
+            if in_content || !blocks.is_empty() || !current.is_empty() {
+                current.push_str(line);
+            } else {
+                current.push_str(line); // leading blanks form their own prefix block
+            }
+            i += 1;
+            // A blank after content closes the block once the blank run ends.
+            if in_content {
+                while i < lines.len() && is_blank(lines[i]) {
+                    current.push_str(lines[i]);
+                    i += 1;
+                }
+                blocks.push(std::mem::take(&mut current));
+                in_content = false;
+            }
+            continue;
+        }
+        // Frontmatter at the very start: keep whole.
+        if i == 0 && trimmed.trim_end() == "---" {
+            current.push_str(line);
+            i += 1;
+            while i < lines.len() {
+                current.push_str(lines[i]);
+                let end = lines[i].trim().trim_end() == "---";
+                i += 1;
+                if end {
+                    break;
+                }
+            }
+            in_content = true;
+            continue;
+        }
+        // Fenced code and $$ math: keep whole until the closing marker.
+        let fence = if trimmed.starts_with("```") {
+            Some("```")
+        } else if trimmed.starts_with("~~~") {
+            Some("~~~")
+        } else if trimmed.trim_end() == "$$" {
+            Some("$$")
+        } else {
+            None
+        };
+        if let Some(marker) = fence {
+            current.push_str(line);
+            i += 1;
+            while i < lines.len() {
+                current.push_str(lines[i]);
+                let t = lines[i].trim_start();
+                let closes = if marker == "$$" {
+                    t.trim_end() == "$$"
+                } else {
+                    t.starts_with(marker)
+                };
+                i += 1;
+                if closes {
+                    break;
+                }
+            }
+            in_content = true;
+            continue;
+        }
+        current.push_str(line);
+        in_content = true;
+        i += 1;
+    }
+    if !current.is_empty() {
+        blocks.push(current);
+    }
+    blocks
+}
+
 // ---- Entry point ----
 
 /// Full pipeline: Obsidian inline syntax → callouts → wikilinks/embeds →
@@ -673,6 +799,45 @@ mod tests {
         // Non-embed wikilinks stay anchors.
         let html = render_note("See [[Note B|second]]", &opts, 0);
         assert!(html.contains("href=\"wikilink:Note%20B\""));
+    }
+
+    #[test]
+    fn multiline_math_blocks_render() {
+        let html = render_note("before\n\n$$\n\\int_0^1 x\n$$\n\nafter", &RenderOpts::PLAIN, 0);
+        assert!(html.contains("math-block"), "html: {}", html);
+        assert!(html.contains("int_0^1"), "html: {}", html);
+    }
+
+    #[test]
+    fn split_blocks_is_lossless_everywhere() {
+        // Synthetic edge cases.
+        let cases = [
+            "",
+            "no trailing newline",
+            "\n\nleading blanks\n",
+            "---\ntitle: x\n---\nbody\n\npara two\n",
+            "a\n\n```rust\ncode\n\nwith blank\n```\n\nb\n",
+            "$$\nx^2\n$$\n",
+            "unclosed fence\n```\nnever ends\n",
+            "one\n\n\n\nmany blanks\n\n",
+        ];
+        for c in cases {
+            assert_eq!(split_blocks(c).concat(), c, "case: {:?}", c);
+        }
+        // Every fixture note round-trips byte-exactly.
+        let vault = vault();
+        for entry in std::fs::read_dir(&vault).unwrap().flatten() {
+            let p = entry.path();
+            if p.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let src = std::fs::read_to_string(&p).unwrap();
+            assert_eq!(split_blocks(&src).concat(), src, "file: {}", p.display());
+            // And blocks are usefully granular, not one giant block.
+            if src.lines().count() > 10 {
+                assert!(split_blocks(&src).len() > 2, "file: {}", p.display());
+            }
+        }
     }
 
     #[test]

@@ -368,6 +368,28 @@ fn render_markdown(md: String, vault_root: Option<String>, file_path: Option<Str
     render_note(&md, &opts, 0)
 }
 
+/// Split a document into lossless blocks and render each — the live editor's
+/// data model. Rejoining the returned texts reproduces the document exactly.
+#[tauri::command]
+async fn render_blocks(
+    md: String,
+    vault_root: Option<String>,
+    file_path: Option<String>,
+) -> Vec<serde_json::Value> {
+    let file_dir = file_path.as_deref().and_then(|p| Path::new(p).parent().map(Path::to_path_buf));
+    let opts = RenderOpts {
+        file_dir: file_dir.as_deref(),
+        vault_root: vault_root.as_deref().map(Path::new),
+    };
+    render::split_blocks(&md)
+        .into_iter()
+        .map(|text| {
+            let html = render_note(&text, &opts, 0);
+            serde_json::json!({ "text": text, "html": html })
+        })
+        .collect()
+}
+
 /// Class-based syntect CSS for both themes; injected once by the frontend.
 #[tauri::command]
 fn syntax_css() -> String {
@@ -855,7 +877,7 @@ fn main() {
             related_notes, semantic_search, set_api_key, ai_action, syntax_css,
             doc_stats, peek_note,
             daily_note, list_templates, new_folder, delete_path,
-            reveal_in_finder, unlinked_mentions
+            reveal_in_finder, unlinked_mentions, render_blocks
         ])
         .run(tauri::generate_context!())
         .expect("error while running toMarkdown Viewer");
