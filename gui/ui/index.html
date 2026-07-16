@@ -1662,7 +1662,7 @@ function bindHoverPreview(container) {
     hoverTimer = setTimeout(async () => {
       const target = decodeURIComponent(a.getAttribute('href').slice('wikilink:'.length)).split('#')[0];
       try {
-        const peek = await invoke('peek_note', { root: currentFolder, target });
+        const peek = await invoke('peek_note', { root: currentFolder, target, from: currentFile });
         if (token !== hoverToken) return; // pointer moved on — stale response
         hoverPop.innerHTML = `<div class="pop-path">${peek.path}${peek.truncated ? ' · …' : ''}</div>` + peek.html;
         postRender(hoverPop);

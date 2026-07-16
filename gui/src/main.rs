@@ -636,19 +636,40 @@ fn doc_stats(content: String) -> serde_json::Value {
 }
 
 /// Rendered snippet of a wikilink target, for the hover page-preview.
+/// Resolves relative to `from` (the note being read); broken links and
+/// non-Markdown targets return an informational preview instead of an error
+/// so every hover shows something.
 #[tauri::command]
-fn peek_note(root: String, target: String) -> Result<serde_json::Value, String> {
+fn peek_note(root: String, target: String, from: Option<String>) -> Result<serde_json::Value, String> {
     let rootp = PathBuf::from(&root);
     let idx = vault::get_index(&rootp).map_err(|e| e.to_string())?;
-    let rel = match vault::resolve_target(&idx, &target, None) {
+    let from_rel = from.as_deref().and_then(|f| vault_rel(&root, f));
+    let rel = match vault::resolve_target(&idx, &target, from_rel.as_deref()) {
         vault::Resolution::Resolved(r) => r,
         vault::Resolution::Ambiguous(mut c) => {
             c.sort_by_key(|p| p.len());
-            c.into_iter().next().ok_or("ambiguous with no candidates")?
+            match c.into_iter().next() {
+                Some(r) => r,
+                None => return Ok(peek_missing(&target)),
+            }
         }
-        vault::Resolution::Broken => return Err(format!("Broken link: {}", target)),
+        vault::Resolution::Broken => return Ok(peek_missing(&target)),
     };
     let abs = rootp.join(&rel);
+    let is_md = abs.extension().and_then(|e| e.to_str()).is_none_or(|e| e == "md");
+    if !is_md {
+        // Non-note target (canvas, attachment, ...): show basic file info.
+        let size = std::fs::metadata(&abs).map(|m| m.len()).unwrap_or(0);
+        return Ok(serde_json::json!({
+            "path": rel,
+            "html": format!(
+                "<em>{} — {:.1} KB. Click the link to open it.</em>",
+                abs.extension().and_then(|e| e.to_str()).unwrap_or("file"),
+                size as f64 / 1024.0
+            ),
+            "truncated": false,
+        }));
+    }
     let content = std::fs::read_to_string(&abs).map_err(|e| e.to_string())?;
     let (_, body) = to_markdown_mcp::obsidian::frontmatter::split(&content);
     let snippet: String = body.lines().take(30).collect::<Vec<_>>().join("\n");
@@ -658,6 +679,14 @@ fn peek_note(root: String, target: String) -> Result<serde_json::Value, String> 
         "html": render_note(&snippet, &opts, 1),
         "truncated": body.lines().count() > 30,
     }))
+}
+
+fn peek_missing(target: &str) -> serde_json::Value {
+    serde_json::json!({
+        "path": "not found",
+        "html": format!("<em>No note found for “{}”.</em>", target.replace('<', "&lt;")),
+        "truncated": false,
+    })
 }
 
 /// Read a small text file (user CSS). Capped at 1MB.
