@@ -383,6 +383,15 @@
   #lightbox img { max-width: 94vw; max-height: 94vh; border-radius: 4px;
     box-shadow: 0 8px 40px rgba(0,0,0,.6); }
   #content img, #edit-preview img { cursor: zoom-in; }
+  #cheatsheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none;
+    align-items: center; justify-content: center; z-index: 260; }
+  #cheatsheet-overlay.show { display: flex; }
+  #cheatsheet { background: var(--bg, #fff); color: inherit; border-radius: 10px; padding: 20px 26px;
+    max-height: 80vh; overflow-y: auto; min-width: 420px; box-shadow: 0 8px 40px rgba(0,0,0,.35); }
+  #cheatsheet h3 { margin: 12px 0 6px; font-size: 13px; text-transform: uppercase; opacity: .6; }
+  #cheatsheet div.row { display: flex; justify-content: space-between; gap: 24px; padding: 3px 0; font-size: 13.5px; }
+  #cheatsheet kbd { background: rgba(128,128,128,.18); border-radius: 4px; padding: 1px 7px;
+    font: 12px ui-monospace, monospace; }
   @media print {
     #sidebar, #statusbar, #error { display: none !important; }
     #main, #scroll { overflow: visible !important; }
@@ -537,6 +546,7 @@
     </div>
   </div>
   <div id="lightbox" role="dialog" aria-label="Image preview"><img alt=""></div>
+  <div id="cheatsheet-overlay" role="dialog" aria-label="Keyboard shortcuts"><div id="cheatsheet"></div></div>
 <script>
 const invoke = window.__TAURI__.core.invoke;
 const listen = window.__TAURI__.event.listen;
@@ -579,6 +589,33 @@ lightbox.addEventListener('click', closeLightbox);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && lightbox.classList.contains('show')) { e.stopPropagation(); closeLightbox(); }
 }, true);
+
+// ---- Shortcut cheat sheet ----
+const SHORTCUTS = [
+  ['General', [['Cmd/Ctrl+K', 'Command palette'], ['Cmd/Ctrl+O / Cmd/Ctrl+P', 'Quick switcher'],
+    ['Cmd/Ctrl+,', 'Settings'], ['?', 'This cheat sheet'], ['Esc', 'Close overlay']]],
+  ['View', [['Cmd/Ctrl+E', 'Toggle live editing'], ['Cmd/Ctrl+Shift+E', 'Toggle split source']]],
+  ['Notes', [['Cmd/Ctrl+D', 'Daily note'], ['Cmd/Ctrl+S', 'Save (editor)'], ['Cmd/Ctrl+W', 'Close tab'],
+    ['Cmd/Ctrl+Shift+Z', 'Zen mode (toggle sidebar)'], ['Cmd/Ctrl+1-9', 'Jump to tab N']]],
+  ['Editing', [['Cmd/Ctrl+B', 'Bold'], ['Cmd/Ctrl+I', 'Italic'], ['Cmd/Ctrl+Shift+X', 'Strikethrough'],
+    ['Cmd/Ctrl+Shift+K', 'Insert link']]],
+];
+const cheatOverlay = document.getElementById('cheatsheet-overlay');
+function openCheatsheet() {
+  const box = document.getElementById('cheatsheet');
+  box.innerHTML = SHORTCUTS.map(([title, rows]) =>
+    `<h3>${title}</h3>` + rows.map(([k, d]) =>
+      `<div class="row"><span>${escapeHtml(d)}</span><kbd>${escapeHtml(k)}</kbd></div>`).join('')
+  ).join('');
+  cheatOverlay.classList.add('show'); trapFocus(cheatOverlay);
+}
+function closeCheatsheet() { cheatOverlay.classList.remove('show'); releaseFocus(cheatOverlay); }
+cheatOverlay.addEventListener('click', (e) => { if (e.target === cheatOverlay) closeCheatsheet(); });
+document.addEventListener('keydown', (e) => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+  if (e.key === '?' && !typing && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openCheatsheet(); }
+  if (e.key === 'Escape' && cheatOverlay.classList.contains('show')) closeCheatsheet();
+});
 
 invoke('syntax_css').then(css => {
   const st = document.createElement('style');
@@ -1828,6 +1865,7 @@ const COMMANDS = [
   { label: 'Theme: Dark', run: () => applyTheme('dark') },
   { label: 'Theme: Sepia', run: () => applyTheme('sepia') },
   { label: 'Settings…', run: openSettings },
+  { label: 'Keyboard Shortcuts (?)', run: openCheatsheet },
 ];
 function openPalette() {
   switcherOverlay.classList.add('show');
