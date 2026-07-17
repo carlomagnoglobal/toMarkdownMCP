@@ -1053,17 +1053,38 @@ async fn save_import(
 /// Anthropic estimate) with frequency tables, rendered as Markdown.
 #[tauri::command]
 async fn text_metrics(content: String) -> Result<String, String> {
-    use to_markdown_mcp::textmetrics::{analyze_text, metrics_to_markdown, TokenizerSpec};
+    use to_markdown_mcp::textmetrics::{analyze_text, TokenizerSpec};
+    fn freq_table(title: &str, rows: &[(String, usize)]) -> String {
+        let mut s = format!("\n## {} ({} distinct)\n\n", title, rows.len());
+        if rows.is_empty() {
+            s.push_str("(none)\n");
+            return s;
+        }
+        s.push_str("| Item | Count |\n| --- | --- |\n");
+        for (w, c) in rows {
+            s.push_str(&format!("| `{}` | {} |\n", w.replace('|', "\\|").replace('`', "'"), c));
+        }
+        s
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let openai = analyze_text(&content, &TokenizerSpec::OpenAi { model: "gpt-4o".into() })
             .map_err(|e| e.to_string())?;
         let anthropic = analyze_text(&content, &TokenizerSpec::Anthropic)
             .map_err(|e| e.to_string())?;
-        let mut md = metrics_to_markdown(&openai, 15);
+        let mut md = String::from("## Summary\n\n| Metric | Value |\n| --- | --- |\n");
+        md.push_str(&format!("| Words | {} |\n", openai.words));
+        md.push_str(&format!("| Characters | {} |\n", openai.chars));
+        md.push_str(&format!("| Spaces | {} |\n", openai.spaces));
         md.push_str(&format!(
-            "\n## Other tokenizers\n\n- **Anthropic/Claude:** ~{} tokens ({})\n",
-            anthropic.tokens, anthropic.method
+            "| OpenAI tokens | {}{} |\n",
+            openai.tokens,
+            if openai.exact { "" } else { " (estimated)" }
         ));
+        md.push_str(&format!("| Anthropic/Claude tokens | ~{} |\n", anthropic.tokens));
+        md.push_str(&format!("| Tokenization | {} |\n", openai.method));
+        md.push_str(&freq_table("Word frequency", &openai.word_freq));
+        md.push_str(&freq_table("Character frequency", &openai.char_freq));
+        md.push_str(&freq_table("Token frequency", &openai.token_freq));
         Ok(md)
     })
     .await
