@@ -957,6 +957,136 @@ async fn pick_file(app: tauri::AppHandle) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
+/// Result of converting an external file or URL to Markdown.
+#[derive(Serialize)]
+struct Converted {
+    markdown: String,
+    suggested_name: String,
+    source: String,
+}
+
+fn slugify(s: &str) -> String {
+    let slug: String = s
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let slug = slug.trim().to_string();
+    if slug.is_empty() { "Imported".into() } else { slug.chars().take(80).collect() }
+}
+
+#[tauri::command]
+async fn convert_file_to_markdown(path: String) -> Result<Converted, String> {
+    let p = PathBuf::from(&path);
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Imported".into());
+    let markdown = tauri::async_runtime::spawn_blocking(move || {
+        convert_any_to_markdown(&p).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(Converted { markdown, suggested_name: format!("{}.md", slugify(&stem)), source: path })
+}
+
+#[tauri::command]
+async fn convert_url_to_markdown(url: String) -> Result<Converted, String> {
+    use to_markdown_mcp::html_converter;
+    use to_markdown_mcp::sources::{fetch_from_source, SourceType};
+    let src = SourceType::from_string(&url).map_err(|e| e.to_string())?;
+    if !matches!(src, SourceType::Url(_)) {
+        return Err("Enter a full http(s):// URL.".into());
+    }
+    let html = fetch_from_source(&src).await.map_err(|e| e.to_string())?;
+    let markdown =
+        html_converter::html_to_markdown_with_metadata(&html, true).map_err(|e| e.to_string())?;
+    let title = html_converter::extract_html_metadata(&html)
+        .ok()
+        .and_then(|m| m.get("title").cloned())
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| {
+            url.split("//").nth(1).and_then(|r| r.split('/').next()).unwrap_or("Imported").into()
+        });
+    Ok(Converted { markdown, suggested_name: format!("{}.md", slugify(&title)), source: url })
+}
+
+/// Save converted markdown: into `<root>/Imports/` (deduped) or via Save As dialog.
+#[tauri::command]
+async fn save_import(
+    app: tauri::AppHandle,
+    root: Option<String>,
+    suggested_name: String,
+    markdown: String,
+    pick: bool,
+) -> Result<Option<String>, String> {
+    if pick || root.is_none() {
+        let Some(dest) = app
+            .dialog()
+            .file()
+            .set_file_name(&suggested_name)
+            .add_filter("Markdown", &["md"])
+            .blocking_save_file()
+        else {
+            return Ok(None);
+        };
+        let path = dest.into_path().map_err(|e| e.to_string())?;
+        std::fs::write(&path, markdown).map_err(|e| e.to_string())?;
+        return Ok(Some(path.display().to_string()));
+    }
+    let dir = PathBuf::from(root.unwrap()).join("Imports");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let base = suggested_name.trim_end_matches(".md");
+    let mut path = dir.join(format!("{}.md", base));
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("{} {}.md", base, n));
+        n += 1;
+    }
+    std::fs::write(&path, markdown).map_err(|e| e.to_string())?;
+    Ok(Some(path.display().to_string()))
+}
+
+/// TUI-style text analysis: word/char/space/token counts (OpenAI exact +
+/// Anthropic estimate) with frequency tables, rendered as Markdown.
+#[tauri::command]
+async fn text_metrics(content: String) -> Result<String, String> {
+    use to_markdown_mcp::textmetrics::{analyze_text, metrics_to_markdown, TokenizerSpec};
+    tauri::async_runtime::spawn_blocking(move || {
+        let openai = analyze_text(&content, &TokenizerSpec::OpenAi { model: "gpt-4o".into() })
+            .map_err(|e| e.to_string())?;
+        let anthropic = analyze_text(&content, &TokenizerSpec::Anthropic)
+            .map_err(|e| e.to_string())?;
+        let mut md = metrics_to_markdown(&openai, 15);
+        md.push_str(&format!(
+            "\n## Other tokenizers\n\n- **Anthropic/Claude:** ~{} tokens ({})\n",
+            anthropic.tokens, anthropic.method
+        ));
+        Ok(md)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Extensions the converter pipeline handles beyond plain Markdown.
+#[tauri::command]
+fn is_convertible(path: String) -> bool {
+    let ext = Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+    matches!(
+        ext.as_deref(),
+        Some(
+            "pdf" | "docx" | "xlsx" | "pptx" | "odt" | "ods" | "odp" | "eml" | "epub" | "html"
+                | "htm" | "xml" | "rss" | "atom" | "csv" | "tsv" | "json" | "yaml" | "yml"
+                | "toml" | "rst" | "adoc" | "asciidoc" | "org" | "tex" | "webarchive"
+        )
+    )
+}
+
 fn main() {
     use tauri::Manager;
     let app = tauri::Builder::default()
@@ -990,7 +1120,9 @@ fn main() {
             doc_stats, peek_note,
             daily_note, list_templates, new_folder, delete_path,
             reveal_in_finder, unlinked_mentions, render_blocks,
-            export_docx, export_rtf, take_pending_opens
+            export_docx, export_rtf, take_pending_opens,
+            convert_file_to_markdown, convert_url_to_markdown, save_import, is_convertible,
+            text_metrics
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");

@@ -55,7 +55,15 @@ pub fn syntax_css() -> String {
             .map(|l| {
                 let t = l.trim_start();
                 if t.starts_with('.') || t.starts_with("code") {
-                    format!("{} {}", prefix, l)
+                    // Selector lists are comma-separated on one line; every
+                    // selector must be scoped or its colors leak across themes.
+                    let sel = l.trim_end().trim_end_matches('{').trim_end();
+                    let scoped = sel
+                        .split(',')
+                        .map(|s| format!("{} {}", prefix, s.trim()))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{} {{", scoped)
                 } else {
                     l.to_string()
                 }
@@ -63,9 +71,14 @@ pub fn syntax_css() -> String {
             .collect::<Vec<_>>()
             .join("\n")
     };
+    // Light rules must be hard-scoped to the light themes (not just outranked):
+    // InspiredGitHub ships JSON rules dozens of classes deep whose specificity
+    // beats any theme-prefixed dark selector.
     format!(
-        "{}\n{}\n@media (prefers-color-scheme: dark) {{\n{}\n}}\n",
-        scope(&light, ":root"),
+        "{}\n{}\n@media (prefers-color-scheme: light) {{\n{}\n}}\n{}\n@media (prefers-color-scheme: dark) {{\n{}\n}}\n",
+        scope(&light, ":root[data-theme=\"light\"]"),
+        scope(&light, ":root[data-theme=\"sepia\"]"),
+        scope(&light, ":root[data-theme=\"system\"]"),
         scope(&dark, ":root[data-theme=\"dark\"]"),
         scope(&dark, ":root[data-theme=\"system\"]"),
     )
@@ -843,7 +856,12 @@ mod tests {
     #[test]
     fn syntax_css_covers_both_themes() {
         let css = syntax_css();
-        assert!(css.contains(":root ."));
-        assert!(css.contains(":root[data-theme=\"dark\"]"));
+        assert!(css.contains(":root[data-theme=\"light\"] ."));
+        assert!(css.contains(":root[data-theme=\"sepia\"] ."));
+        assert!(css.contains(":root[data-theme=\"dark\"] ."));
+        assert!(css.contains(":root[data-theme=\"system\"] ."));
+        // Light rules must never apply unscoped — their deep JSON selectors
+        // would outrank any dark-theme selector by specificity.
+        assert!(!css.contains("\n:root ."));
     }
 }

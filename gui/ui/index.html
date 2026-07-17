@@ -11,26 +11,33 @@
     --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --border: #d1d9e0;
     --sidebar-bg: #f6f8fa; --accent: #0969da; --code-bg: #f6f8fa;
     --hover: #eaeef2; --active: #ddf4ff;
+    --danger: #d1242f; --success: #1a7f37; --warning: #d29922; --question: #8250df;
+    --mark-bg: #ffd54a66; --shadow: 0 12px 40px rgba(31, 35, 40, .25);
   }
   :root[data-theme="dark"] {
     --bg: #0d1117; --fg: #f0f6fc; --muted: #9198a1; --border: #3d444d;
     --sidebar-bg: #010409; --accent: #4493f8; --code-bg: #2d2d2d;
     --hover: #15191f; --active: #0c2d6b;
+    --danger: #f85149; --success: #3fb950; --warning: #d29922; --question: #a371f7;
+    --mark-bg: #b8860b66; --shadow: 0 12px 40px rgba(0, 0, 0, .55);
   }
-  :root[data-theme="dark"] mark { background: #b8860b66; }
   :root[data-theme="sepia"] {
     --bg: #f4ecd8; --fg: #433422; --muted: #8a7a5c; --border: #d8cba8;
     --sidebar-bg: #ede3c8; --accent: #9a6a28; --code-bg: #ece1c4;
     --hover: #e6dabc; --active: #ddcf9e;
+    --danger: #a83232; --success: #4f6b31; --warning: #a4762a; --question: #6d5a8f;
+    --mark-bg: #d8a83766; --shadow: 0 12px 40px rgba(67, 52, 34, .3);
   }
   @media (prefers-color-scheme: dark) {
     :root[data-theme="system"] {
       --bg: #0d1117; --fg: #f0f6fc; --muted: #9198a1; --border: #3d444d;
       --sidebar-bg: #010409; --accent: #4493f8; --code-bg: #2d2d2d;
       --hover: #15191f; --active: #0c2d6b;
+      --danger: #f85149; --success: #3fb950; --warning: #d29922; --question: #a371f7;
+      --mark-bg: #b8860b66; --shadow: 0 12px 40px rgba(0, 0, 0, .55);
     }
-    :root[data-theme="system"] mark { background: #b8860b66; }
   }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   * { box-sizing: border-box; }
   body {
     margin: 0; display: flex; height: 100vh; overflow: hidden;
@@ -93,10 +100,45 @@
     display: flex; gap: 18px; flex-shrink: 0;
   }
   #statusbar .live { color: var(--accent); }
+  #stats { cursor: pointer; border-radius: 4px; padding: 0 4px; margin: 0 -4px; }
+  #stats:hover { background: var(--hover); color: var(--fg); }
   #error {
-    display: none; margin: 12px; padding: 10px 14px; border: 1px solid #d1242f;
-    border-radius: 6px; color: #d1242f; font-size: 13px;
+    display: none; margin: 12px; padding: 10px 14px; border: 1px solid var(--danger);
+    border-radius: 6px; color: var(--danger); font-size: 13px;
   }
+  #toast-stack {
+    position: fixed; right: 16px; bottom: 40px; z-index: 100;
+    display: flex; flex-direction: column; gap: 8px; max-width: 340px;
+  }
+  .toast {
+    padding: 9px 14px; border-radius: 8px; font-size: 13px; cursor: pointer;
+    background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent); box-shadow: var(--shadow);
+    transition: opacity .3s;
+  }
+  .toast.success { border-left-color: var(--success); }
+  .toast.error { border-left-color: var(--danger); }
+  .toast.fade { opacity: 0; }
+  button.busy { opacity: .6; pointer-events: none; position: relative; }
+  button.busy::after {
+    content: ""; display: inline-block; width: 10px; height: 10px; margin-left: 6px;
+    border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%;
+    animation: spin .7s linear infinite; vertical-align: -1px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty-state { color: var(--muted); font-size: 12px; padding: 10px 8px; text-align: center; }
+  #import-bar { border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+  #import-bar input[type="text"], #import-bar #import-url {
+    width: 100%; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg); color: var(--fg); margin-bottom: 6px;
+  }
+  #import-bar .import-row { display: flex; align-items: center; gap: 8px; }
+  #import-bar button {
+    padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--fg); cursor: pointer; font-size: 12px;
+  }
+  #import-bar button:hover { background: var(--hover); }
+  #import-bar .import-save-as { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
   #tabs { display: flex; gap: 2px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
   #tabs button {
     flex: 1; padding: 5px 2px; border: none; background: none; color: var(--muted);
@@ -136,7 +178,7 @@
   #switcher {
     position: absolute; top: 15vh; left: 50%; transform: translateX(-50%);
     width: 480px; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.3); overflow: hidden;
+    border-radius: 10px; box-shadow: var(--shadow); overflow: hidden;
   }
   #switcher input {
     width: 100%; padding: 12px 14px; font-size: 15px; border: none; outline: none;
@@ -186,7 +228,7 @@
   #edit-preview a { color: var(--accent); }
   #autocomplete {
     position: fixed; z-index: 60; display: none; background: var(--bg);
-    border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow);
     max-height: 220px; overflow-y: auto; min-width: 220px; font-size: 13px;
   }
   #autocomplete div { padding: 5px 10px; cursor: pointer; }
@@ -194,7 +236,7 @@
   #prompt-box, .dialog-box {
     position: absolute; top: 20vh; left: 50%; transform: translateX(-50%);
     width: 520px; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.3); padding: 14px;
+    border-radius: 10px; box-shadow: var(--shadow); padding: 14px;
   }
   #prompt-box h3 { margin: 0 0 10px; font-size: 14px; }
   #prompt-box input, #prompt-box textarea {
@@ -213,25 +255,38 @@
              border-radius: 6px; padding: 8px 12px; margin: 10px 0; background: var(--code-bg); }
   .callout-title, .callout summary { font-weight: 600; margin-bottom: 4px; cursor: default; }
   .callout summary { cursor: pointer; }
-  .callout-warning, .callout-caution, .callout-attention { border-left-color: #d29922; }
-  .callout-danger, .callout-error, .callout-bug { border-left-color: #d1242f; }
-  .callout-tip, .callout-hint, .callout-success, .callout-check { border-left-color: #1a7f37; }
-  .callout-question, .callout-help, .callout-faq { border-left-color: #8250df; }
+  .callout-warning, .callout-caution, .callout-attention { border-left-color: var(--warning); }
+  .callout-danger, .callout-error, .callout-bug { border-left-color: var(--danger); }
+  .callout-tip, .callout-hint, .callout-success, .callout-check { border-left-color: var(--success); }
+  .callout-question, .callout-help, .callout-faq { border-left-color: var(--question); }
   .transclusion { border: 1px dashed var(--border); border-radius: 8px; padding: 8px 14px; margin: 10px 0; }
   .trans-title { font-size: 12px; margin-bottom: 4px; }
   .trans-title a { color: var(--muted); text-decoration: none; }
   .trans-title a:hover { color: var(--accent); }
-  mark { background: #ffd54a66; color: inherit; border-radius: 2px; padding: 0 2px; }
+  mark { background: var(--mark-bg); color: inherit; border-radius: 2px; padding: 0 2px; }
   .pdf-embed { width: 100%; height: 70vh; border: 1px solid var(--border); border-radius: 6px; }
   pre.mermaid { background: none; border: none; text-align: center; }
   .math-block { text-align: center; margin: 12px 0; }
   audio, video { max-width: 100%; }
-  body.zen #sidebar, body.zen #statusbar { display: none; }
-  mark.kw { background: #4493f855; outline: 1px solid #4493f8aa; }
+  body.zen #sidebar, body.zen #statusbar, body.zen #tabbar { display: none !important; }
+  /* Always-visible scrollbars (macOS overlay scrollbars hide until scrolled) */
+  #scroll, #live-wrap, #sidebar, #editor, #edit-preview, #note-panel,
+  #switcher-results, #result-body { scrollbar-gutter: stable; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted) 45%, transparent);
+    border-radius: 5px; border: 2px solid transparent; background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); border: 2px solid transparent; background-clip: content-box; }
+  mark.kw {
+    background: color-mix(in srgb, var(--accent) 33%, transparent);
+    outline: 1px solid color-mix(in srgb, var(--accent) 66%, transparent);
+  }
   #hover-pop {
     position: fixed; z-index: 70; display: none; width: 380px; max-height: 300px;
     overflow: hidden; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.3); padding: 10px 14px;
+    border-radius: 8px; box-shadow: var(--shadow); padding: 10px 14px;
     font-size: 12.5px; line-height: 1.5;
   }
   #hover-pop .pop-path { color: var(--muted); font-size: 11px; margin-bottom: 6px; }
@@ -248,10 +303,10 @@
   .tab span.t { overflow: hidden; text-overflow: ellipsis; }
   #ctx-menu { position: fixed; z-index: 80; display: none; min-width: 180px; background: var(--bg);
               border: 1px solid var(--border); border-radius: 8px; padding: 4px;
-              box-shadow: 0 10px 30px rgba(0,0,0,.3); font-size: 13px; }
+              box-shadow: var(--shadow); font-size: 13px; }
   #ctx-menu div { padding: 6px 12px; border-radius: 5px; cursor: pointer; }
   #ctx-menu div:hover { background: var(--hover); }
-  #ctx-menu div.danger:hover { background: #d1242f22; color: #d1242f; }
+  #ctx-menu div.danger:hover { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
   #pins-box .section-title { margin-top: 0; }
   .pin-row { display: flex; align-items: center; padding: 2px 6px; border-radius: 4px;
              cursor: pointer; font-size: 12.5px; }
@@ -292,7 +347,7 @@
     position: absolute; top: 10vh; left: 50%; transform: translateX(-50%);
     width: min(720px, 86vw); max-height: 74vh; display: flex; flex-direction: column;
     background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
-    box-shadow: 0 12px 40px rgba(0,0,0,.3);
+    box-shadow: var(--shadow);
   }
   #result-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px;
                  border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 600; }
@@ -333,6 +388,14 @@
       <button id="show-graph" title="Vault link graph">Graph</button>
       <button id="edit-toggle" title="Toggle edit mode (Cmd+E)">Edit</button>
       <button id="new-note" title="Create a note in the vault">New Note</button>
+      <button id="import-btn" title="Convert a file or URL to Markdown">Import…</button>
+    </div>
+    <div id="import-bar" style="display:none">
+      <input id="import-url" placeholder="Paste a URL and press Enter…" aria-label="URL to convert to Markdown">
+      <div class="import-row">
+        <button id="import-file">Choose file…</button>
+        <label class="import-save-as"><input id="import-pick" type="checkbox">Save As…</label>
+      </div>
     </div>
     <div id="tabs">
       <button data-pane="files-pane" class="active">Files</button>
@@ -347,7 +410,7 @@
       <div id="tree-box"></div>
     </div>
     <div id="search-pane" class="pane">
-      <input id="search-input" placeholder="Search vault… (Enter)">
+      <input id="search-input" placeholder="Search vault… (Enter)" aria-label="Search vault">
       <select id="search-mode">
         <option value="text">Full text</option>
         <option value="tag">Tag</option>
@@ -355,10 +418,10 @@
         <option value="field">Frontmatter field</option>
         <option value="semantic">Semantic (vectors)</option>
       </select>
-      <div id="search-results"></div>
+      <div id="search-results"><div class="empty-state">Type a query and press Enter to search the vault.</div></div>
     </div>
-    <div id="tags-pane" class="pane"><div id="tags-list"></div></div>
-    <div id="tasks-pane" class="pane"><div id="tasks-list"></div></div>
+    <div id="tags-pane" class="pane"><div id="tags-list"><div class="empty-state">Open a vault to browse its tags.</div></div></div>
+    <div id="tasks-pane" class="pane"><div id="tasks-list"><div class="empty-state">Open a vault to list its tasks.</div></div></div>
     <div id="note-panel"></div>
   </div>
   <div id="main">
@@ -385,12 +448,12 @@
       </div>
     </div>
     <div id="live-wrap"><div id="live-doc"></div></div>
-    <div id="statusbar"><span id="stats"></span><span id="sel-stats"></span><span id="live" class="live"></span></div>
+    <div id="statusbar"><span id="stats" role="button" tabindex="0" title="Click for full text analysis (tokens, frequencies)"></span><span id="sel-stats"></span><span id="live" class="live"></span></div>
   </div>
   <div id="autocomplete"></div>
   <div id="hover-pop"></div>
   <div id="ctx-menu"></div>
-  <div id="prompt-overlay" class="overlay">
+  <div id="prompt-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
     <div id="prompt-box">
       <h3 id="prompt-title"></h3>
       <input id="prompt-input" style="display:none">
@@ -401,19 +464,19 @@
       </div>
     </div>
   </div>
-  <div id="switcher-overlay" class="overlay">
+  <div id="switcher-overlay" class="overlay" role="dialog" aria-modal="true" aria-label="Quick switcher">
     <div id="switcher">
-      <input id="switcher-input" placeholder="Open note by title or alias…">
+      <input id="switcher-input" placeholder="Open note by title or alias…" aria-label="Quick switcher">
       <div id="switcher-results"></div>
     </div>
   </div>
-  <div id="result-overlay" class="overlay">
+  <div id="result-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="result-title">
     <div id="result-box">
       <div id="result-head"><span id="result-title"></span><button id="result-insert" style="display:none">Insert into note</button><button id="result-copy">Copy</button><button id="result-close">Close</button></div>
       <div id="result-body"></div>
     </div>
   </div>
-  <div id="settings-overlay" class="overlay">
+  <div id="settings-overlay" class="overlay" role="dialog" aria-modal="true" aria-label="Settings">
     <div class="dialog-box">
       <div id="settings-box">
         <h3 style="margin:0 0 4px;font-size:14px">Settings</h3>
@@ -436,7 +499,7 @@
       </div>
     </div>
   </div>
-  <div id="graph-overlay" class="overlay">
+  <div id="graph-overlay" class="overlay" role="dialog" aria-modal="true" aria-label="Vault graph">
     <div id="graph-box">
       <div id="graph-head">
         <strong>Vault graph</strong>
@@ -490,8 +553,74 @@ const contentBox = document.getElementById('content');
 let currentFile = null;
 let currentFolder = null;
 
-function showError(msg) { errBox.textContent = msg; errBox.style.display = 'block'; }
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ---- Toasts: transient feedback for actions; #error stays for document-level failures ----
+const toastStack = document.createElement('div');
+toastStack.id = 'toast-stack';
+toastStack.setAttribute('aria-live', 'polite');
+document.body.appendChild(toastStack);
+function toast(msg, kind = 'info', ms = 3500) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + kind;
+  el.textContent = msg;
+  el.onclick = () => el.remove();
+  toastStack.appendChild(el);
+  setTimeout(() => { el.classList.add('fade'); setTimeout(() => el.remove(), 300); }, ms);
+}
+
+// Map raw Rust/JS error strings to something a person can act on.
+function friendlyError(e) {
+  const s = String(e);
+  if (/os error 2|No such file|NotFound/i.test(s)) return 'File not found — it may have been moved or deleted.';
+  if (/os error 13|permission denied/i.test(s)) return 'Permission denied — check the file or folder permissions.';
+  if (/Failed to fetch|error sending request|dns|connect/i.test(s)) return 'Could not reach the URL — check the address and your connection.';
+  if (/API key/i.test(s)) return 'AI action needs an Anthropic API key — add one in Settings (Cmd+,).';
+  if (/too large/i.test(s)) return s; // pipeline's large-file message is already human-readable
+  return s;
+}
+
+function showError(msg) { errBox.textContent = friendlyError(msg); errBox.style.display = 'block'; }
 function clearError() { errBox.style.display = 'none'; }
+
+// Disable a button and show a spinner while an async action runs.
+async function withBusy(btn, fn) {
+  if (btn) { btn.disabled = true; btn.classList.add('busy'); }
+  try { return await fn(); }
+  finally { if (btn) { btn.disabled = false; btn.classList.remove('busy'); } }
+}
+
+// ---- Focus management for dialogs ----
+const FOCUSABLE = 'a[href], button:not([disabled]), input, textarea, select, [tabindex]:not([tabindex="-1"])';
+const focusReturns = new WeakMap();
+function trapFocus(overlay) {
+  focusReturns.set(overlay, document.activeElement);
+  const first = overlay.querySelector(FOCUSABLE);
+  if (first && !overlay.contains(document.activeElement)) first.focus();
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const items = [...overlay.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+}
+function releaseFocus(overlay) {
+  const prev = focusReturns.get(overlay);
+  if (prev && document.contains(prev)) prev.focus();
+  focusReturns.delete(overlay);
+}
+// Overlays toggle via classList('show'); observe to trap/release automatically.
+function watchOverlayFocus(overlay) {
+  new MutationObserver(() => {
+    if (overlay.classList.contains('show')) trapFocus(overlay);
+    else releaseFocus(overlay);
+  }).observe(overlay, { attributes: true, attributeFilter: ['class'] });
+}
 
 // ---- Theme ----
 // Standalone content CSS per theme, used for HTML export.
@@ -644,7 +773,7 @@ async function openFile(path, remember = true, preserveScroll = false) {
     document.title = r.title + ' — toMarkdown Viewer';
     scrollBox.scrollTop = preserveScroll ? ratio * scrollBox.scrollHeight : 0;
     document.getElementById('stats').textContent =
-      `${r.words.toLocaleString()} words · ${r.chars.toLocaleString()} chars · ~${r.read_minutes} min read`;
+      `${r.words.toLocaleString()} words · ${r.chars.toLocaleString()} chars · ~${Math.ceil(r.chars / 4).toLocaleString()} tokens (est.) · ~${r.read_minutes} min read`;
     buildToc();
     currentFile = path;
     if (remember) addRecent(path, 'file');
@@ -763,26 +892,26 @@ async function renderNotePanel(path) {
       html += '<div class="section-title">Properties</div>';
       for (const k of fmKeys) {
         const v = Array.isArray(fm[k]) ? fm[k].join(', ') : String(fm[k] ?? '');
-        html += `<div class="kv"><span class="k">${k}</span><span>${v}</span></div>`;
+        html += `<div class="kv"><span class="k">${escapeHtml(k)}</span><span>${escapeHtml(v)}</span></div>`;
       }
     }
     const tags = note.tags || [];
     if (tags.length) {
       html += '<div class="section-title">Tags</div><div>' +
-        tags.map(t => `<span class="tag-item" data-tag="${t}">#${t}</span>`).join('') + '</div>';
+        tags.map(t => `<span class="tag-item" data-tag="${escapeHtml(t)}">#${escapeHtml(t)}</span>`).join('') + '</div>';
     }
     const backlinks = (info.backlinks && info.backlinks.backlinks) || info.backlinks || [];
     if (Array.isArray(backlinks) && backlinks.length) {
       html += `<div class="section-title">Backlinks (${backlinks.length})</div>`;
       for (const b of backlinks) {
-        html += `<div class="bl" data-path="${b.from}"><div>${b.from}</div><div class="ctx">${(b.context || '').trim()}</div></div>`;
+        html += `<div class="bl" data-path="${escapeHtml(b.from)}"><div>${escapeHtml(b.from)}</div><div class="ctx">${escapeHtml((b.context || '').trim())}</div></div>`;
       }
     }
     const outlinks = note.links || [];
     if (outlinks.length) {
       html += `<div class="section-title">Outgoing links (${outlinks.length})</div>`;
       for (const l of outlinks) {
-        html += `<div class="bl" data-target="${l.target.replaceAll('"', '&quot;')}"><div>${l.embed ? '⧉ ' : ''}${l.target}${l.heading ? ' › ' + l.heading : ''}</div></div>`;
+        html += `<div class="bl" data-target="${escapeHtml(l.target)}"><div>${l.embed ? '⧉ ' : ''}${escapeHtml(l.target)}${l.heading ? ' › ' + escapeHtml(l.heading) : ''}</div></div>`;
       }
     }
     html += '<div class="section-title">Related</div><div id="related-box"><div class="bl" id="find-related">Find related notes…</div></div>';
@@ -807,7 +936,7 @@ async function renderNotePanel(path) {
           const div = document.createElement('div');
           div.className = 'bl';
           div.dataset.path = h.note;
-          div.innerHTML = `<div>${h.note}:${h.line}</div><div class="ctx">${h.context}</div>`;
+          div.innerHTML = `<div>${escapeHtml(h.note)}:${h.line}</div><div class="ctx">${escapeHtml(h.context)}</div>`;
           div.onclick = () => openFile(currentFolder + '/' + h.note);
           box.appendChild(div);
         }
@@ -826,7 +955,7 @@ async function renderNotePanel(path) {
         for (const r of rel) {
           const div = document.createElement('div');
           div.className = 'bl';
-          div.innerHTML = `<div>${r.path}</div><div class="ctx">similarity ${r.score.toFixed(3)}</div>`;
+          div.innerHTML = `<div>${escapeHtml(r.path)}</div><div class="ctx">similarity ${r.score.toFixed(3)}</div>`;
           div.onclick = () => openFile(currentFolder + '/' + r.path);
           box.appendChild(div);
         }
@@ -876,14 +1005,14 @@ listen('tree-changed', () => {
 });
 
 // ---- Toolbar actions ----
-document.getElementById('open-folder').onclick = async () => {
+document.getElementById('open-folder').onclick = (e) => withBusy(e.target, async () => {
   const dir = await invoke('pick_folder');
-  if (dir) openFolder(dir);
-};
-document.getElementById('open-file').onclick = async () => {
+  if (dir) await openFolder(dir);
+});
+document.getElementById('open-file').onclick = (e) => withBusy(e.target, async () => {
   const f = await invoke('pick_file');
-  if (f) openFile(f);
-};
+  if (f) await openFile(f);
+});
 document.getElementById('export-html').onclick = async () => {
   if (!currentFile) { showError('Open a file first.'); return; }
   const theme = document.documentElement.dataset.theme;
@@ -895,8 +1024,8 @@ document.getElementById('export-html').onclick = async () => {
       bodyHtml: contentBox.innerHTML,
       css: exportCss(effective) + '\n' + document.getElementById('user-css').textContent,
     });
-    if (saved) flashLive('exported ' + saved.split('/').pop());
-  } catch (e) { showError(String(e)); }
+    if (saved) toast('Exported ' + saved.split('/').pop(), 'success');
+  } catch (e) { toast('Export failed: ' + friendlyError(e), 'error'); }
 };
 document.getElementById('print-pdf').onclick = () => window.print();
 document.getElementById('copy-rich').onclick = async () => {
@@ -905,8 +1034,8 @@ document.getElementById('copy-rich').onclick = async () => {
       'text/html': new Blob([contentBox.innerHTML], { type: 'text/html' }),
       'text/plain': new Blob([contentBox.innerText], { type: 'text/plain' }),
     })]);
-    flashLive('copied as rich text');
-  } catch (e) { showError('Copy failed: ' + e); }
+    toast('Copied as rich text', 'success');
+  } catch (e) { toast('Copy failed: ' + friendlyError(e), 'error'); }
 };
 
 // ---- Sidebar tabs ----
@@ -933,11 +1062,13 @@ async function runSearch(query, mode) {
   if (mode === 'semantic') {
     try {
       const hits = await invoke('semantic_search', { root: currentFolder, query });
-      box.innerHTML = `<div class="section-title">${hits.length} chunk(s) by vector similarity</div>`;
+      box.innerHTML = hits.length
+        ? `<div class="section-title">${hits.length} chunk(s) by vector similarity</div>`
+        : '<div class="empty-state">No semantically similar chunks found.</div>';
       for (const h of hits) {
         const div = document.createElement('div');
         div.className = 'result';
-        div.innerHTML = `<div>${h.path.split('/').pop()}${h.heading ? ' › ' + h.heading : ''} (${h.score.toFixed(2)})</div><div class="where">${h.snippet}</div>`;
+        div.innerHTML = `<div>${escapeHtml(h.path.split('/').pop())}${h.heading ? ' › ' + escapeHtml(h.heading) : ''} (${h.score.toFixed(2)})</div><div class="where">${escapeHtml(h.snippet)}</div>`;
         div.onclick = () => openFile(h.path);
         box.appendChild(div);
       }
@@ -947,12 +1078,14 @@ async function runSearch(query, mode) {
   try {
     const r = await invoke('vault_search', { root: currentFolder, query, mode });
     const hits = r.hits || [];
-    box.innerHTML = `<div class="section-title">${hits.length} hit(s)</div>`;
+    box.innerHTML = hits.length
+      ? `<div class="section-title">${hits.length} hit(s)</div>`
+      : `<div class="empty-state">No matches for “${escapeHtml(query)}”. Try another mode or query.</div>`;
     for (const h of hits) {
       const div = document.createElement('div');
       div.className = 'result';
       const where = h.context ? h.context : (h.tag ? '#' + h.tag : (h.alias || h.value || ''));
-      div.innerHTML = `<div>${h.note}${h.line ? ':' + h.line : ''}</div><div class="where">${where}</div>`;
+      div.innerHTML = `<div>${escapeHtml(h.note)}${h.line ? ':' + h.line : ''}</div><div class="where">${escapeHtml(where)}</div>`;
       div.onclick = () => openFile(currentFolder + '/' + h.note);
       box.appendChild(div);
     }
@@ -969,7 +1102,7 @@ async function loadTags() {
   try {
     const v = await invoke('vault_overview', { root: currentFolder });
     const tags = (v.tags || []).sort((a, b) => b.count - a.count);
-    box.innerHTML = tags.length ? '' : '<div class="section-title">No tags</div>';
+    box.innerHTML = tags.length ? '' : '<div class="empty-state">No tags in this vault yet.</div>';
     for (const t of tags) {
       const span = document.createElement('span');
       span.className = 'tag-item';
@@ -987,12 +1120,14 @@ async function loadTasks() {
   try {
     const v = await invoke('vault_tasks', { root: currentFolder });
     const tasks = v.tasks || [];
-    box.innerHTML = `<div class="section-title">${tasks.length} task(s)</div>`;
+    box.innerHTML = tasks.length
+      ? `<div class="section-title">${tasks.length} task(s)</div>`
+      : '<div class="empty-state">No open tasks — nothing to do here.</div>';
     for (const t of tasks) {
       const div = document.createElement('div');
       div.className = 'task-item';
       const due = t.task.due ? ` 📅 ${t.task.due}` : '';
-      div.innerHTML = `<div>[${t.task.state}] ${t.task.text}${due}</div><div class="src">${t.note}:${t.task.line}</div>`;
+      div.innerHTML = `<div>[${escapeHtml(t.task.state)}] ${escapeHtml(t.task.text)}${due}</div><div class="src">${escapeHtml(t.note)}:${t.task.line}</div>`;
       div.onclick = () => openFile(currentFolder + '/' + t.note);
       box.appendChild(div);
     }
@@ -1026,7 +1161,7 @@ function renderSwitcher() {
     const div = document.createElement('div');
     div.className = 'result' + (i === switcherSel ? ' sel' : '');
     const alias = (x.it.aliases || []).length ? ` · ${x.it.aliases.join(', ')}` : '';
-    div.innerHTML = `<div>${x.it.title}</div><div class="where">${x.it.path}${alias}</div>`;
+    div.innerHTML = `<div>${escapeHtml(x.it.title)}</div><div class="where">${escapeHtml(x.it.path)}${escapeHtml(alias)}</div>`;
     div.onclick = () => { closeSwitcher(); openFile(currentFolder + '/' + x.it.path); };
     switcherResults.appendChild(div);
   });
@@ -1163,7 +1298,7 @@ graphCanvas.addEventListener('mouseup', (e) => {
   }
   dragNode = null;
 });
-document.getElementById('show-graph').onclick = () => showGraph(null);
+document.getElementById('show-graph').onclick = (e) => withBusy(e.target, () => showGraph(null));
 document.getElementById('graph-global').onclick = () => showGraph(null);
 document.getElementById('graph-local').onclick = () => showGraph(currentFile);
 document.getElementById('graph-close').onclick = () => graphOverlay.classList.remove('show');
@@ -1522,11 +1657,11 @@ async function runAi(kind, extraPromptTitle) {
     extra = await ask(extraPromptTitle);
     if (!extra) return;
   }
-  flashLive('asking Claude…');
+  toast('Asking Claude…');
   try {
     const out = await invoke('ai_action', { kind, content, extra });
     showResult('AI: ' + kind, out);
-  } catch (e) { showError(String(e)); }
+  } catch (e) { toast(friendlyError(e), 'error', 6000); }
 }
 
 // ---- Settings (Cmd+,) ----
@@ -1571,6 +1706,7 @@ const COMMANDS = [
   { label: 'Open Folder…', run: () => document.getElementById('open-folder').click() },
   { label: 'Open File…', run: () => document.getElementById('open-file').click() },
   { label: 'New Note', run: () => document.getElementById('new-note').click() },
+  { label: 'Import: Convert File or URL to Markdown…', run: () => document.getElementById('import-btn').click() },
   { label: 'View: Reading', run: () => setViewMode('read') },
   { label: 'View: Live Editing (Cmd+E)', run: () => setViewMode('live') },
   { label: 'View: Split Source (Cmd+Shift+E)', run: () => setViewMode('split') },
@@ -1597,6 +1733,7 @@ const COMMANDS = [
   { label: 'Zen Mode (toggle sidebar)', run: toggleZen },
   { label: 'Typewriter Mode', run: () => { typewriterOn = !typewriterOn; flashLive('typewriter ' + (typewriterOn ? 'on' : 'off')); } },
   { label: 'Document Statistics', run: showDocStats },
+  { label: 'Text Analysis: Tokens & Frequencies', run: showTextMetrics },
   { label: 'Keyword Highlights (toggle)', run: toggleKeywords },
   { label: 'Theme: System', run: () => applyTheme('system') },
   { label: 'Theme: Light', run: () => applyTheme('light') },
@@ -1817,6 +1954,22 @@ ${top}`;
   showResult('Document statistics', md);
 }
 
+// ---- Text analysis (TUI stats popup): counts, tokens, frequency tables ----
+async function showTextMetrics() {
+  const content = await currentDocText();
+  if (!content) { showError('Open a document first.'); return; }
+  toast('Analyzing text…');
+  try {
+    const md = await invoke('text_metrics', { content });
+    showResult('Text analysis', md);
+  } catch (e) { toast(friendlyError(e), 'error'); }
+}
+
+// Status-bar counter opens the full analysis (Enter/Space work via role=button).
+document.getElementById('stats').addEventListener('click', () => {
+  if (document.getElementById('stats').textContent) showTextMetrics();
+});
+
 // ---- Keyword repetition highlighter (Marked 2 keyword drawer) ----
 let kwOn = false;
 async function toggleKeywords() {
@@ -1875,7 +2028,7 @@ function showPeekFor(el, root, target) {
     try {
       const peek = await invoke('peek_note', { root, target, from: currentFile });
       if (token !== hoverToken) return; // pointer moved on — stale response
-      hoverPop.innerHTML = `<div class="pop-path">${peek.path}${peek.truncated ? ' · …' : ''}</div>` + peek.html;
+      hoverPop.innerHTML = `<div class="pop-path">${escapeHtml(peek.path)}${peek.truncated ? ' · …' : ''}</div>` + peek.html;
       postRender(hoverPop);
       const r = el.getBoundingClientRect();
       hoverPop.style.left = Math.min(r.left, innerWidth - 400) + 'px';
@@ -1954,7 +2107,7 @@ function renderPins() {
   for (const p of pins) {
     const row = document.createElement('div');
     row.className = 'pin-row';
-    row.innerHTML = `<span class="t">★ ${p.split('/').pop()}</span>`;
+    row.innerHTML = `<span class="t">★ ${escapeHtml(p.split('/').pop())}</span>`;
     row.title = p;
     const x = document.createElement('button');
     x.className = 'close'; x.textContent = '×'; x.title = 'Unpin';
@@ -2080,6 +2233,7 @@ async function newFromTemplate() {
 document.addEventListener('keydown', (e) => {
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key === 'd') { e.preventDefault(); openDailyNote(); }
+  if (mod && e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); toggleZen(); }
   if (mod && e.key === 'w' && tabs.length) { e.preventDefault(); if (activeTab >= 0) closeTab(activeTab); }
   if (mod && /^[1-9]$/.test(e.key)) {
     const i = parseInt(e.key, 10) - 1;
@@ -2095,7 +2249,7 @@ function renderVaultList() {
   for (const v of vaults) {
     const row = document.createElement('div');
     row.className = 'pin-row';
-    row.innerHTML = `<span class="t">${v}</span>`;
+    row.innerHTML = `<span class="t">${escapeHtml(v)}</span>`;
     const x = document.createElement('button');
     x.className = 'close'; x.textContent = '×'; x.title = 'Forget vault';
     x.onclick = (e) => {
@@ -2343,8 +2497,8 @@ async function exportAs(kind) {
   const title = (currentFile || 'document').split('/').pop();
   try {
     const saved = await invoke(kind === 'docx' ? 'export_docx' : 'export_rtf', { title, md });
-    if (saved) flashLive('exported ' + saved.split('/').pop());
-  } catch (e) { showError(String(e)); }
+    if (saved) toast('Exported ' + saved.split('/').pop(), 'success');
+  } catch (e) { toast('Export failed: ' + friendlyError(e), 'error'); }
 }
 
 // Native menu actions map onto existing behaviors.
@@ -2382,6 +2536,56 @@ async function handleOsOpen(paths) {
 listen('os-open-file', (e) => handleOsOpen(e.payload));
 invoke('take_pending_opens').then(handleOsOpen).catch(() => {});
 
+// ---- Import / convert (toMarkdownMCP converters) ----
+const importBar = document.getElementById('import-bar');
+document.getElementById('import-btn').onclick = () => {
+  importBar.style.display = importBar.style.display === 'none' ? '' : 'none';
+  if (importBar.style.display !== 'none') document.getElementById('import-url').focus();
+};
+async function finishImport(converted) {
+  const pick = document.getElementById('import-pick').checked || !currentFolder;
+  const saved = await invoke('save_import', {
+    root: currentFolder,
+    suggestedName: converted.suggested_name,
+    markdown: converted.markdown,
+    pick,
+  });
+  if (!saved) { toast('Import cancelled'); return; }
+  toast('Imported ' + saved.split('/').pop(), 'success');
+  if (currentFolder && saved.startsWith(currentFolder)) {
+    await refreshTree();
+    openInNewTab(saved);
+  } else {
+    openFile(saved);
+  }
+}
+async function convertFile(path, btn) {
+  await withBusy(btn, async () => {
+    toast('Converting ' + path.split('/').pop() + '…');
+    try {
+      const converted = await invoke('convert_file_to_markdown', { path });
+      await finishImport(converted);
+    } catch (e) { toast('Conversion failed: ' + friendlyError(e), 'error', 6000); }
+  });
+}
+document.getElementById('import-file').onclick = async (e) => {
+  const f = await invoke('pick_file');
+  if (f) convertFile(f, e.target);
+};
+document.getElementById('import-url').addEventListener('keydown', async (e) => {
+  if (e.key !== 'Enter') return;
+  const url = e.target.value.trim();
+  if (!url) return;
+  await withBusy(document.getElementById('import-file'), async () => {
+    toast('Fetching ' + url + '…');
+    try {
+      const converted = await invoke('convert_url_to_markdown', { url });
+      e.target.value = '';
+      await finishImport(converted);
+    } catch (err) { toast('Conversion failed: ' + friendlyError(err), 'error', 6000); }
+  });
+});
+
 // ---- Drag & drop ----
 listen('tauri://drag-drop', async (event) => {
   const paths = event.payload.paths || [];
@@ -2390,9 +2594,30 @@ listen('tauri://drag-drop', async (event) => {
   try {
     await invoke('list_tree', { root: p });
     openFolder(p);
-  } catch {
+    return;
+  } catch {}
+  // Non-markdown but convertible files route through the converter pipeline.
+  if (!/\.(md|markdown|canvas|txt)$/i.test(p) && await invoke('is_convertible', { path: p }).catch(() => false)) {
+    convertFile(p, document.getElementById('import-btn'));
+  } else {
     openFile(p);
   }
+});
+
+// ---- Accessibility wiring ----
+['prompt-overlay', 'switcher-overlay', 'result-overlay', 'settings-overlay', 'graph-overlay']
+  .forEach(id => watchOverlayFocus(document.getElementById(id)));
+// Click-driven rows become keyboard-focusable and Enter/Space-activatable.
+const FOCUS_ROWS = '.node, .result, .tag-item, .task-item, .bl, .pin-row, .tab, #toc li, #recents li, #stats';
+new MutationObserver(() => {
+  document.querySelectorAll(FOCUS_ROWS).forEach(el => {
+    if (!el.hasAttribute('tabindex')) el.tabIndex = 0;
+  });
+}).observe(document.body, { childList: true, subtree: true });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const t = e.target;
+  if (t instanceof Element && t.matches(FOCUS_ROWS)) { e.preventDefault(); t.click(); }
 });
 
 renderRecents();
