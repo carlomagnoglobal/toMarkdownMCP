@@ -42,7 +42,7 @@ Phase 5 of the [roadmap](../planning/ROADMAP.md): foundation & viewer. Later pha
 - **Accessibility** — dialogs are ARIA-labeled with focus trapping and focus restore; the tree, tabs, results, and rows are keyboard-focusable and Enter/Space-activatable; visible focus outlines
 - **Theme-safe colors** — errors, callouts, highlights, shadows, and syntax highlighting are theme-token driven; light syntax rules are hard-scoped so dark mode can't inherit unreadable colors
 
-See the [User Guide](USER_GUIDE.md) for day-to-day usage and the full shortcut list.
+See the [User Guide](USER_GUIDE.md) for day-to-day usage and the full shortcut list, and the [Install Guide](INSTALL.md) for Windows/macOS/Linux installation.
 
 ## Build & run
 

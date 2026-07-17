@@ -1,6 +1,6 @@
 # toMarkdown Viewer — User Guide
 
-toMarkdown Viewer is the desktop app for reading, editing, and organizing Markdown notes and Obsidian-style vaults — and for converting anything else (PDF, DOCX, XLSX, EPUB, web pages, …) into Markdown. This guide covers everyday use; for architecture and build details see [GUI.md](GUI.md).
+toMarkdown Viewer is the desktop app for reading, editing, and organizing Markdown notes and Obsidian-style vaults — and for converting anything else (PDF, DOCX, XLSX, EPUB, web pages, …) into Markdown. This guide covers everyday use; to install the app see [INSTALL.md](INSTALL.md), and for architecture/build details see [GUI.md](GUI.md).
 
 ## Contents
 
