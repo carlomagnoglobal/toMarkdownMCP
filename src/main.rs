@@ -3440,14 +3440,12 @@ fn handle_extract_active_todos(args: &Value) -> Result<String, Box<dyn std::erro
 
             if path.is_dir() {
                 let _ = scan_for_todos(&path, todos_by_file, total);
-            } else {
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    for line in content.lines() {
-                        if line.contains("- [ ]") {
-                            let path_str = path.to_string_lossy().to_string();
-                            todos_by_file.entry(path_str).or_default().push(line.trim().to_string());
-                            *total += 1;
-                        }
+            } else if let Ok(content) = std::fs::read_to_string(&path) {
+                for line in content.lines() {
+                    if line.contains("- [ ]") {
+                        let path_str = path.to_string_lossy().to_string();
+                        todos_by_file.entry(path_str).or_default().push(line.trim().to_string());
+                        *total += 1;
                     }
                 }
             }
@@ -3570,10 +3568,8 @@ fn handle_resolve_and_validate_links(args: &Value) -> Result<String, Box<dyn std
             let path = entry.path();
             if path.is_dir() {
                 let _ = collect_all_files(&path, files);
-            } else {
-                if let Some(path_str) = path.to_str() {
-                    files.push(path_str.to_lowercase());
-                }
+            } else if let Some(path_str) = path.to_str() {
+                files.push(path_str.to_lowercase());
             }
         }
         Ok(())
