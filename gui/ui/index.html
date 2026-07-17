@@ -393,10 +393,13 @@
   #cheatsheet kbd { background: rgba(128,128,128,.18); border-radius: 4px; padding: 1px 7px;
     font: 12px ui-monospace, monospace; }
   @media print {
-    #sidebar, #statusbar, #error { display: none !important; }
+    #sidebar, #statusbar, #error, #tabbar, #read-progress, #toast-stack { display: none !important; }
     #main, #scroll { overflow: visible !important; }
     body { height: auto; overflow: visible; }
-    #read-progress { display: none !important; }
+    #content { max-width: none; padding: 0; font-size: 12pt; }
+    #content pre, #content blockquote, #content table { break-inside: avoid; }
+    #content h1, #content h2, #content h3 { break-after: avoid; }
+    #content a { color: inherit; text-decoration: underline; }
   }
 </style>
 <style id="user-css"></style>

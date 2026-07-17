@@ -55,6 +55,15 @@ cargo run -p to_markdown_gui              # launch the viewer
 
 Packaging: `cargo tauri build` from `gui/` produces the `.app`/`.dmg` (tauri-cli required: `cargo install tauri-cli --locked`). CI can build macOS/Linux/Windows bundles via the `GUI build` workflow (`.github/workflows/gui-release.yml`, manual dispatch or `gui-v*` tags). Signing/notarization requires Apple Developer certificates and is not configured — right-click → Open on first launch.
 
+## Manual test checklist (Phase 1 polish)
+
+- **Image lightbox**: Click a note with images; click an image to zoom full-screen in a centered overlay; press Esc or click outside to close cleanly
+- **Reading-progress bar**: Open a long note; scroll to the middle, bar should be half-width; scroll to bottom, bar should span full width; verify it is hidden in print
+- **Keyboard cheat sheet**: Press `?` in the reading view to open shortcuts overlay grouped by category; press Esc or click overlay to close; verify it does not open when typing in inputs
+- **Text size controls**: Cmd/Ctrl+= to increase, − to decrease, 0 to reset; verify size clamps to 11–24 px; restart app, size should persist
+- **Line-height setting**: Cmd+, opens Settings; find Line height dropdown (Compact/Normal/Relaxed/Airy); change it; verify setting persists across restart
+- **Print / PDF output**: Cmd+K → "Print / Save as PDF" on a note with code, tables, and headings; verify PDF has no chrome (sidebar/tabs/statusbar hidden), no mid-block page breaks in code/tables, full-width text, and subtle links (inherit color, underlined)
+
 ## Architecture
 
 - `gui/src/main.rs` — Tauri commands: `list_tree` (recursive, sorted, filtered), `open_file` (convert → Markdown → HTML), `pick_folder`/`pick_file` (native dialogs)

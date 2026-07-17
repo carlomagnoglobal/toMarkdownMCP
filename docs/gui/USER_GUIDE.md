@@ -49,6 +49,8 @@ Markdown renders with headings, tables, task lists, footnotes, syntax-highlighte
 - **Live reload** — edit the file in any external editor; the pane re-renders on save, keeping your scroll position.
 - **Wikilinks** are clickable; hover one for an Obsidian-style page preview.
 - **Checkboxes** in the reading view toggle the task in the file.
+- **Image lightbox** — click an image to zoom it full-screen in a centered overlay; press Esc or click the overlay to close.
+- **Reading-progress bar** — a thin bar at the top of the window shows how far you've scrolled through the document (hidden in print).
 - **Table of contents** appears in the Files pane for documents with 2+ headings.
 - The **status bar** shows words · characters · estimated tokens · read time. Click it for the full [Text analysis](#text-analysis--document-statistics).
 
@@ -124,13 +126,15 @@ Set an Anthropic API key in Settings (Cmd+,), then use the palette: **Summarize*
 | Copy as rich text (paste into email/docs) | Toolbar |
 | Export DOCX (Word) / RTF | Palette / File menu |
 
+**Print & PDF improvements** — the print stylesheet hides all UI chrome (sidebar, tabs, toolbars), sets optimal page breaks to avoid splitting code blocks, tables, and headings, and adjusts text sizing and spacing for print readability.
+
 ## Themes & appearance
 
 **System / Light / Dark / Sepia**, switchable from the toolbar, Settings, palette, or View menu. All UI colors — including syntax highlighting, callouts, errors, and highlights — follow the active theme. A **custom CSS** file can be layered on top (persisted). Content font size is adjustable in Settings. Scrollbars are always visible and theme-tinted.
 
 ## Settings
 
-Cmd+, opens Settings: theme, content font size, Anthropic API key (stored locally), reopen-last-vault, open-notes-in-Live-mode default, and the known-vaults list (click to open, × to forget).
+Cmd+, opens Settings: theme, content font size (adjustable with Cmd+=/−/0; clamps to 11–24 px), line-height (Compact/Normal/Relaxed/Airy), Anthropic API key (stored locally), reopen-last-vault, open-notes-in-Live-mode default, and the known-vaults list (click to open, × to forget). All settings persist across app launches.
 
 ## Keyboard shortcuts
 
@@ -138,6 +142,7 @@ Cmd+, opens Settings: theme, content font size, Anthropic API key (stored locall
 | --- | --- |
 | Cmd+O / Cmd+P | Quick switcher |
 | Cmd+K | Command palette |
+| ? | Keyboard shortcut cheat sheet |
 | Cmd+E | Reading ↔ Live editing |
 | Cmd+Shift+E | Split source editor |
 | Cmd+S | Save now |
@@ -145,8 +150,9 @@ Cmd+, opens Settings: theme, content font size, Anthropic API key (stored locall
 | Cmd+W · Cmd+1…9 | Close tab · switch tab |
 | Cmd+B / Cmd+I / Cmd+Shift+X / Cmd+Shift+K | Bold / italic / strikethrough / link |
 | Cmd+Shift+Z | Zen mode |
+| Cmd+= / Cmd+− / Cmd+0 | Increase / decrease / reset text size |
 | Cmd+, | Settings |
-| Escape | Close overlay / commit block edit |
+| Escape | Close overlay / commit block edit / close lightbox |
 | Enter / Space | Activate the focused tree item, tab, or result (full keyboard navigation) |
 
 *(Use Ctrl instead of Cmd on Linux/Windows.)*
