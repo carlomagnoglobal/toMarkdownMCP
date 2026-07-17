@@ -17,7 +17,7 @@
 - ✅ `install.sh` downloads the right asset per platform, falls back to cargo build
 
 ### 2. Build from Source
-- ✅ Plain `cargo build --release`; Rust 1.75+, no system deps beyond a C compiler
+- ✅ Plain `cargo build --release`; Rust 1.88+, no system deps beyond a C compiler
 - ✅ CI workflow (`.github/workflows/ci.yml`) builds + tests every push/PR (272 tests)
 
 ### 3. Docker

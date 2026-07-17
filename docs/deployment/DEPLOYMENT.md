@@ -40,7 +40,7 @@ cargo build --release          # binary: target/release/to_markdown_mcp
 cargo test                     # 272 tests
 ```
 
-Requirements: Rust 1.75+, a C compiler (for the oniguruma regex backend used by the HuggingFace tokenizer support). Browser tools additionally want Chrome/Chromium at runtime.
+Requirements: Rust 1.88+, a C compiler (for the oniguruma regex backend used by the HuggingFace tokenizer support). Browser tools additionally want Chrome/Chromium at runtime.
 
 Cross-compile targets work as usual (`cargo build --release --target x86_64-unknown-linux-gnu`, etc.) — the release workflow builds all four platforms automatically on each tag.
 

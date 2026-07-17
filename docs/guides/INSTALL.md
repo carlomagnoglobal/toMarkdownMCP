@@ -10,7 +10,7 @@ cargo build --release
 
 The MCP binary will be at `./target/release/to_markdown_mcp`.
 
-Prerequisites: Rust 1.75+ (`curl https://sh.rustup.rs -sSf | sh`). The browser tools additionally need Google Chrome, Chromium, or Edge installed (or set the `CHROME` env var to the executable); everything else is self-contained.
+Prerequisites: Rust 1.88+ (`curl https://sh.rustup.rs -sSf | sh`). The browser tools additionally need Google Chrome, Chromium, or Edge installed (or set the `CHROME` env var to the executable); everything else is self-contained.
 
 ### Step 2: Register the server
 

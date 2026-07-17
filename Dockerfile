@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for toMarkdownMCP
 
 # Stage 1: Builder
-FROM rust:latest AS builder
+FROM rust:1.88 AS builder
 
 WORKDIR /app
 

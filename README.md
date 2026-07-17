@@ -84,7 +84,7 @@ The server auto-detects and properly formats code for:
 ## Building
 
 ### Prerequisites
-- Rust 1.70 or later (install from https://rustup.rs/)
+- Rust 1.88 or later (install from https://rustup.rs/)
 
 ### Build for your platform
 ```bash

@@ -8,6 +8,7 @@ default-members = ["."]
 name = "to_markdown_mcp"
 version = "0.2.0"
 edition = "2021"
+rust-version = "1.88"
 description = "MCP server converting anything to Markdown — documents, office files, live web pages (Chromium), Obsidian vaults — plus RAG tools and token analytics. Includes a terminal Markdown viewer."
 license = "MIT"
 repository = "https://github.com/carlomagnoglobal/toMarkdownMCP"

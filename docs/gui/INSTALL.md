@@ -76,7 +76,7 @@ Requirements: Windows 10 1803+ with WebView2.
 
 ### Prerequisites (all platforms)
 
-- **Rust 1.75+** — `curl https://sh.rustup.rs -sSf | sh` (or [rustup.rs](https://rustup.rs) installers on Windows)
+- **Rust 1.88+** — `curl https://sh.rustup.rs -sSf | sh` (or [rustup.rs](https://rustup.rs) installers on Windows)
 - The repository: `git clone https://github.com/carlomagnoglobal/toMarkdownMCP && cd toMarkdownMCP`
 - For packaging only: **tauri-cli** — `cargo install tauri-cli --locked`
 
