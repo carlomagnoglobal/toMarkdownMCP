@@ -108,14 +108,14 @@ pub struct LanguageGuess {
 pub fn detect_language(text: &str) -> Vec<LanguageGuess> {
     let tokens = tokenize_words(text);
     let total = tokens.len().max(1) as f64;
-    let token_set: std::collections::HashSet<&String> = tokens.iter().collect();
+    let token_set: std::collections::HashSet<&str> = tokens.iter().map(|t| t.as_str()).collect();
 
     let mut guesses: Vec<LanguageGuess> = language_markers()
         .into_iter()
         .map(|(lang, markers)| {
             let hits: usize = tokens.iter().filter(|t| markers.contains(&t.as_str())).count();
             // Weight by both frequency and coverage of distinct markers.
-            let coverage = markers.iter().filter(|m| token_set.contains(&m.to_string())).count() as f64
+            let coverage = markers.iter().filter(|m| token_set.contains(*m)).count() as f64
                 / markers.len() as f64;
             let confidence = (hits as f64 / total) * 0.7 + coverage * 0.3;
             LanguageGuess { language: lang, confidence }
