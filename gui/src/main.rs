@@ -1049,20 +1049,32 @@ async fn save_import(
     Ok(Some(path.display().to_string()))
 }
 
+/// One tab of the Text Analysis overlay: label + Markdown body.
+#[derive(Serialize)]
+struct MetricsSection {
+    label: String,
+    markdown: String,
+}
+
 /// TUI-style text analysis: word/char/space/token counts (OpenAI exact +
-/// Anthropic estimate) with frequency tables, rendered as Markdown.
+/// Anthropic estimate) with full frequency tables, one section per tab.
 #[tauri::command]
-async fn text_metrics(content: String) -> Result<String, String> {
+async fn text_metrics(content: String) -> Result<Vec<MetricsSection>, String> {
     use to_markdown_mcp::textmetrics::{analyze_text, TokenizerSpec};
-    fn freq_table(title: &str, rows: &[(String, usize)]) -> String {
-        let mut s = format!("\n## {} ({} distinct)\n\n", title, rows.len());
+    fn freq_table(rows: &[(String, usize)], total: usize) -> String {
         if rows.is_empty() {
-            s.push_str("(none)\n");
-            return s;
+            return "(none)\n".into();
         }
-        s.push_str("| Item | Count |\n| --- | --- |\n");
-        for (w, c) in rows {
-            s.push_str(&format!("| `{}` | {} |\n", w.replace('|', "\\|").replace('`', "'"), c));
+        let mut s = String::from("| # | Item | Count | Share |\n| --- | --- | --- | --- |\n");
+        for (i, (w, c)) in rows.iter().enumerate() {
+            let share = if total > 0 { *c as f64 * 100.0 / total as f64 } else { 0.0 };
+            s.push_str(&format!(
+                "| {} | `{}` | {} | {:.1}% |\n",
+                i + 1,
+                w.replace('|', "\\|").replace('`', "'"),
+                c,
+                share
+            ));
         }
         s
     }
@@ -1071,21 +1083,34 @@ async fn text_metrics(content: String) -> Result<String, String> {
             .map_err(|e| e.to_string())?;
         let anthropic = analyze_text(&content, &TokenizerSpec::Anthropic)
             .map_err(|e| e.to_string())?;
-        let mut md = String::from("## Summary\n\n| Metric | Value |\n| --- | --- |\n");
-        md.push_str(&format!("| Words | {} |\n", openai.words));
-        md.push_str(&format!("| Characters | {} |\n", openai.chars));
-        md.push_str(&format!("| Spaces | {} |\n", openai.spaces));
-        md.push_str(&format!(
+        let mut summary = String::from("| Metric | Value |\n| --- | --- |\n");
+        summary.push_str(&format!("| Words | {} |\n", openai.words));
+        summary.push_str(&format!("| Distinct words | {} |\n", openai.word_freq.len()));
+        summary.push_str(&format!("| Characters | {} |\n", openai.chars));
+        summary.push_str(&format!("| Spaces | {} |\n", openai.spaces));
+        summary.push_str(&format!(
             "| OpenAI tokens | {}{} |\n",
             openai.tokens,
             if openai.exact { "" } else { " (estimated)" }
         ));
-        md.push_str(&format!("| Anthropic/Claude tokens | ~{} |\n", anthropic.tokens));
-        md.push_str(&format!("| Tokenization | {} |\n", openai.method));
-        md.push_str(&freq_table("Word frequency", &openai.word_freq));
-        md.push_str(&freq_table("Character frequency", &openai.char_freq));
-        md.push_str(&freq_table("Token frequency", &openai.token_freq));
-        Ok(md)
+        summary.push_str(&format!("| Anthropic/Claude tokens | ~{} |\n", anthropic.tokens));
+        summary.push_str(&format!("| Tokenization | {} |\n", openai.method));
+        let sections = vec![
+            MetricsSection { label: "Summary".into(), markdown: summary },
+            MetricsSection {
+                label: format!("Words ({})", openai.word_freq.len()),
+                markdown: freq_table(&openai.word_freq, openai.words),
+            },
+            MetricsSection {
+                label: format!("Characters ({})", openai.char_freq.len()),
+                markdown: freq_table(&openai.char_freq, openai.chars),
+            },
+            MetricsSection {
+                label: format!("Tokens ({})", openai.token_freq.len()),
+                markdown: freq_table(&openai.token_freq, openai.tokens),
+            },
+        ];
+        Ok(sections)
     })
     .await
     .map_err(|e| e.to_string())?

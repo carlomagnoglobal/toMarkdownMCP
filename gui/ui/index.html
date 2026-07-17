@@ -354,7 +354,20 @@
   #result-head button { margin-left: auto; padding: 4px 10px; border: 1px solid var(--border);
                         border-radius: 6px; background: var(--bg); color: var(--fg);
                         cursor: pointer; font-size: 12px; }
+  #result-tabs { display: flex; gap: 2px; padding: 0 14px; border-bottom: 1px solid var(--border);
+                 background: var(--sidebar-bg); flex-shrink: 0; }
+  #result-tabs:empty { display: none; }
+  #result-tabs button {
+    padding: 7px 12px; border: none; background: none; color: var(--muted);
+    cursor: pointer; font-size: 12.5px; border-bottom: 2px solid transparent;
+  }
+  #result-tabs button:hover { color: var(--fg); }
+  #result-tabs button.active { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
   #result-body { overflow-y: auto; padding: 14px 18px; line-height: 1.6; font-size: 14px; }
+  #result-body table { border-collapse: collapse; width: 100%; }
+  #result-body th, #result-body td { border: 1px solid var(--border); padding: 4px 10px; font-size: 13px; }
+  #result-body th { background: var(--code-bg); text-align: left; position: sticky; top: -14px; }
+  #result-body tr:nth-child(even) td { background: color-mix(in srgb, var(--code-bg) 55%, transparent); }
   #result-body pre { background: var(--code-bg); border: 1px solid var(--border);
                      border-radius: 6px; padding: 10px; overflow-x: auto; }
   #settings-box label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
@@ -473,6 +486,7 @@
   <div id="result-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="result-title">
     <div id="result-box">
       <div id="result-head"><span id="result-title"></span><button id="result-insert" style="display:none">Insert into note</button><button id="result-copy">Copy</button><button id="result-close">Close</button></div>
+      <div id="result-tabs" role="tablist"></div>
       <div id="result-body"></div>
     </div>
   </div>
@@ -1622,13 +1636,55 @@ document.getElementById('edit-props').onclick = async () => {
 
 // ---- AI result overlay ----
 const resultOverlay = document.getElementById('result-overlay');
+const resultTabs = document.getElementById('result-tabs');
 let lastResultMd = '';
 async function showResult(title, markdown) {
   lastResultMd = markdown;
+  resultTabs.innerHTML = '';
   document.getElementById('result-title').textContent = title;
   document.getElementById('result-body').innerHTML =
     await invoke('render_markdown', { md: markdown, vaultRoot: null, filePath: null });
   postRender(document.getElementById('result-body'));
+  document.getElementById('result-insert').style.display = editMode ? '' : 'none';
+  resultOverlay.classList.add('show');
+}
+// Sectioned result: one tab per section, HTML rendered lazily and cached.
+async function showTabbedResult(title, sections) {
+  lastResultMd = sections.map(s => `## ${s.label}\n\n${s.markdown}`).join('\n');
+  document.getElementById('result-title').textContent = title;
+  const body = document.getElementById('result-body');
+  const htmlCache = new Array(sections.length);
+  resultTabs.innerHTML = '';
+  async function select(i) {
+    [...resultTabs.children].forEach((b, j) => {
+      b.classList.toggle('active', j === i);
+      b.setAttribute('aria-selected', j === i);
+    });
+    if (htmlCache[i] === undefined) {
+      htmlCache[i] = await invoke('render_markdown',
+        { md: sections[i].markdown, vaultRoot: null, filePath: null });
+    }
+    body.innerHTML = htmlCache[i];
+    body.scrollTop = 0;
+    postRender(body);
+  }
+  sections.forEach((s, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = s.label;
+    btn.setAttribute('role', 'tab');
+    btn.onclick = () => select(i);
+    resultTabs.appendChild(btn);
+  });
+  // Left/Right arrows move between tabs when a tab has focus.
+  resultTabs.onkeydown = (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const btns = [...resultTabs.children];
+    const cur = btns.findIndex(b => b.classList.contains('active'));
+    const next = (cur + (e.key === 'ArrowRight' ? 1 : -1) + btns.length) % btns.length;
+    btns[next].focus();
+    select(next);
+  };
+  await select(0);
   document.getElementById('result-insert').style.display = editMode ? '' : 'none';
   resultOverlay.classList.add('show');
 }
@@ -1960,8 +2016,8 @@ async function showTextMetrics() {
   if (!content) { showError('Open a document first.'); return; }
   toast('Analyzing text…');
   try {
-    const md = await invoke('text_metrics', { content });
-    showResult('Text analysis', md);
+    const sections = await invoke('text_metrics', { content });
+    showTabbedResult('Text analysis', sections);
   } catch (e) { toast(friendlyError(e), 'error'); }
 }
 
