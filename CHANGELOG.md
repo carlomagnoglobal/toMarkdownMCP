@@ -2,6 +2,24 @@
 
 All notable changes to toMarkdownMCP.
 
+## gui-v0.2.0 — 2026-07-16 (GUI-only release)
+
+toMarkdown Viewer 0.2.0. The `to_markdown_mcp` crate is unchanged (stays 0.2.0 on crates.io).
+
+### Added
+
+- **Import / convert bar**: Import… toolbar panel plus drag-and-drop conversion of any pipeline-supported file (PDF, DOCX, XLSX, PPTX, EPUB, EML, HTML, CSV, AsciiDoc, Org, LaTeX, …) and pasted URLs to Markdown; auto-saves into the vault's `Imports/` folder (deduped filenames) and opens in a new tab, or Save As when no vault is open
+- **Text analysis**: tabbed overlay (Summary / Words / Characters / Tokens) with exact OpenAI token counts, an Anthropic/Claude estimate, and complete frequency tables (rank, item, count, share %); opened from the clickable status-bar counter or the palette; the status bar shows a live token estimate
+- **Feedback**: toast notifications, busy spinners on long actions, human-readable error messages, empty-state hints in Search/Tags/Tasks/backlinks panes
+- **Accessibility**: ARIA dialogs with focus trap + restore, keyboard-activatable tree/tabs/results with visible focus outlines
+- **Zen mode shortcut** (Cmd+Shift+Z; also hides the tab bar); always-visible themed scrollbars
+
+### Fixed
+
+- Dark-theme syntax highlighting was unreadable for JSON (and other deep-selector grammars): light-theme CSS rules with very high specificity leaked into dark mode; light rules are now hard-scoped per theme
+- Import Save As dialog could deadlock the app (blocking dialog on the main thread)
+- Note content (frontmatter, tags, backlink context, search snippets) is HTML-escaped in the sidebar; theme colors (errors, callouts, highlights, shadows) are token-driven across all four themes
+
 ## v0.2.0 — 2026-07-16
 
 ### Added — CLI

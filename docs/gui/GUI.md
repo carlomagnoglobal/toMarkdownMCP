@@ -36,6 +36,13 @@ Phase 5 of the [roadmap](../planning/ROADMAP.md): foundation & viewer. Later pha
 - **Settings** — Cmd/Ctrl+, for theme, content font size, API key, live-editing default, reopen-last-vault, and the known-vaults list
 - **Native integration** — real macOS menu bar (File/Edit/View/Window with native Edit roles), `.md` file associations (Finder double-click opens in the app), window size/position remembered across launches
 - **Export** — HTML, Print/PDF, copy-rich-text, plus DOCX (Word) and RTF via the palette or File menu (text-level fidelity; images omitted)
+- **Import / convert** — the Import… toolbar panel and drag-and-drop convert any pipeline-supported file (PDF, DOCX, XLSX, EPUB, EML, HTML, …) or a pasted URL to Markdown; results save into the vault's `Imports/` folder (deduped) and open in a new tab, or through a Save As dialog when no vault is open
+- **Text analysis** — click the status-bar counter (or palette) for a tabbed overlay with exact OpenAI token counts, an Anthropic estimate, and complete word/character/token frequency tables (rank, count, share %); the status bar itself shows a live token estimate
+- **Feedback & polish** — toast notifications (success/error/info), busy spinners on long actions, friendly error messages, empty-state hints in every pane, always-visible themed scrollbars
+- **Accessibility** — dialogs are ARIA-labeled with focus trapping and focus restore; the tree, tabs, results, and rows are keyboard-focusable and Enter/Space-activatable; visible focus outlines
+- **Theme-safe colors** — errors, callouts, highlights, shadows, and syntax highlighting are theme-token driven; light syntax rules are hard-scoped so dark mode can't inherit unreadable colors
+
+See the [User Guide](USER_GUIDE.md) for day-to-day usage and the full shortcut list.
 
 ## Build & run
 

@@ -1,6 +1,6 @@
 [package]
 name = "to_markdown_gui"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Desktop Markdown/vault viewer for toMarkdownMCP (Tauri)"
 license = "MIT"
