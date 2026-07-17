@@ -4,6 +4,11 @@ members = [".", "gui"]
 # explicitly with `cargo build -p to_markdown_gui`.
 default-members = ["."]
 
+[workspace.lints.clippy]
+# On by default in clippy 1.88 (our pinned MSRV toolchain) but pure style
+# churn across the codebase; newer clippys demoted it again.
+uninlined_format_args = "allow"
+
 [package]
 name = "to_markdown_mcp"
 version = "0.2.0"
@@ -59,3 +64,6 @@ fastembed = { version = "4", optional = true }
 [features]
 default = []
 embeddings = ["dep:fastembed"]
+
+[lints]
+workspace = true
