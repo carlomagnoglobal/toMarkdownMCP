@@ -375,6 +375,12 @@
     width: 100%; padding: 7px 9px; font-size: 13px; border: 1px solid var(--border);
     border-radius: 6px; background: var(--bg); color: var(--fg);
   }
+  #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none;
+    align-items: center; justify-content: center; z-index: 300; cursor: zoom-out; }
+  #lightbox.show { display: flex; }
+  #lightbox img { max-width: 94vw; max-height: 94vh; border-radius: 4px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6); }
+  #content img, #edit-preview img { cursor: zoom-in; }
   @media print {
     #sidebar, #statusbar, #error { display: none !important; }
     #main, #scroll { overflow: visible !important; }
@@ -526,6 +532,7 @@
       <canvas id="graph-canvas"></canvas>
     </div>
   </div>
+  <div id="lightbox" role="dialog" aria-label="Image preview"><img alt=""></div>
 <script>
 const invoke = window.__TAURI__.core.invoke;
 const listen = window.__TAURI__.event.listen;
@@ -554,7 +561,21 @@ async function postRender(container) {
     for (const n of nodes) n.id = 'mmd-' + (mermaidSeq++);
     if (nodes.length) { try { await mermaid.run({ nodes }); } catch {} }
   }
+  container.querySelectorAll('img').forEach(img => {
+    img.onclick = (e) => { e.preventDefault(); openLightbox(img.src); };
+  });
 }
+
+// ---- Image lightbox ----
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = lightbox.querySelector('img');
+function openLightbox(src) { lightboxImg.src = src; lightbox.classList.add('show'); }
+function closeLightbox() { lightbox.classList.remove('show'); lightboxImg.src = ''; }
+lightbox.addEventListener('click', closeLightbox);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && lightbox.classList.contains('show')) { e.stopPropagation(); closeLightbox(); }
+}, true);
+
 invoke('syntax_css').then(css => {
   const st = document.createElement('style');
   st.textContent = css;
