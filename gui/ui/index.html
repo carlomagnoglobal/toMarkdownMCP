@@ -2027,6 +2027,7 @@ const COMMANDS = [
   { label: 'Zen Mode (toggle sidebar)', run: toggleZen },
   { label: 'Typewriter Mode', run: () => { typewriterOn = !typewriterOn; flashLive('typewriter ' + (typewriterOn ? 'on' : 'off')); } },
   { label: 'Document Statistics', run: showDocStats },
+  { label: 'Drop Diagnostics (debug)', run: showDropDiag },
   { label: 'Text Analysis: Tokens & Frequencies', run: showTextMetrics },
   { label: 'Keyword Highlights (toggle)', run: toggleKeywords },
   { label: 'Theme: System', run: () => applyTheme('system') },
@@ -3158,6 +3159,49 @@ listen('tauri://drag-drop', async (event) => {
     openFile(p);
   }
 });
+
+// ---- Drop diagnostics (palette: "Drop Diagnostics") ----
+// Records every drag/drop signal from BOTH pipelines (DOM + Tauri) so we can
+// see which events actually fire on this platform and with what payloads.
+const dropDiag = [];
+let dropDiagToastShown = {};
+function logDropDiag(src, kind, detail) {
+  const line = `${new Date().toISOString().slice(11, 23)} [${src}] ${kind} ${detail}`;
+  dropDiag.push(line);
+  if (dropDiag.length > 200) dropDiag.shift();
+  console.log('drop-diag:', line);
+  // First occurrence of each event kind gets a visible toast so the user
+  // knows the event arrived even without opening the diagnostics view.
+  const key = src + kind;
+  if (!dropDiagToastShown[key]) { dropDiagToastShown[key] = 1; toast(`drop-diag: ${src} ${kind}`, 'info', 2500); }
+}
+function dtSummary(dt) {
+  if (!dt) return 'no dataTransfer';
+  const types = [...(dt.types || [])].join(',');
+  const items = [...(dt.items || [])].map(i => `${i.kind}:${i.type || '?'}`).join(' ');
+  let uri = '';
+  try { uri = dt.getData('text/uri-list').split('\n')[0] || ''; } catch {}
+  return `types=[${types}] items=[${items}]${uri ? ' uri=' + uri.slice(0, 80) : ''}`;
+}
+for (const ev of ['dragenter', 'dragover', 'drop', 'dragleave']) {
+  window.addEventListener(ev, (e) => {
+    if (ev === 'dragover' && dropDiag.length && dropDiag[dropDiag.length - 1].includes('DOM] dragover')) return; // don't spam repeats
+    logDropDiag('DOM', ev, `target=${e.target?.id || e.target?.tagName || '?'} ${ev === 'dragover' ? '' : dtSummary(e.dataTransfer)}`);
+  }, true);
+}
+for (const tev of ['tauri://drag-enter', 'tauri://drag-over', 'tauri://drag-drop', 'tauri://drag-leave']) {
+  listen(tev, (event) => {
+    if (tev === 'tauri://drag-over') return; // fires continuously; drop event carries what we need
+    const p = event.payload || {};
+    logDropDiag('TAURI', tev.replace('tauri://', ''), `paths=${JSON.stringify(p.paths || [])} pos=${p.position ? p.position.x + ',' + p.position.y : '-'}`);
+  }).catch(() => {});
+}
+async function showDropDiag() {
+  const md = '# Drop diagnostics\n\nDrag something onto the note area, then reopen this view.\n\n```\n'
+    + (dropDiag.length ? dropDiag.join('\n') : '(no drag/drop events captured yet)') + '\n```\n\n'
+    + `Environment: devicePixelRatio=${window.devicePixelRatio}, platform=${navigator.platform}, viewMode=${viewMode}, currentFile=${currentFile ? 'open' : 'none'}\n`;
+  await showResult('Drop Diagnostics', md);
+}
 
 // ---- Web-image drop dialog: store in vault vs link only ----
 const imageDropOverlay = document.getElementById('image-drop-overlay');
