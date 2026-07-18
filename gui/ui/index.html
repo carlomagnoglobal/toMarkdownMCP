@@ -426,6 +426,12 @@
   #drop-dialog button { text-align: left; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); cursor: pointer; }
   #drop-dialog button:hover:not(:disabled) { background: var(--hover); }
   #drop-dialog button:disabled { opacity: .45; cursor: default; }
+  #confirm-insert-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 270; }
+  #confirm-insert-overlay.show { display: flex; }
+  #confirm-insert-dialog { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; min-width: 320px; display: flex; flex-direction: column; gap: 8px; }
+  #confirm-insert-dialog h3 { margin: 0 0 6px; font-size: 14px; font-weight: 400; }
+  #confirm-insert-dialog button { text-align: left; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); cursor: pointer; }
+  #confirm-insert-dialog button:hover { background: var(--hover); }
   @media print {
     #sidebar, #statusbar, #error, #tabbar, #read-progress, #toast-stack { display: none !important; }
     #main, #scroll { overflow: visible !important; }
@@ -599,6 +605,13 @@
       <button data-act="linkorig">Link original location</button>
       <button data-act="convnote">Convert to new linked note</button>
       <button data-act="convinline">Convert inline</button>
+      <button data-act="cancel">Cancel (Esc)</button>
+    </div>
+  </div>
+  <div id="confirm-insert-overlay" role="dialog" aria-label="Confirm large insert">
+    <div id="confirm-insert-dialog">
+      <h3 id="confirm-insert-title"></h3>
+      <button data-act="insert">Insert anyway</button>
       <button data-act="cancel">Cancel (Esc)</button>
     </div>
   </div>
@@ -2914,20 +2927,71 @@ async function insertIntoNote(text) {
 }
 
 // ---- Drop-into-note ----
+// dropDialogBusy gates re-entrancy across BOTH dialog variants (action-picker and
+// confirm-insert) — only one can be open/pending at a time. A drop that arrives
+// while either is open is rejected outright (see the tauri://drag-drop and DOM
+// drop handlers below), never queued or orphaned.
+let dropDialogBusy = false;
 const dropOverlay = document.getElementById('drop-overlay');
+let pendingDropResolve = null;
+function resolveDropDialog(act) {
+  dropOverlay.classList.remove('show'); releaseFocus(dropOverlay);
+  dropDialogBusy = false;
+  const resolve = pendingDropResolve;
+  pendingDropResolve = null;
+  if (resolve) resolve(act);
+}
 function askDropAction(title, convertible) {
+  dropDialogBusy = true;
   return new Promise((resolve) => {
+    pendingDropResolve = resolve;
     document.getElementById('drop-title').textContent = title;
     dropOverlay.querySelectorAll('button').forEach(b => {
       b.disabled = !convertible && (b.dataset.act === 'convnote' || b.dataset.act === 'convinline');
       b.title = b.disabled ? 'This file type cannot be converted' : '';
-      b.onclick = () => { dropOverlay.classList.remove('show'); releaseFocus(dropOverlay); resolve(b.dataset.act); };
+      b.onclick = () => resolveDropDialog(b.dataset.act);
     });
     dropOverlay.classList.add('show'); trapFocus(dropOverlay);
-    const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); dropOverlay.classList.remove('show'); releaseFocus(dropOverlay); document.removeEventListener('keydown', esc, true); resolve('cancel'); } };
-    document.addEventListener('keydown', esc, true);
   });
 }
+// Single persistent capture-phase Escape listener (mirrors the lightbox pattern
+// at line ~644) instead of a per-call listener — a per-call listener that's
+// only removed on its own Escape branch leaks on every button-click dismissal,
+// and the leaked listeners' stopPropagation calls stack up and suppress Escape
+// for unrelated overlays opened later.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && dropOverlay.classList.contains('show')) { e.stopPropagation(); resolveDropDialog('cancel'); }
+}, true);
+
+const confirmInsertOverlay = document.getElementById('confirm-insert-overlay');
+let pendingConfirmResolve = null;
+function resolveConfirmInsert(ok) {
+  confirmInsertOverlay.classList.remove('show'); releaseFocus(confirmInsertOverlay);
+  dropDialogBusy = false;
+  const resolve = pendingConfirmResolve;
+  pendingConfirmResolve = null;
+  if (resolve) resolve(ok);
+}
+// Per-file confirmation dialog for oversized inline inserts, replacing the old
+// "drop again within 10s" global-flag trick (window._bigInsertOk was shared
+// across every file in a batch, so the second oversized file in a multi-file
+// "Convert inline" drop bypassed confirmation entirely).
+function askConfirmInsert(len) {
+  dropDialogBusy = true;
+  return new Promise((resolve) => {
+    pendingConfirmResolve = resolve;
+    document.getElementById('confirm-insert-title').textContent =
+      `Converted text is ${(len / 1024).toFixed(0)} KB — insert anyway?`;
+    confirmInsertOverlay.querySelectorAll('button').forEach(b => {
+      b.onclick = () => resolveConfirmInsert(b.dataset.act === 'insert');
+    });
+    confirmInsertOverlay.classList.add('show'); trapFocus(confirmInsertOverlay);
+  });
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && confirmInsertOverlay.classList.contains('show')) { e.stopPropagation(); resolveConfirmInsert(false); }
+}, true);
+
 const IMG_RE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
 async function applyDropAction(act, p) {
   const name = p.split('/').pop();
@@ -2942,18 +3006,12 @@ async function applyDropAction(act, p) {
     if (saved) await insertIntoNote(`[[${saved.split('/').pop().replace(/\.md$/, '')}]]`);
   } else if (act === 'convinline') {
     const conv = await invoke('convert_file_to_markdown', { path: p });
-    if (conv.markdown.length > 200 * 1024 && !confirmInsert(conv.markdown.length)) return;
+    if (conv.markdown.length > 200 * 1024 && !(await askConfirmInsert(conv.markdown.length))) return;
     await insertIntoNote(conv.markdown);
   }
 }
-function confirmInsert(len) {
-  // non-blocking confirm via the same dialog pattern is overkill; a toast-guard suffices:
-  toast(`Converted text is ${(len / 1024).toFixed(0)} KB — drop again within 10s to confirm inline insert`, 'info', 10000);
-  if (window._bigInsertOk && Date.now() - window._bigInsertOk < 10000) { window._bigInsertOk = 0; return true; }
-  window._bigInsertOk = Date.now();
-  return false;
-}
 async function handleNoteDrop(paths) {
+  if (dropDialogBusy) { toast('Finish the current drop dialog first', 'info'); return; }
   const imgs = paths.filter(p => IMG_RE.test(p));
   const others = paths.filter(p => !IMG_RE.test(p));
   for (const p of imgs) {
@@ -2985,6 +3043,7 @@ function pointInRect(pt, rect) {
 listen('tauri://drag-drop', async (event) => {
   const paths = event.payload.paths || [];
   if (!paths.length) return;
+  if (dropDialogBusy) { toast('Finish the current drop dialog first', 'info'); return; }
   const p = paths[0];
   // Directory drops always use the old folder-open flow, even over the note area.
   let isDir = false;
@@ -3014,6 +3073,7 @@ for (const el of [document.getElementById('scroll'), document.getElementById('ed
   el.addEventListener('drop', async (e) => {
     if (e.dataTransfer?.types?.includes('Files')) return; // handled by tauri://drag-drop
     if (!currentFile) return;
+    if (dropDialogBusy) { e.preventDefault(); toast('Finish the current drop dialog first', 'info'); return; }
     e.preventDefault();
     const uri = e.dataTransfer.getData('text/uri-list').split('\n').find(l => l && !l.startsWith('#'));
     const item = [...(e.dataTransfer.items || [])].find(i => i.kind === 'file' && i.type.startsWith('image/'));
@@ -3039,7 +3099,7 @@ for (const el of [document.getElementById('scroll'), document.getElementById('ed
             if (act === 'convnote') {
               const saved = await invoke('save_import', { root: currentFolder, suggestedName: conv.suggested_name, markdown: conv.markdown, pick: false });
               if (saved) await insertIntoNote(`[[${saved.split('/').pop().replace(/\.md$/, '')}]]`);
-            } else if (conv.markdown.length <= 200 * 1024 || confirmInsert(conv.markdown.length)) {
+            } else if (conv.markdown.length <= 200 * 1024 || (await askConfirmInsert(conv.markdown.length))) {
               await insertIntoNote(conv.markdown);
             }
           }
