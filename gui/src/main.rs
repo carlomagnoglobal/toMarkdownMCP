@@ -318,6 +318,46 @@ async fn graph_data(root: String, focus: Option<String>) -> Result<serde_json::V
     Ok(serde_json::json!({ "nodes": nodes, "links": links }))
 }
 
+/// A ranked wikilink-completion candidate.
+#[derive(serde::Serialize, Debug)]
+struct WikiMatch {
+    label: String,
+    path: String,
+}
+
+/// Rank vault notes against `prefix`: 0 = title-prefix (or empty prefix), 1 =
+/// title-substring, 2 = alias-substring; case-insensitive, ties alphabetical.
+fn wikilink_matches(root: &Path, prefix: &str) -> Result<Vec<WikiMatch>, String> {
+    let idx = vault::get_index(root).map_err(|e| e.to_string())?;
+    let q = prefix.to_lowercase();
+    let mut ranked: Vec<(u8, String, String)> = Vec::new();
+    for n in idx.notes.values() {
+        let t = n.title.to_lowercase();
+        let rank = if q.is_empty() || t.starts_with(&q) {
+            0
+        } else if t.contains(&q) {
+            1
+        } else if n.aliases.iter().any(|a| a.to_lowercase().contains(&q)) {
+            2
+        } else {
+            continue;
+        };
+        ranked.push((rank, n.title.clone(), n.path.clone()));
+    }
+    ranked.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+    Ok(ranked
+        .into_iter()
+        .take(20)
+        .map(|(_, label, path)| WikiMatch { label, path })
+        .collect())
+}
+
+/// Top 20 vault-note completions for a wikilink query, ranked by relevance.
+#[tauri::command]
+fn wikilink_complete(root: String, prefix: String) -> Result<Vec<WikiMatch>, String> {
+    wikilink_matches(Path::new(&root), &prefix)
+}
+
 /// Titles + aliases for the quick switcher's fuzzy matching.
 #[tauri::command]
 fn quick_list(root: String) -> Result<serde_json::Value, String> {
@@ -1225,7 +1265,7 @@ fn main() {
             list_tree, open_file, pick_folder, pick_file,
             watch_tree, watch_file, export_html, read_text_file,
             note_info, vault_overview, vault_search, vault_tasks,
-            resolve_wikilink, graph_data, quick_list,
+            resolve_wikilink, graph_data, quick_list, wikilink_complete,
             read_source, save_file, render_markdown, toggle_task,
             create_note, rename_note, set_frontmatter, paste_image, tag_list,
             related_notes, semantic_search, set_api_key, ai_action, syntax_css,
@@ -1350,6 +1390,27 @@ mod tests {
         save_file(f.to_string_lossy().into(), "# Hi\n".into(), None).unwrap();
         assert_eq!(std::fs::read_to_string(&f).unwrap(), "# Hi\n");
         assert!(!f.with_extension("tomarkdown.tmp").exists());
+    }
+
+    #[test]
+    fn wikilink_complete_ranks_prefix_first() {
+        let root = fixture_vault();
+        // "note" prefixes the fixture titles "Note A", "Note B", and "Note A (nested)".
+        let hits = wikilink_matches(Path::new(&root), "note").unwrap();
+        assert!(!hits.is_empty());
+        let labels: Vec<String> = hits.iter().map(|h| h.label.to_lowercase()).collect();
+        if let Some(fs) = labels.iter().position(|l| !l.starts_with("note")) {
+            assert!(labels[..fs].iter().all(|l| l.starts_with("note")));
+            assert!(labels[fs..].iter().all(|l| !l.starts_with("note")));
+        }
+    }
+
+    #[test]
+    fn wikilink_complete_empty_prefix_lists_up_to_20() {
+        let root = fixture_vault();
+        let hits = wikilink_matches(Path::new(&root), "").unwrap();
+        assert!(!hits.is_empty());
+        assert!(hits.len() <= 20);
     }
 
     #[test]
