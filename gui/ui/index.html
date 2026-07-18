@@ -426,6 +426,7 @@
   #drop-dialog button { text-align: left; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); cursor: pointer; }
   #drop-dialog button:hover:not(:disabled) { background: var(--hover); }
   #drop-dialog button:disabled { opacity: .45; cursor: default; }
+  .loc-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: 13px; }
   #confirm-insert-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 270; }
   #confirm-insert-overlay.show { display: flex; }
   #confirm-insert-dialog { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; min-width: 320px; display: flex; flex-direction: column; gap: 8px; }
@@ -2019,6 +2020,7 @@ const COMMANDS = [
   { label: 'Theme: Sepia', run: () => applyTheme('sepia') },
   { label: 'Settings…', run: openSettings },
   { label: 'Keyboard Shortcuts (?)', run: openCheatsheet },
+  { label: 'Localize External Links…', run: localizeAllDialog },
 ];
 function openPalette() {
   switcherOverlay.classList.add('show');
@@ -2478,6 +2480,61 @@ document.getElementById('tree-box').addEventListener('contextmenu', (e) => {
   showCtx(e.clientX, e.clientY, items);
 });
 
+// ---- Link localization (drop-and-localize Task 5) ----
+document.getElementById('content').addEventListener('contextmenu', (e) => {
+  const a = e.target.closest('a[href], img[src]');
+  if (!a || !currentFile) return;
+  const target = a.tagName === 'IMG' ? a.getAttribute('src') : a.getAttribute('href');
+  if (!/^(https?|file):/.test(target || '')) return;
+  e.preventDefault();
+  showCtx(e.clientX, e.clientY, [
+    { label: 'Store in vault', run: () => runLocalize(target, 'store') },
+    { label: 'Convert to markdown note', run: () => runLocalize(target, 'convert') },
+  ]);
+});
+async function runLocalize(link, action) {
+  try {
+    toast('Localizing…', 'info', 1500);
+    await invoke('localize_link', { root: currentFolder, notePath: currentFile, link, action });
+    await openFile(currentFile, false, true);
+    toast('Link localized', 'success');
+  } catch (e) { toast(friendlyError(e), 'error', 6000); }
+}
+async function localizeAllDialog() {
+  if (!currentFile) return;
+  if (dropDialogBusy) { toast('Finish the current drop dialog first', 'info'); return; }
+  const links = await invoke('scan_external_links', { root: currentFolder, notePath: currentFile });
+  if (!links.length) { toast('No external links in this note', 'info'); return; }
+  dropDialogBusy = true;
+  dropDialogEl.innerHTML = '<h3>Localize external links</h3>' + links.map((l, i) =>
+    `<div class="loc-row"><span title="${escapeHtml(l.link)}">${escapeHtml(l.link.length > 48 ? l.link.slice(0, 45) + '…' : l.link)}</span>
+     <select data-i="${i}">
+       <option value="skip"${l.kind === 'image_url' ? '' : ' selected'}>Skip</option>
+       <option value="store"${l.kind === 'image_url' ? ' selected' : ''}>Store</option>
+       <option value="convert">Convert</option>
+     </select></div>`).join('') +
+    '<div><button id="loc-apply">Apply</button> <button id="loc-cancel">Cancel</button></div>';
+  dropOverlay.classList.add('show'); trapFocus(dropOverlay);
+  const close = () => {
+    dropOverlay.classList.remove('show'); releaseFocus(dropOverlay);
+    restoreDropDialog();
+    dropDialogBusy = false;
+    localizeDialogClose = null;
+  };
+  localizeDialogClose = close;
+  document.getElementById('loc-cancel').onclick = close;
+  document.getElementById('loc-apply').onclick = async () => {
+    const jobs = [...dropDialogEl.querySelectorAll('select')].map(s => ({ link: links[+s.dataset.i].link, action: s.value })).filter(j => j.action !== 'skip');
+    close();
+    let ok = 0;
+    for (const j of jobs) {
+      try { await invoke('localize_link', { root: currentFolder, notePath: currentFile, link: j.link, action: j.action }); ok++; }
+      catch (e) { toast(`Skipped ${j.link.slice(0, 40)}: ${friendlyError(e)}`, 'error', 5000); }
+    }
+    if (ok) { await openFile(currentFile, false, true); toast(`Localized ${ok} link${ok === 1 ? '' : 's'}`, 'success'); }
+  };
+}
+
 // ---- Graph filter ----
 let graphFilter = '';
 document.getElementById('graph-filter').addEventListener('input', (e) => {
@@ -2933,7 +2990,23 @@ async function insertIntoNote(text) {
 // drop handlers below), never queued or orphaned.
 let dropDialogBusy = false;
 const dropOverlay = document.getElementById('drop-overlay');
-let pendingDropResolve = null;
+const dropDialogEl = document.getElementById('drop-dialog');
+// The four-action button markup, factored so both the action-picker dialog
+// (askDropAction, below) and the whole-note localize dialog (localizeAllDialog,
+// Task 5) can share the #drop-dialog shell without permanently clobbering it.
+const DROP_DIALOG_TEMPLATE = `<h3 id="drop-title"></h3>
+      <button data-act="copy">Copy into vault &amp; link</button>
+      <button data-act="linkorig">Link original location</button>
+      <button data-act="convnote">Convert to new linked note</button>
+      <button data-act="convinline">Convert inline</button>
+      <button data-act="cancel">Cancel (Esc)</button>`;
+function restoreDropDialog() { dropDialogEl.innerHTML = DROP_DIALOG_TEMPLATE; }
+// Set when the localize-all dialog (which reuses #drop-overlay/#drop-dialog but
+// isn't a pendingDropResolve-based flow) is open, so the persistent Escape
+// listener below routes to its own close() instead of resolveDropDialog — which
+// expects the four-action button markup and would otherwise leave the dialog
+// half-torn-down (loc-* buttons still attached, no data-act semantics).
+let localizeDialogClose = null;
 function resolveDropDialog(act) {
   dropOverlay.classList.remove('show'); releaseFocus(dropOverlay);
   dropDialogBusy = false;
@@ -2960,7 +3033,11 @@ function askDropAction(title, convertible) {
 // and the leaked listeners' stopPropagation calls stack up and suppress Escape
 // for unrelated overlays opened later.
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && dropOverlay.classList.contains('show')) { e.stopPropagation(); resolveDropDialog('cancel'); }
+  if (e.key === 'Escape' && dropOverlay.classList.contains('show')) {
+    e.stopPropagation();
+    if (localizeDialogClose) localizeDialogClose();
+    else resolveDropDialog('cancel');
+  }
 }, true);
 
 const confirmInsertOverlay = document.getElementById('confirm-insert-overlay');
