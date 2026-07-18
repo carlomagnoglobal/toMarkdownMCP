@@ -510,23 +510,61 @@ fn set_frontmatter(path: String, yaml: String, vault_root: Option<String>) -> Re
     save_file(path, new_content, vault_root)
 }
 
+/// Resolve (and create) the vault's configured attachment folder.
+fn attachment_dir(root: &Path) -> Result<PathBuf, String> {
+    let cfg = to_markdown_mcp::obsidian::config::read_config(root).unwrap_or_default();
+    let folder = cfg.attachment_folder.unwrap_or_default();
+    let dir = if folder.is_empty() || folder == "/" {
+        root.to_path_buf()
+    } else {
+        root.join(folder.trim_start_matches("./"))
+    };
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
 /// Save a pasted image into the vault's attachment folder and return the
 /// wikilink embed text to insert.
 #[tauri::command]
 fn paste_image(root: String, base64_data: String, extension: String) -> Result<String, String> {
     let bytes = base64_decode(&base64_data).ok_or("Invalid base64 image data")?;
-    let cfg = to_markdown_mcp::obsidian::config::read_config(Path::new(&root)).unwrap_or_default();
-    let folder = cfg.attachment_folder.unwrap_or_default();
-    let dir = if folder.is_empty() || folder == "/" {
-        PathBuf::from(&root)
-    } else {
-        PathBuf::from(&root).join(folder.trim_start_matches("./"))
-    };
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dir = attachment_dir(Path::new(&root))?;
     let name = format!("Pasted image {}.{}", chrono_stamp(), extension);
     std::fs::write(dir.join(&name), bytes).map_err(|e| e.to_string())?;
     vault::invalidate(Path::new(&root));
     Ok(format!("![[{}]]", name))
+}
+
+#[derive(serde::Serialize, Debug)]
+struct StoredAttachment {
+    name: String,
+    embed: String,
+}
+
+const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"];
+
+fn store_attachment_impl(root: &Path, src: &Path) -> Result<StoredAttachment, String> {
+    if !src.is_file() {
+        return Err(format!("File not found: {}", src.display()));
+    }
+    let dir = attachment_dir(root)?;
+    let stem = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
+    let ext = src.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let mut name = if ext.is_empty() { stem.clone() } else { format!("{}.{}", stem, ext) };
+    let mut n = 2;
+    while dir.join(&name).exists() {
+        name = if ext.is_empty() { format!("{} {}", stem, n) } else { format!("{} {}.{}", stem, n, ext) };
+        n += 1;
+    }
+    std::fs::copy(src, dir.join(&name)).map_err(|e| e.to_string())?;
+    vault::invalidate(root);
+    let embed = if IMAGE_EXTS.contains(&ext.as_str()) { format!("![[{}]]", name) } else { format!("[[{}]]", name) };
+    Ok(StoredAttachment { name, embed })
+}
+
+#[tauri::command]
+fn store_attachment(root: String, src_path: String) -> Result<StoredAttachment, String> {
+    store_attachment_impl(Path::new(&root), Path::new(&src_path))
 }
 
 fn chrono_stamp() -> String {
@@ -1267,7 +1305,7 @@ fn main() {
             note_info, vault_overview, vault_search, vault_tasks,
             resolve_wikilink, graph_data, quick_list, wikilink_complete,
             read_source, save_file, render_markdown, toggle_task,
-            create_note, rename_note, set_frontmatter, paste_image, tag_list,
+            create_note, rename_note, set_frontmatter, paste_image, store_attachment, tag_list,
             related_notes, semantic_search, set_api_key, ai_action, syntax_css,
             doc_stats, peek_note,
             daily_note, list_templates, new_folder, delete_path,
@@ -1381,6 +1419,61 @@ mod tests {
         let d = std::env::temp_dir().join(format!("gui_edit_test_{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    /// A throwaway vault directory for tests that need to write into a
+    /// vault root (unlike `fixture_vault()`, which points at the
+    /// read-only checked-in fixtures). Mirrors `temp_dir()`'s pattern of
+    /// a std::env::temp_dir subdir keyed by pid, made unique per-call via
+    /// a name suffix so concurrent tests don't collide.
+    struct TempVaultDir(PathBuf);
+
+    impl TempVaultDir {
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempVaultDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn temp_vault(name: &str) -> TempVaultDir {
+        let d = std::env::temp_dir().join(format!("gui_store_attachment_test_{}_{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        TempVaultDir(d)
+    }
+
+    #[test]
+    fn store_attachment_copies_and_dedupes() {
+        let root = temp_vault("copies_and_dedupes");
+        let src = root.path().join("src img.png");
+        std::fs::write(&src, b"fakepng").unwrap();
+        let a = store_attachment_impl(root.path(), &src).unwrap();
+        assert!(a.embed.starts_with("![["), "png should embed: {}", a.embed);
+        let b = store_attachment_impl(root.path(), &src).unwrap();
+        assert_ne!(a.name, b.name, "second copy must dedupe filename");
+        // both files exist in the attachment dir
+        let dir = attachment_dir(root.path()).unwrap();
+        assert!(dir.join(&a.name).exists() && dir.join(&b.name).exists());
+    }
+
+    #[test]
+    fn store_attachment_non_image_links_instead_of_embeds() {
+        let root = temp_vault("non_image");
+        let src = root.path().join("doc.pdf");
+        std::fs::write(&src, b"%PDF").unwrap();
+        let a = store_attachment_impl(root.path(), &src).unwrap();
+        assert!(a.embed.starts_with("[[") && !a.embed.starts_with("![["));
+    }
+
+    #[test]
+    fn store_attachment_missing_source_errors() {
+        let root = temp_vault("missing_source");
+        assert!(store_attachment_impl(root.path(), Path::new("/nope/x.png")).is_err());
     }
 
     #[test]
