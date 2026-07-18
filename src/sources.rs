@@ -79,6 +79,40 @@ async fn fetch_from_url(url: &str) -> Result<String> {
         .map_err(|e| anyhow!("Failed to read response: {}", e))
 }
 
+/// Fetch raw bytes from a URL along with its `content-type` header, if any.
+///
+/// Mirrors `fetch_from_url`'s request path but skips the UTF-8/HTML
+/// decoding, returning the raw response body instead.
+pub async fn fetch_url_bytes(url: &str) -> Result<(Vec<u8>, Option<String>)> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| anyhow!("Failed to fetch URL: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!(
+            "HTTP error {}: {}",
+            response.status(),
+            response.status().canonical_reason().unwrap_or("Unknown")
+        ));
+    }
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| anyhow!("Failed to read response: {}", e))?;
+
+    Ok((bytes.to_vec(), content_type))
+}
+
 /// Fetch content from stdin
 fn fetch_from_stdin() -> Result<String> {
     use std::io::Read;
@@ -262,5 +296,10 @@ mod tests {
         assert!(is_excluded_dir(".git"));
         assert!(!is_excluded_dir("src"));
         assert!(!is_excluded_dir("lib"));
+    }
+
+    #[tokio::test]
+    async fn fetch_url_bytes_rejects_invalid_url() {
+        assert!(fetch_url_bytes("not-a-url").await.is_err());
     }
 }

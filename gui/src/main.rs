@@ -543,6 +543,18 @@ struct StoredAttachment {
 
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"];
 
+/// Find a filename of the form `stem.ext` (or `stem N.ext` for `N >= 2`) that
+/// does not already exist in `dir`.
+fn dedupe_in(dir: &Path, stem: &str, ext: &str) -> String {
+    let mut name = if ext.is_empty() { stem.to_string() } else { format!("{}.{}", stem, ext) };
+    let mut n = 2;
+    while dir.join(&name).exists() {
+        name = if ext.is_empty() { format!("{} {}", stem, n) } else { format!("{} {}.{}", stem, n, ext) };
+        n += 1;
+    }
+    name
+}
+
 fn store_attachment_impl(root: &Path, src: &Path) -> Result<StoredAttachment, String> {
     if !src.is_file() {
         return Err(format!("File not found: {}", src.display()));
@@ -550,12 +562,7 @@ fn store_attachment_impl(root: &Path, src: &Path) -> Result<StoredAttachment, St
     let dir = attachment_dir(root)?;
     let stem = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
     let ext = src.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-    let mut name = if ext.is_empty() { stem.clone() } else { format!("{}.{}", stem, ext) };
-    let mut n = 2;
-    while dir.join(&name).exists() {
-        name = if ext.is_empty() { format!("{} {}", stem, n) } else { format!("{} {}.{}", stem, n, ext) };
-        n += 1;
-    }
+    let name = dedupe_in(&dir, &stem, &ext);
     std::fs::copy(src, dir.join(&name)).map_err(|e| e.to_string())?;
     vault::invalidate(root);
     let embed = if IMAGE_EXTS.contains(&ext.as_str()) { format!("![[{}]]", name) } else { format!("[[{}]]", name) };
@@ -565,6 +572,39 @@ fn store_attachment_impl(root: &Path, src: &Path) -> Result<StoredAttachment, St
 #[tauri::command]
 fn store_attachment(root: String, src_path: String) -> Result<StoredAttachment, String> {
     store_attachment_impl(Path::new(&root), Path::new(&src_path))
+}
+
+/// Derive a filename for a downloaded URL, falling back to a timestamped
+/// name and a content-type-derived extension when the URL path is
+/// uninformative.
+fn url_attachment_name(url: &str, content_type: Option<&str>) -> String {
+    let path_part = url.split('?').next().unwrap_or(url).split('#').next().unwrap_or(url);
+    let last = path_part.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+    let mut name = if last.is_empty() || last.contains("://") { format!("Downloaded {}", chrono_stamp()) } else { last.to_string() };
+    if !name.contains('.') {
+        let ext = match content_type.map(|c| c.split(';').next().unwrap_or(c).trim()) {
+            Some("image/jpeg") => "jpg", Some("image/png") => "png", Some("image/gif") => "gif",
+            Some("image/webp") => "webp", Some("image/svg+xml") => "svg", Some("application/pdf") => "pdf",
+            _ => "bin",
+        };
+        name = format!("{}.{}", name, ext);
+    }
+    name
+}
+
+#[tauri::command]
+async fn store_url_attachment(root: String, url: String) -> Result<StoredAttachment, String> {
+    let (bytes, ctype) = to_markdown_mcp::sources::fetch_url_bytes(&url).await.map_err(|e| e.to_string())?;
+    let name0 = url_attachment_name(&url, ctype.as_deref());
+    let rootp = Path::new(&root);
+    let dir = attachment_dir(rootp)?;
+    let (stem, ext) = match name0.rsplit_once('.') { Some((s, e)) => (s.to_string(), e.to_string()), None => (name0.clone(), String::new()) };
+    let name = dedupe_in(&dir, &stem, &ext);
+    std::fs::write(dir.join(&name), bytes).map_err(|e| e.to_string())?;
+    vault::invalidate(rootp);
+    let e = name.rsplit('.').next().unwrap_or("").to_lowercase();
+    let embed = if IMAGE_EXTS.contains(&e.as_str()) { format!("![[{}]]", name) } else { format!("[[{}]]", name) };
+    Ok(StoredAttachment { name, embed })
 }
 
 fn chrono_stamp() -> String {
@@ -1305,7 +1345,7 @@ fn main() {
             note_info, vault_overview, vault_search, vault_tasks,
             resolve_wikilink, graph_data, quick_list, wikilink_complete,
             read_source, save_file, render_markdown, toggle_task,
-            create_note, rename_note, set_frontmatter, paste_image, store_attachment, tag_list,
+            create_note, rename_note, set_frontmatter, paste_image, store_attachment, store_url_attachment, tag_list,
             related_notes, semantic_search, set_api_key, ai_action, syntax_css,
             doc_stats, peek_note,
             daily_note, list_templates, new_folder, delete_path,
@@ -1474,6 +1514,14 @@ mod tests {
     fn store_attachment_missing_source_errors() {
         let root = temp_vault("missing_source");
         assert!(store_attachment_impl(root.path(), Path::new("/nope/x.png")).is_err());
+    }
+
+    #[test]
+    fn url_attachment_name_derivation() {
+        assert_eq!(url_attachment_name("https://x.com/a/photo.png?w=2", None), "photo.png");
+        assert_eq!(url_attachment_name("https://x.com/img", Some("image/jpeg")), "img.jpg");
+        let n = url_attachment_name("https://x.com/", None);
+        assert!(!n.is_empty() && !n.contains('/'));
     }
 
     #[test]
