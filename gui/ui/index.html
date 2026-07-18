@@ -1426,8 +1426,8 @@ const editorBackdrop = document.getElementById('editor-backdrop');
 let hlTimer = null, hlSeq = 0;
 function byteToCharIndex(text) {
   const enc = new TextEncoder();
-  const map = new Map(); let b = 0;
-  for (let c = 0; c < text.length; c++) { map.set(b, c); b += enc.encode(text[c]).length; }
+  const map = new Map(); let b = 0, c = 0;
+  for (const ch of text) { map.set(b, c); b += enc.encode(ch).length; c += ch.length; }
   map.set(b, text.length);
   return (off) => { while (off > 0 && !map.has(off)) off--; return map.get(off) ?? text.length; };
 }
