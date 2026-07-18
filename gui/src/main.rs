@@ -1069,6 +1069,44 @@ fn delete_path(path: String, vault_root: Option<String>) -> Result<(), String> {
     result.map_err(|e| e.to_string())
 }
 
+/// Read the macOS drag pasteboard right after a drop. Browser image drags
+/// (Safari/Chrome) reach Tauri with empty `paths` because the "file" is a
+/// promise, not a file on disk — but the drag pasteboard still carries the
+/// image's URL (and often a plain-text fallback). Returns the first http(s)
+/// URL found, if any.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn read_drag_pasteboard(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use std::sync::mpsc;
+    let (tx, rx) = mpsc::channel();
+    app.run_on_main_thread(move || {
+        use objc2_app_kit::{
+            NSPasteboard, NSPasteboardNameDrag, NSPasteboardTypeString, NSPasteboardTypeURL,
+        };
+        let pb = unsafe { NSPasteboard::pasteboardWithName(NSPasteboardNameDrag) };
+        let mut found: Option<String> = None;
+        for ty in [unsafe { NSPasteboardTypeURL }, unsafe { NSPasteboardTypeString }] {
+            if let Some(s) = pb.stringForType(ty) {
+                let s = s.to_string();
+                let s = s.trim();
+                if s.starts_with("http://") || s.starts_with("https://") {
+                    found = Some(s.to_string());
+                    break;
+                }
+            }
+        }
+        let _ = tx.send(found);
+    })
+    .map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn read_drag_pasteboard() -> Result<Option<String>, String> {
+    Ok(None)
+}
+
 fn debug_log_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     use tauri::Manager;
     let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
@@ -1557,7 +1595,7 @@ fn main() {
             reveal_in_finder, unlinked_mentions, render_blocks,
             export_docx, export_rtf, take_pending_opens,
             convert_file_to_markdown, convert_url_to_markdown, save_import, is_convertible,
-            text_metrics, highlight_markdown, debug_log, debug_log_path
+            text_metrics, highlight_markdown, debug_log, debug_log_path, read_drag_pasteboard
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");

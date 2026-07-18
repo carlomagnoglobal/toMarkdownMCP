@@ -3134,10 +3134,48 @@ function dropPosToClient(pos) {
 function pointInRect(pt, rect) {
   return pt.x >= rect.left && pt.x <= rect.right && pt.y >= rect.top && pt.y <= rect.bottom;
 }
+// Browser drags (Safari/Chrome webpage images and links) reach Tauri with
+// EMPTY paths — the "file" is a promise, not a file on disk — and macOS
+// suppresses the corresponding DOM drop events entirely. The drag pasteboard
+// still holds the dragged URL, so an empty-paths drop over the note routes
+// through read_drag_pasteboard.
+async function handleUrlDrop(uri) {
+  logDropDiag('APP', 'url-drop', uri.slice(0, 100));
+  if (IMG_RE.test(uri.split('?')[0].split('#')[0])) {
+    const act = await askImageAction(uri, true);
+    if (act === 'cancel') return;
+    if (act === 'link') { await insertIntoNote(`![](${uri})`); return; }
+    try { const a = await invoke('store_url_attachment', { root: currentFolder, url: uri }); await insertIntoNote(a.embed); }
+    catch { await insertIntoNote(`![](${uri})`); toast('Could not download — inserted a link instead', 'info'); }
+  } else {
+    const act = await askDropAction(uri, true);
+    if (act === 'cancel') return;
+    if (act === 'copy') { const a = await invoke('store_url_attachment', { root: currentFolder, url: uri }); await insertIntoNote(a.embed); }
+    else if (act === 'linkorig') await insertIntoNote(`<${uri}>`);
+    else {
+      const conv = await invoke('convert_url_to_markdown', { url: uri });
+      if (act === 'convnote') {
+        const saved = await invoke('save_import', { root: currentFolder, suggestedName: conv.suggested_name, markdown: conv.markdown, pick: false });
+        if (saved) await insertIntoNote(`[[${saved.split('/').pop().replace(/\.md$/, '')}]]`);
+      } else if (conv.markdown.length <= 200 * 1024 || (await askConfirmInsert(conv.markdown.length))) {
+        await insertIntoNote(conv.markdown);
+      }
+    }
+  }
+}
 listen('tauri://drag-drop', async (event) => {
   const paths = event.payload.paths || [];
-  if (!paths.length) return;
   if (dropDialogBusy) { toast('Finish the current drop dialog first', 'info'); return; }
+  if (!paths.length) {
+    // Browser/app drag with no file on disk: try the drag pasteboard for a URL.
+    if (!currentFolder || !currentFile) return;
+    try {
+      const uri = await invoke('read_drag_pasteboard');
+      if (uri) { await handleUrlDrop(uri); }
+      else toast('Could not read the dragged content — try copying the image and pasting it (Cmd+V)', 'info', 5000);
+    } catch (e) { toast(friendlyError(e), 'error'); }
+    return;
+  }
   const p = paths[0];
   // Directory drops always use the old folder-open flow, even over the note area.
   let isDir = false;
@@ -3273,27 +3311,7 @@ for (const el of [document.getElementById('scroll'), document.getElementById('ed
           await insertIntoNote(embed);
         }
       } else if (uri && /^https?:\/\//.test(uri)) {
-        if (IMG_RE.test(uri.split('?')[0])) {
-          const act = await askImageAction(uri, true);
-          if (act === 'cancel') return;
-          if (act === 'link') { await insertIntoNote(`![](${uri})`); return; }
-          try { const a = await invoke('store_url_attachment', { root: currentFolder, url: uri }); await insertIntoNote(a.embed); }
-          catch { await insertIntoNote(`![](${uri})`); toast('Could not download — inserted a link instead', 'info'); }
-        } else {
-          const act = await askDropAction(uri, true);
-          if (act === 'cancel') return;
-          if (act === 'copy') { const a = await invoke('store_url_attachment', { root: currentFolder, url: uri }); await insertIntoNote(a.embed); }
-          else if (act === 'linkorig') await insertIntoNote(`<${uri}>`);
-          else {
-            const conv = await invoke('convert_url_to_markdown', { url: uri });
-            if (act === 'convnote') {
-              const saved = await invoke('save_import', { root: currentFolder, suggestedName: conv.suggested_name, markdown: conv.markdown, pick: false });
-              if (saved) await insertIntoNote(`[[${saved.split('/').pop().replace(/\.md$/, '')}]]`);
-            } else if (conv.markdown.length <= 200 * 1024 || (await askConfirmInsert(conv.markdown.length))) {
-              await insertIntoNote(conv.markdown);
-            }
-          }
-        }
+        await handleUrlDrop(uri);
       }
     } catch (err) { toast(friendlyError(err), 'error'); }
   });
