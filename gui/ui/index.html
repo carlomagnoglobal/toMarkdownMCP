@@ -3145,7 +3145,7 @@ listen('tauri://drag-drop', async (event) => {
 });
 
 // ---- DOM drop handler for non-file drags (image data / URLs from other apps) ----
-for (const el of [document.getElementById('scroll'), document.getElementById('editor-wrap')]) {
+for (const el of [document.getElementById('scroll'), document.getElementById('editor-wrap'), document.getElementById('live-wrap')]) {
   el.addEventListener('dragover', (e) => { if (!e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
   el.addEventListener('drop', async (e) => {
     if (e.dataTransfer?.types?.includes('Files')) return; // handled by tauri://drag-drop

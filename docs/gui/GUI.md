@@ -83,7 +83,7 @@ Packaging: `cargo tauri build` from `gui/` produces the `.app`/`.dmg` (tauri-cli
 - **Safari image drag**: Drag an image from a webpage onto the note; verify it downloads and embeds; test offline by unplugging network — verify fallback inserts a plain link with "Could not download" toast.
 - **Multi-file one-action**: Drag three mixed files (image + PDF + DOCX) onto note; image embeds instantly; dialog appears for the others offering one action that applies to both.
 - **Esc cancels drop**: Drag a file onto the note, dialog appears; press Esc; verify dialog closes and nothing is inserted.
-- **Oversized inline confirm**: Drag a 250+ KB file onto note, select "Convert inline"; verify a toast asks to drop again within 10s to confirm; dropping a second file within the window confirms the insert.
+- **Oversized inline confirm**: Drag a 250+ KB file onto note, select "Convert inline"; verify a confirmation dialog appears ("Converted text is N KB — insert anyway?"); confirm to insert the content.
 - **Right-click store remote image**: In reading view, right-click a remote image (http/https); select "Store in vault"; verify the file downloads, image now loads from local attachments, link is rewritten.
 - **Right-click convert remote link**: Right-click an external link in the reader; select "Convert to markdown note"; verify a new Imports/ note is created, link becomes a wikilink.
 - **Whole-note localize with dead URL**: Palette → "Localize External Links…" on a note with a 404 URL; verify the dead link is listed, attempt fails with a toast, note is untouched for that link.
