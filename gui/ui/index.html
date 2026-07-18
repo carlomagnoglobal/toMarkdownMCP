@@ -2028,6 +2028,7 @@ const COMMANDS = [
   { label: 'Typewriter Mode', run: () => { typewriterOn = !typewriterOn; flashLive('typewriter ' + (typewriterOn ? 'on' : 'off')); } },
   { label: 'Document Statistics', run: showDocStats },
   { label: 'Drop Diagnostics (debug)', run: showDropDiag },
+  { label: 'Reveal Debug Log in Finder', run: revealDebugLog },
   { label: 'Text Analysis: Tokens & Frequencies', run: showTextMetrics },
   { label: 'Keyword Highlights (toggle)', run: toggleKeywords },
   { label: 'Theme: System', run: () => applyTheme('system') },
@@ -3170,6 +3171,7 @@ function logDropDiag(src, kind, detail) {
   dropDiag.push(line);
   if (dropDiag.length > 200) dropDiag.shift();
   console.log('drop-diag:', line);
+  invoke('debug_log', { line: `drop-diag [${src}] ${kind} ${detail}` }).catch(() => {});
   // First occurrence of each event kind gets a visible toast so the user
   // knows the event arrived even without opening the diagnostics view.
   const key = src + kind;
@@ -3197,10 +3199,19 @@ for (const tev of ['tauri://drag-enter', 'tauri://drag-over', 'tauri://drag-drop
   }).catch(() => {});
 }
 async function showDropDiag() {
+  const logPath = await invoke('debug_log_path').catch(() => '(unavailable)');
   const md = '# Drop diagnostics\n\nDrag something onto the note area, then reopen this view.\n\n```\n'
     + (dropDiag.length ? dropDiag.join('\n') : '(no drag/drop events captured yet)') + '\n```\n\n'
-    + `Environment: devicePixelRatio=${window.devicePixelRatio}, platform=${navigator.platform}, viewMode=${viewMode}, currentFile=${currentFile ? 'open' : 'none'}\n`;
+    + `Environment: devicePixelRatio=${window.devicePixelRatio}, platform=${navigator.platform}, viewMode=${viewMode}, currentFile=${currentFile ? 'open' : 'none'}\n\n`
+    + `Persistent log (attach this file to bug reports): \`${logPath}\`\n`;
   await showResult('Drop Diagnostics', md);
+}
+async function revealDebugLog() {
+  try {
+    const p = await invoke('debug_log_path');
+    await invoke('debug_log', { line: '--- log revealed by user ---' }); // ensure file exists
+    await invoke('reveal_in_finder', { path: p });
+  } catch (e) { toast(friendlyError(e), 'error'); }
 }
 
 // ---- Web-image drop dialog: store in vault vs link only ----

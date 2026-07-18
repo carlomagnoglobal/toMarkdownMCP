@@ -1069,6 +1069,33 @@ fn delete_path(path: String, vault_root: Option<String>) -> Result<(), String> {
     result.map_err(|e| e.to_string())
 }
 
+fn debug_log_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join("debug.log"))
+}
+
+/// Append one line to the persistent debug log (for bug reports).
+#[tauri::command]
+fn debug_log(app: tauri::AppHandle, line: String) -> Result<String, String> {
+    use std::io::Write;
+    let path = debug_log_file(&app)?;
+    let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    writeln!(f, "{} {}", ts, line).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
+#[tauri::command]
+fn debug_log_path(app: tauri::AppHandle) -> Result<String, String> {
+    debug_log_file(&app).map(|p| p.display().to_string())
+}
+
 #[tauri::command]
 fn reveal_in_finder(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -1530,7 +1557,7 @@ fn main() {
             reveal_in_finder, unlinked_mentions, render_blocks,
             export_docx, export_rtf, take_pending_opens,
             convert_file_to_markdown, convert_url_to_markdown, save_import, is_convertible,
-            text_metrics, highlight_markdown
+            text_metrics, highlight_markdown, debug_log, debug_log_path
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");
