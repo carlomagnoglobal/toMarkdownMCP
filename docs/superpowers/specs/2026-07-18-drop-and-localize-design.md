@@ -32,7 +32,7 @@ Applies when a note is open and the drop lands on the note area (reader, split e
 
 Non-blocking overlay in the existing dialog style; Esc or outside-click cancels (nothing inserted). Actions:
 
-1. **Copy into vault & link** — file copied to the vault `Attachments/` folder (created on demand, deduped filename); embed/link inserted.
+1. **Copy into vault & link** — file copied to the vault's configured attachment folder (same resolution as `paste_image`; created on demand, deduped filename); embed/link inserted.
 2. **Link original location** — no copy; `[name](file:///…)` (or the URL itself for URL drops) inserted.
 3. **Convert → new linked note** — existing `save_import` conversion flow into `Imports/`; a wikilink to the new note is inserted at the drop point (the note is NOT opened in a new tab, unlike the window-level import).
 4. **Convert inline** — converted markdown inserted at the insertion point. If the converted text exceeds 200 KB, a confirmation step warns before inserting.
@@ -53,7 +53,7 @@ External targets only: `http(s)://` links and images, and `file://` links. Links
 
 Right-click on an external link or remote image in the reader (plus a hover affordance on remote images) opens a small context menu:
 
-- **Store in vault** — target downloaded (URL) or copied (file path); saved to `Attachments/`; that one link in the note source is rewritten to the local copy.
+- **Store in vault** — target downloaded (URL) or copied (file path); saved to the attachment folder; the link in the note source is rewritten to the local copy.
 - **Convert to markdown note** — target run through the converter (URL or file), saved as a note in `Imports/`, and the link rewritten to a wikilink.
 
 ### Whole-note
@@ -66,7 +66,7 @@ Palette command **"Localize external links…"**: Rust scans the current note an
 
 ## New Rust commands (all unit-tested)
 
-- `store_attachment(root, src_path) -> String` — copy a local file into `Attachments/`, deduped; returns vault-relative path.
+- `store_attachment(root, src_path) -> String` — copy a local file into the vault attachment folder, deduped; returns vault-relative path.
 - `store_url_attachment(root, url) -> String` — download (reusing the pipeline's HTTP machinery from `convert_url_to_markdown`) and store; returns vault-relative path. Errors are strings for toast display.
 - `scan_external_links(root, note_path) -> Vec<{link, kind}>` — external targets in a note (`kind`: image_url, url, file).
 - `localize_link(root, note_path, link, action) -> String` — store-or-convert one target, rewrite that link, save, return new source.
