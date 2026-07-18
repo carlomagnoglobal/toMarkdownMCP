@@ -631,10 +631,11 @@ fn scan_external_links_impl(_root: &Path, note: &Path) -> Result<Vec<ExtLink>, S
             let target =
                 src[start..start + close].split_whitespace().next().unwrap_or("").to_string();
             i = start + close + 1;
-            let is_image = {
-                let before = &src[..start - 2];
-                before.rfind('[').map(|b| before[..b].ends_with('!')).unwrap_or(false)
-            };
+            // `start - 2` is the `]` that opens `](`; walk back through
+            // nested brackets (e.g. `[a[b]](url)`) to find its true match.
+            let is_image = find_matching_open_bracket(&src, start - 2)
+                .map(|b| b > 0 && src.as_bytes()[b - 1] == b'!')
+                .unwrap_or(false);
             let kind = if target.starts_with("http://") || target.starts_with("https://") {
                 let clean = target.split('?').next().unwrap_or(&target);
                 let ext = clean.rsplit('.').next().unwrap_or("").to_lowercase();
@@ -685,23 +686,80 @@ async fn localize_target(root: &Path, link: &str, action: &str) -> Result<String
     }
 }
 
-/// Replace every `[text](link)` / `![alt](link)` occurrence in `note` with
-/// the localized wikilink/embed produced by `action`, and persist the
-/// updated source. Returns the full updated note text.
+/// Walk backward from `close_pos` (the byte index of a `]`) tracking
+/// bracket depth to find the index of its matching `[`, correctly skipping
+/// over nested brackets such as the inner `[b]` in `[a[b]](url)`.
+fn find_matching_open_bracket(s: &str, close_pos: usize) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut depth = 0i32;
+    let mut i = close_pos;
+    loop {
+        match bytes[i] {
+            b']' => depth += 1,
+            b'[' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+        if i == 0 {
+            return None;
+        }
+        i -= 1;
+    }
+}
+
+/// Find every `[text](link ...)` / `![alt](link ...)` construct in `src`
+/// whose target (the first whitespace-separated token inside the parens,
+/// same extraction as `scan_external_links_impl`) equals `link` exactly —
+/// so a title-bearing form like `[t](url "title")` matches, but a longer
+/// URL that merely starts with `link` does not. Returns the byte range of
+/// the whole construct (from `[`/`![` through the closing `)`), in
+/// left-to-right order.
+fn find_link_occurrences(src: &str, link: &str) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(open) = src[i..].find("](") {
+        let start = i + open + 2;
+        let Some(close) = src[start..].find(')') else { break };
+        let end = start + close + 1;
+        let target = src[start..start + close].split_whitespace().next().unwrap_or("");
+        if target == link {
+            // `start - 2` is the byte index of the `]` that opens `](`.
+            if let Some(bracket_open) = find_matching_open_bracket(src, start - 2) {
+                let bang = bracket_open > 0 && src.as_bytes()[bracket_open - 1] == b'!';
+                let range_start = if bang { bracket_open - 1 } else { bracket_open };
+                out.push((range_start, end));
+            }
+        }
+        i = end;
+    }
+    out
+}
+
+/// Replace every `[text](link)` / `![alt](link)` occurrence in `note`
+/// (including title-bearing forms like `[text](link "title")`) with the
+/// localized wikilink/embed produced by `action`, and persist the updated
+/// source. Returns the full updated note text.
+///
+/// Verifies at least one occurrence exists *before* calling
+/// `localize_target`, so a link that isn't actually present in the note
+/// never triggers the store/convert side effect (network fetch, file copy,
+/// or Imports write).
 async fn localize_link_impl(root: &Path, note: &Path, link: &str, action: &str) -> Result<String, String> {
     let src = std::fs::read_to_string(note).map_err(|e| e.to_string())?;
+    if find_link_occurrences(&src, link).is_empty() {
+        return Err("link not found in note".into());
+    }
     let replacement = localize_target(root, link, action).await?;
     // `replacement` is always a wikilink (`[[...]]` / `![[...]]`) and can
-    // never itself contain the search pattern `](link)`, so each iteration
-    // strictly shrinks the number of matches and this loop terminates.
-    let pat = format!("]({})", link);
+    // never itself contain a `](` construct, so re-scanning after each
+    // replacement strictly shrinks the occurrence count and this loop
+    // terminates.
     let mut updated = src;
-    while let Some(pos) = updated.find(&pat) {
-        let before = &updated[..pos];
-        let open = before.rfind('[').ok_or("malformed link")?;
-        let bang = open > 0 && updated.as_bytes()[open - 1] == b'!';
-        let start = if bang { open - 1 } else { open };
-        let end = pos + pat.len();
+    while let Some(&(start, end)) = find_link_occurrences(&updated, link).first() {
         updated.replace_range(start..end, &replacement);
     }
     std::fs::write(note, &updated).map_err(|e| e.to_string())?;
@@ -1861,5 +1919,33 @@ mod tests {
         assert!(!updated.contains(&file_url), "no occurrence of the old target remains");
         assert_eq!(updated.matches("[[att").count(), 2, "both occurrences rewritten to the same local target");
         assert_eq!(std::fs::read_to_string(&note).unwrap(), updated, "note saved");
+    }
+
+    #[test]
+    fn localize_link_store_rewrites_title_bearing_link() {
+        let root = temp_vault("localize_link_title");
+        let src = root.path().join("att.pdf");
+        std::fs::write(&src, b"%PDF").unwrap();
+        let file_url = format!("file://{}", src.display());
+        let note = root.path().join("Loc.md");
+        std::fs::write(&note, format!("[Site]({} \"My Title\")\n", file_url)).unwrap();
+        let updated = localize_link_blocking(root.path(), &note, &file_url, "store").unwrap();
+        assert!(!updated.contains(&file_url), "no occurrence of the old target remains");
+        assert!(!updated.contains("My Title"), "the title-bearing construct must be fully replaced");
+        assert!(updated.contains("[[att"), "rewritten to a local wikilink: {}", updated);
+    }
+
+    #[test]
+    fn localize_link_absent_target_errors_without_side_effects() {
+        let root = temp_vault("localize_link_absent");
+        let note = root.path().join("Loc.md");
+        std::fs::write(&note, "no external links here\n").unwrap();
+        let missing = "file:///tmp/does-not-appear.pdf";
+        let err = localize_link_blocking(root.path(), &note, missing, "store").unwrap_err();
+        assert!(err.contains("not found"), "unexpected error: {}", err);
+        assert!(
+            !root.path().join("does-not-appear.pdf").exists(),
+            "no attachment should have been created"
+        );
     }
 }
