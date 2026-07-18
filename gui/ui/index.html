@@ -214,11 +214,26 @@
   #edit-bar button:hover { background: var(--hover); }
   #save-state { font-size: 11px; color: var(--muted); margin-left: auto; }
   #edit-split { flex: 1; display: flex; overflow: hidden; }
-  #editor {
-    flex: 1; min-width: 0; resize: none; border: none; outline: none;
-    padding: 20px 24px; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: var(--bg); color: var(--fg); border-right: 1px solid var(--border);
+  #editor-shell { position: relative; flex: 1; min-width: 0; display: flex; border-right: 1px solid var(--border); }
+  #editor-backdrop, #editor-shell #editor {
+    margin: 0; border: 0; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+    font: 13.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 16px 20px; box-sizing: border-box;
   }
+  #editor-backdrop { position: absolute; inset: 0; pointer-events: none; color: var(--fg, inherit); }
+  #editor-shell #editor {
+    position: relative; flex: 1; min-width: 0; outline: none; resize: none;
+    background: transparent; color: transparent; caret-color: var(--fg, currentColor);
+  }
+  .hl-heading { font-weight: 700; color: var(--hl-heading, #2a6bcc); }
+  .hl-strong { font-weight: 700; }
+  .hl-emphasis { font-style: italic; }
+  .hl-code, .hl-codeblock { color: var(--hl-code, #8a5a00); }
+  .hl-link, .hl-wikilink { color: var(--hl-link, #2a6bcc); text-decoration: underline; }
+  .hl-blockquote { color: var(--hl-quote, #5a6472); font-style: italic; }
+  .hl-list_marker { color: var(--hl-heading, #2a6bcc); }
+  .hl-frontmatter { opacity: .55; }
+  :root[data-theme="dark"] { --hl-heading: #7aa2f7; --hl-code: #e0af68; --hl-link: #7aa2f7; --hl-quote: #9aa5ce; }
   #edit-preview { flex: 1; min-width: 0; overflow-y: auto; padding: 20px 28px; line-height: 1.6; }
   #edit-preview pre { background: var(--code-bg); border: 1px solid var(--border);
                       border-radius: 6px; padding: 12px; overflow-x: auto; font-size: 13px; }
@@ -478,7 +493,7 @@
         <span id="save-state"></span>
       </div>
       <div id="edit-split">
-        <textarea id="editor" spellcheck="false"></textarea>
+        <div id="editor-shell"><pre id="editor-backdrop" aria-hidden="true"></pre><textarea id="editor" spellcheck="false"></textarea></div>
         <div id="edit-preview"></div>
       </div>
     </div>
@@ -1406,6 +1421,39 @@ const editPreview = document.getElementById('edit-preview');
 const saveState = document.getElementById('save-state');
 let editMode = false, dirty = false, lastSelfSave = 0;
 
+// ---- Rust-computed source highlighting (backdrop overlay) ----
+const editorBackdrop = document.getElementById('editor-backdrop');
+let hlTimer = null, hlSeq = 0;
+function byteToCharIndex(text) {
+  const enc = new TextEncoder();
+  const map = new Map(); let b = 0;
+  for (let c = 0; c < text.length; c++) { map.set(b, c); b += enc.encode(text[c]).length; }
+  map.set(b, text.length);
+  return (off) => { while (off > 0 && !map.has(off)) off--; return map.get(off) ?? text.length; };
+}
+function spansToHtml(text, spans) {
+  let out = '', pos = 0;
+  for (const s of spans) {
+    if (s.start < pos) continue;               // skip overlaps; first span wins
+    out += escapeHtml(text.slice(pos, s.start));
+    out += '<span class="hl-' + s.kind + '">' + escapeHtml(text.slice(s.start, s.end)) + '</span>';
+    pos = s.end;
+  }
+  return out + escapeHtml(text.slice(pos));
+}
+async function refreshHighlight() {
+  const text = editor.value, seq = ++hlSeq;
+  try {
+    const raw = await invoke('highlight_markdown', { source: text });
+    if (seq !== hlSeq) return;                 // stale response
+    const toChar = byteToCharIndex(text);
+    const spans = raw.map(s => ({ start: toChar(s.start), end: toChar(s.end), kind: s.kind }));
+    editorBackdrop.innerHTML = spansToHtml(text, spans) + '\n';
+  } catch { editorBackdrop.textContent = text; }
+}
+editor.addEventListener('input', () => { clearTimeout(hlTimer); hlTimer = setTimeout(refreshHighlight, 120); });
+editor.addEventListener('scroll', () => { editorBackdrop.scrollTop = editor.scrollTop; }, { passive: true });
+
 // ---- Generic prompt overlay (input or textarea) ----
 const promptOverlay = document.getElementById('prompt-overlay');
 function ask(title, { multiline = false, value = '' } = {}) {
@@ -1707,6 +1755,7 @@ document.getElementById('edit-props').onclick = async () => {
     editor.value = await invoke('read_source', { path: currentFile });
     dirty = false;
     refreshEditPreview();
+    refreshHighlight();
     renderNotePanel(currentFile);
     flashLive('properties updated');
   } catch (e) { showError(String(e)); }
@@ -2634,6 +2683,7 @@ async function setViewMode(mode) {
     editorWrap.classList.add('show');
     btn.textContent = 'Live';
     refreshEditPreview();
+    refreshHighlight();
     editor.focus();
   }
 }
