@@ -3142,7 +3142,20 @@ function pointInRect(pt, rect) {
 // suppresses the corresponding DOM drop events entirely. The drag pasteboard
 // still holds the dragged URL, so an empty-paths drop over the note routes
 // through read_drag_pasteboard.
+// Image-search results (Google/Bing/DuckDuckGo) drag their VIEWER-PAGE URL,
+// with the real image URL percent-encoded in a query parameter. Unwrap it.
+function unwrapImageSearchUrl(uri) {
+  try {
+    const u = new URL(uri);
+    for (const param of ['imgurl', 'mediaurl', 'iu', 'u']) {
+      const v = u.searchParams.get(param);
+      if (v && /^https?:\/\//.test(v)) { logDropDiag('APP', 'unwrap', `${param} -> ${v.slice(0, 80)}`); return v; }
+    }
+  } catch {}
+  return uri;
+}
 async function handleUrlDrop(uri) {
+  uri = unwrapImageSearchUrl(uri);
   logDropDiag('APP', 'url-drop', uri.slice(0, 100));
   if (IMG_RE.test(uri.split('?')[0].split('#')[0])) {
     const act = await askImageAction(uri, true);
@@ -3170,12 +3183,29 @@ listen('tauri://drag-drop', async (event) => {
   const paths = event.payload.paths || [];
   if (dropDialogBusy) { toast('Finish the current drop dialog first', 'info'); return; }
   if (!paths.length) {
-    // Browser/app drag with no file on disk: try the drag pasteboard for a URL.
+    // Browser/app drag with no file on disk: read the drag pasteboard.
     if (!currentFolder || !currentFile) return;
     try {
-      const uri = await invoke('read_drag_pasteboard');
-      if (uri) { await handleUrlDrop(uri); }
-      else toast('Could not read the dragged content — try copying the image and pasting it (Cmd+V)', 'info', 5000);
+      const pb = await invoke('read_drag_pasteboard');
+      logDropDiag('APP', 'pasteboard', `types=[${(pb.types || []).join(',')}] url=${pb.url ? pb.url.slice(0, 60) : '-'} img=${pb.image_ext || '-'}`);
+      const uri = pb.url ? unwrapImageSearchUrl(pb.url) : null;
+      const uriIsImage = uri && IMG_RE.test(uri.split('?')[0].split('#')[0]);
+      if (uriIsImage) {
+        await handleUrlDrop(uri);
+      } else if (pb.image_base64) {
+        // Rendered image data from the pasteboard (promise drags with no
+        // direct image URL). Store saves the pasteboard bytes; link only
+        // available when a URL accompanied the drag.
+        const act = await askImageAction(uri || 'Dropped image', !!uri);
+        if (act === 'cancel') return;
+        if (act === 'link') { await insertIntoNote(`![](${uri})`); return; }
+        const embed = await invoke('paste_image', { root: currentFolder, base64Data: pb.image_base64, extension: pb.image_ext || 'png' });
+        await insertIntoNote(embed);
+      } else if (uri) {
+        await handleUrlDrop(uri);
+      } else {
+        toast('Could not read the dragged content — try copying the image and pasting it (Cmd+V)', 'info', 5000);
+      }
     } catch (e) { toast(friendlyError(e), 'error'); }
     return;
   }

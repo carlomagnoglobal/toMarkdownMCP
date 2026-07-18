@@ -1124,35 +1124,73 @@ fn delete_path(path: String, vault_root: Option<String>) -> Result<(), String> {
 /// URL found, if any.
 #[cfg(target_os = "macos")]
 #[tauri::command]
-fn read_drag_pasteboard(app: tauri::AppHandle) -> Result<Option<String>, String> {
+fn read_drag_pasteboard(app: tauri::AppHandle) -> Result<DragPasteboard, String> {
     use std::sync::mpsc;
     let (tx, rx) = mpsc::channel();
     app.run_on_main_thread(move || {
         use objc2_app_kit::{
-            NSPasteboard, NSPasteboardNameDrag, NSPasteboardTypeString, NSPasteboardTypeURL,
+            NSPasteboard, NSPasteboardNameDrag, NSPasteboardTypePNG, NSPasteboardTypeString,
+            NSPasteboardTypeTIFF, NSPasteboardTypeURL,
         };
         let pb = unsafe { NSPasteboard::pasteboardWithName(NSPasteboardNameDrag) };
-        let mut found: Option<String> = None;
+        let mut out = DragPasteboard::default();
+        if let Some(types) = pb.types() {
+            out.types = types.iter().map(|t| t.to_string()).collect();
+        }
         for ty in [unsafe { NSPasteboardTypeURL }, unsafe { NSPasteboardTypeString }] {
             if let Some(s) = pb.stringForType(ty) {
                 let s = s.to_string();
-                let s = s.trim();
+                let s = s.trim().to_string();
                 if s.starts_with("http://") || s.starts_with("https://") {
-                    found = Some(s.to_string());
+                    out.url = Some(s);
                     break;
                 }
             }
         }
-        let _ = tx.send(found);
+        // Rendered image data (browsers put a PNG/TIFF of the dragged image on
+        // the pasteboard even when the "file" is only a promise).
+        for (ty, ext) in
+            [(unsafe { NSPasteboardTypePNG }, "png"), (unsafe { NSPasteboardTypeTIFF }, "tiff")]
+        {
+            if let Some(data) = pb.dataForType(ty) {
+                out.image_base64 = Some(base64_encode(&data.to_vec()));
+                out.image_ext = Some(ext.into());
+                break;
+            }
+        }
+        let _ = tx.send(out);
     })
     .map_err(|e| e.to_string())?;
     rx.recv().map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize, Default, Debug)]
+struct DragPasteboard {
+    url: Option<String>,
+    image_base64: Option<String>,
+    image_ext: Option<String>,
+    types: Vec<String>,
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn base64_encode(data: &[u8]) -> String {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        out.push(TABLE[(n >> 18) as usize & 63] as char);
+        out.push(TABLE[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { TABLE[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { TABLE[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
-fn read_drag_pasteboard() -> Result<Option<String>, String> {
-    Ok(None)
+fn read_drag_pasteboard() -> Result<DragPasteboard, String> {
+    Ok(DragPasteboard::default())
 }
 
 fn debug_log_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
