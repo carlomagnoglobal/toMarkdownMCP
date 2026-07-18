@@ -43,18 +43,22 @@ The GUI (v0.2.0) already has: file tree, rendered markdown view (pulldown-cmark 
 - Polished empty states.
 - Non-blocking toast notifications for errors/success, replacing blocking dialogs (also avoids the known sync-dialog deadlock on Tauri).
 
-## Phase 2 — Hybrid editing modes
+## Phase 2 — Hybrid editing modes (Rust-first, revised 2026-07-17)
 
-Vendored CodeMirror 6 (+ markdown language package). Per-document mode, cycled with Cmd+E or set from the palette:
+**Language policy (revised):** all editor intelligence is implemented in Rust. No third-party JavaScript editor libraries (no CodeMirror or equivalents), no npm-built bundles beyond the already-vendored Mermaid/KaTeX. The only JavaScript is thin hand-written glue in `gui/ui/index.html` that displays what Rust computes and forwards input events to Rust commands. Other languages (C/C++, Go, Dart, Python, R, Node) are permitted only for optional plugins when a capability does not exist in Rust or is disproportionately hard there.
+
+Per-document mode, cycled with Cmd+E or set from the palette:
 
 1. **Reader** — the current rendered view; pipeline untouched.
-2. **Live preview** (Typora/Obsidian style) — CM6 with decoration-based inline rendering: formatting marks hidden except on the active line; headings, emphasis, and lists styled in place; Mermaid, KaTeX, and images rendered inline as block widgets via the existing `render_blocks` command.
-3. **Source / split** — raw CM6 editor, optionally side-by-side with the reader pane, scroll-synced.
+2. **Live preview** (Typora-style) — evolves the existing Rust-backed block editor (`render_blocks`): every block renders through the Rust pipeline (including Mermaid/KaTeX/images); the block under the cursor swaps to editable source; Rust computes markdown token spans so even the active block shows syntax highlighting. Block re-rendering is cached in Rust keyed by content hash.
+3. **Source / split** — the source pane gains Rust-computed markdown syntax highlighting via a new `highlight_markdown` command (overlay-backdrop technique behind the textarea); side-by-side with the reader pane, scroll-synced.
+
+New Rust commands (each with unit tests): `highlight_markdown(source) -> Vec<HighlightSpan>` (pulldown-cmark offset iterator), `wikilink_complete(root, prefix) -> Vec<Match>` (Rust fuzzy match over the vault index), plus content-hash caching inside `render_blocks`.
 
 Supporting behavior:
 - Debounced autosave through the existing `save_file` command.
-- Wikilink autocomplete via existing `resolve_wikilink` / `quick_list` commands.
-- Incremental milestones to contain risk: (a) CM6 source mode replaces the current textarea editor; (b) inline decorations; (c) block widgets.
+- Wikilink autocomplete (`[[` trigger) in both editing modes via `wikilink_complete`.
+- Incremental milestones to contain risk: (a) `highlight_markdown` command + highlighted source mode; (b) live-block polish + caching; (c) autocomplete + autosave.
 
 ## Error handling
 
