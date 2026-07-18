@@ -419,6 +419,13 @@
   #cheatsheet div.row { display: flex; justify-content: space-between; gap: 24px; padding: 3px 0; font-size: 13.5px; }
   #cheatsheet kbd { background: rgba(128,128,128,.18); border-radius: 4px; padding: 1px 7px;
     font: 12px ui-monospace, monospace; }
+  #drop-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 270; }
+  #drop-overlay.show { display: flex; }
+  #drop-dialog { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; min-width: 320px; display: flex; flex-direction: column; gap: 8px; }
+  #drop-dialog h3 { margin: 0 0 6px; font-size: 14px; }
+  #drop-dialog button { text-align: left; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); cursor: pointer; }
+  #drop-dialog button:hover:not(:disabled) { background: var(--hover); }
+  #drop-dialog button:disabled { opacity: .45; cursor: default; }
   @media print {
     #sidebar, #statusbar, #error, #tabbar, #read-progress, #toast-stack { display: none !important; }
     #main, #scroll { overflow: visible !important; }
@@ -585,6 +592,16 @@
   </div>
   <div id="lightbox" role="dialog" aria-label="Image preview"><img alt=""></div>
   <div id="cheatsheet-overlay" role="dialog" aria-label="Keyboard shortcuts"><div id="cheatsheet"></div></div>
+  <div id="drop-overlay" role="dialog" aria-label="Dropped file">
+    <div id="drop-dialog">
+      <h3 id="drop-title"></h3>
+      <button data-act="copy">Copy into vault &amp; link</button>
+      <button data-act="linkorig">Link original location</button>
+      <button data-act="convnote">Convert to new linked note</button>
+      <button data-act="convinline">Convert inline</button>
+      <button data-act="cancel">Cancel (Esc)</button>
+    </div>
+  </div>
 <script>
 const invoke = window.__TAURI__.core.invoke;
 const listen = window.__TAURI__.event.listen;
@@ -2867,16 +2884,122 @@ document.getElementById('import-url').addEventListener('keydown', async (e) => {
   });
 });
 
+// ---- Insert text into the open note at the natural point ----
+async function appendToNote(text) {
+  const src = await invoke('read_source', { path: currentFile });
+  const nl = src.endsWith('\n') ? '' : '\n';
+  await invoke('save_file', { path: currentFile, content: src + nl + text + '\n', vaultRoot: currentFolder });
+  toast('Added at end of note', 'success');
+}
+async function insertIntoNote(text) {
+  if (!currentFile) return;
+  if (viewMode === 'split') {
+    const p = editor.selectionStart;
+    editor.setRangeText(text, p, p, 'end');
+    editor.dispatchEvent(new Event('input'));
+    editor.focus();
+  } else if (viewMode === 'live') {
+    const ta = document.querySelector('#live-doc textarea.block-edit');
+    if (ta) {
+      const p = ta.selectionStart;
+      ta.setRangeText(text, p, p, 'end');
+      ta.dispatchEvent(new Event('input'));
+      ta.focus();
+    } else {
+      await appendToNote(text);
+    }
+  } else { // reader
+    await appendToNote(text);
+  }
+}
+
+// ---- Drop-into-note ----
+const dropOverlay = document.getElementById('drop-overlay');
+function askDropAction(title, convertible) {
+  return new Promise((resolve) => {
+    document.getElementById('drop-title').textContent = title;
+    dropOverlay.querySelectorAll('button').forEach(b => {
+      b.disabled = !convertible && (b.dataset.act === 'convnote' || b.dataset.act === 'convinline');
+      b.title = b.disabled ? 'This file type cannot be converted' : '';
+      b.onclick = () => { dropOverlay.classList.remove('show'); releaseFocus(dropOverlay); resolve(b.dataset.act); };
+    });
+    dropOverlay.classList.add('show'); trapFocus(dropOverlay);
+    const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); dropOverlay.classList.remove('show'); releaseFocus(dropOverlay); document.removeEventListener('keydown', esc, true); resolve('cancel'); } };
+    document.addEventListener('keydown', esc, true);
+  });
+}
+const IMG_RE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
+async function applyDropAction(act, p) {
+  const name = p.split('/').pop();
+  if (act === 'copy') {
+    const a = await invoke('store_attachment', { root: currentFolder, srcPath: p });
+    await insertIntoNote(a.embed);
+  } else if (act === 'linkorig') {
+    await insertIntoNote(`[${name}](file://${encodeURI(p)})`);
+  } else if (act === 'convnote') {
+    const conv = await invoke('convert_file_to_markdown', { path: p });
+    const saved = await invoke('save_import', { root: currentFolder, suggestedName: conv.suggested_name, markdown: conv.markdown, pick: false });
+    if (saved) await insertIntoNote(`[[${saved.split('/').pop().replace(/\.md$/, '')}]]`);
+  } else if (act === 'convinline') {
+    const conv = await invoke('convert_file_to_markdown', { path: p });
+    if (conv.markdown.length > 200 * 1024 && !confirmInsert(conv.markdown.length)) return;
+    await insertIntoNote(conv.markdown);
+  }
+}
+function confirmInsert(len) {
+  // non-blocking confirm via the same dialog pattern is overkill; a toast-guard suffices:
+  toast(`Converted text is ${(len / 1024).toFixed(0)} KB — drop again within 10s to confirm inline insert`, 'info', 10000);
+  if (window._bigInsertOk && Date.now() - window._bigInsertOk < 10000) { window._bigInsertOk = 0; return true; }
+  window._bigInsertOk = Date.now();
+  return false;
+}
+async function handleNoteDrop(paths) {
+  const imgs = paths.filter(p => IMG_RE.test(p));
+  const others = paths.filter(p => !IMG_RE.test(p));
+  for (const p of imgs) {
+    try { const a = await invoke('store_attachment', { root: currentFolder, srcPath: p }); await insertIntoNote(a.embed); }
+    catch (e) { toast(friendlyError(e), 'error'); }
+  }
+  if (!others.length) return;
+  const convertible = await invoke('is_convertible', { path: others[0] }).catch(() => false);
+  const title = others.length === 1 ? others[0].split('/').pop() : `${others.length} files`;
+  const act = await askDropAction(title, convertible);
+  if (act === 'cancel') return;
+  for (const p of others) {
+    try { await applyDropAction(act, p); } catch (e) { toast(friendlyError(e), 'error'); }
+  }
+}
+
 // ---- Drag & drop ----
+// NOTE: on macOS, event.payload.position from tauri://drag-drop is delivered in
+// PHYSICAL pixels while DOM rects are in logical/CSS pixels — divide by
+// devicePixelRatio before comparing. Not verified live in this environment; flag
+// for manual confirmation (see task-4 report).
+function dropPosToClient(pos) {
+  const dpr = window.devicePixelRatio || 1;
+  return { x: pos.x / dpr, y: pos.y / dpr };
+}
+function pointInRect(pt, rect) {
+  return pt.x >= rect.left && pt.x <= rect.right && pt.y >= rect.top && pt.y <= rect.bottom;
+}
 listen('tauri://drag-drop', async (event) => {
   const paths = event.payload.paths || [];
   if (!paths.length) return;
   const p = paths[0];
-  try {
-    await invoke('list_tree', { root: p });
-    openFolder(p);
-    return;
-  } catch {}
+  // Directory drops always use the old folder-open flow, even over the note area.
+  let isDir = false;
+  try { await invoke('list_tree', { root: p }); isDir = true; } catch {}
+  if (!isDir && currentFolder && currentFile && event.payload.position) {
+    const pt = dropPosToClient(event.payload.position);
+    const noteEl = viewMode === 'read' ? document.getElementById('scroll')
+      : viewMode === 'live' ? document.getElementById('live-wrap')
+      : document.getElementById('editor-wrap');
+    if (noteEl && noteEl.offsetParent !== null && pointInRect(pt, noteEl.getBoundingClientRect())) {
+      handleNoteDrop(paths);
+      return;
+    }
+  }
+  if (isDir) { openFolder(p); return; }
   // Non-markdown but convertible files route through the converter pipeline.
   if (!/\.(md|markdown|canvas|txt)$/i.test(p) && await invoke('is_convertible', { path: p }).catch(() => false)) {
     convertFile(p, document.getElementById('import-btn'));
@@ -2884,6 +3007,47 @@ listen('tauri://drag-drop', async (event) => {
     openFile(p);
   }
 });
+
+// ---- DOM drop handler for non-file drags (image data / URLs from other apps) ----
+for (const el of [document.getElementById('scroll'), document.getElementById('editor-wrap')]) {
+  el.addEventListener('dragover', (e) => { if (!e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
+  el.addEventListener('drop', async (e) => {
+    if (e.dataTransfer?.types?.includes('Files')) return; // handled by tauri://drag-drop
+    if (!currentFile) return;
+    e.preventDefault();
+    const uri = e.dataTransfer.getData('text/uri-list').split('\n').find(l => l && !l.startsWith('#'));
+    const item = [...(e.dataTransfer.items || [])].find(i => i.kind === 'file' && i.type.startsWith('image/'));
+    try {
+      if (item) { // raw image data
+        const file = item.getAsFile();
+        const buf = new Uint8Array(await file.arrayBuffer());
+        let bin = ''; buf.forEach(b => bin += String.fromCharCode(b));
+        const ext = (item.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+        const embed = await invoke('paste_image', { root: currentFolder, base64Data: btoa(bin), extension: ext });
+        await insertIntoNote(embed);
+      } else if (uri && /^https?:\/\//.test(uri)) {
+        if (IMG_RE.test(uri.split('?')[0])) {
+          try { const a = await invoke('store_url_attachment', { root: currentFolder, url: uri }); await insertIntoNote(a.embed); }
+          catch { await insertIntoNote(`![](${uri})`); toast('Could not download — inserted a link instead', 'info'); }
+        } else {
+          const act = await askDropAction(uri, true);
+          if (act === 'cancel') return;
+          if (act === 'copy') { const a = await invoke('store_url_attachment', { root: currentFolder, url: uri }); await insertIntoNote(a.embed); }
+          else if (act === 'linkorig') await insertIntoNote(`<${uri}>`);
+          else {
+            const conv = await invoke('convert_url_to_markdown', { url: uri });
+            if (act === 'convnote') {
+              const saved = await invoke('save_import', { root: currentFolder, suggestedName: conv.suggested_name, markdown: conv.markdown, pick: false });
+              if (saved) await insertIntoNote(`[[${saved.split('/').pop().replace(/\.md$/, '')}]]`);
+            } else if (conv.markdown.length <= 200 * 1024 || confirmInsert(conv.markdown.length)) {
+              await insertIntoNote(conv.markdown);
+            }
+          }
+        }
+      }
+    } catch (err) { toast(friendlyError(err), 'error'); }
+  });
+}
 
 // ---- Accessibility wiring ----
 ['prompt-overlay', 'switcher-overlay', 'result-overlay', 'settings-overlay', 'graph-overlay']
