@@ -2,7 +2,17 @@
 
 All notable changes to toMarkdownMCP.
 
-## Unreleased
+## gui-v0.3.0 — 2026-07-18 (GUI-only release)
+
+toMarkdown Viewer 0.3.0. The `to_markdown_mcp` crate is unchanged (stays 0.2.0 on crates.io).
+
+### Added — GUI: reading polish
+
+- **Image lightbox**: click any image in the reader to zoom; Esc or click closes
+- **Reading-progress bar** at the top of the reader pane
+- **Keyboard-shortcut cheat sheet**: press `?` for a complete overlay of every binding
+- **Text sizing**: Cmd/Ctrl+= / − / 0 (clamped 11–24 px) plus a line-height setting, both persisted
+- **Print polish**: clean page output with no app chrome and no mid-block page breaks in code/tables
 
 ### Added — GUI: Rust-first hybrid editing
 
