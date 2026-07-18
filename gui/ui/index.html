@@ -250,6 +250,11 @@
   }
   #autocomplete div { padding: 5px 10px; cursor: pointer; }
   #autocomplete div.sel, #autocomplete div:hover { background: var(--active); }
+  #wiki-ac { position: fixed; z-index: 280; display: none; min-width: 220px; max-height: 40vh; overflow-y: auto;
+    background: var(--bg, #fff); border: 1px solid rgba(128,128,128,.35); border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: 13px; }
+  #wiki-ac div { padding: 5px 10px; cursor: pointer; }
+  #wiki-ac div.sel { background: rgba(100,140,220,.25); }
   #prompt-box, .dialog-box {
     position: absolute; top: 20vh; left: 50%; transform: translateX(-50%);
     width: 520px; background: var(--bg); border: 1px solid var(--border);
@@ -507,6 +512,7 @@
     <div id="statusbar"><span id="stats" role="button" tabindex="0" title="Click for full text analysis (tokens, frequencies)"></span><span id="sel-stats"></span><span id="live" class="live"></span></div>
   </div>
   <div id="autocomplete"></div>
+  <div id="wiki-ac" role="listbox"></div>
   <div id="hover-pop"></div>
   <div id="ctx-menu"></div>
   <div id="prompt-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
@@ -1514,15 +1520,19 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ---- Autosave + live preview ----
-async function saveNow() {
+async function saveNow(silent = false) {
   if (!currentFile || !dirty) return;
   try {
     lastSelfSave = Date.now();
     await invoke('save_file', { path: currentFile, content: editor.value, vaultRoot: currentFolder });
     dirty = false;
-    saveState.textContent = 'saved ' + new Date().toLocaleTimeString();
+    if (!silent) saveState.textContent = 'saved ' + new Date().toLocaleTimeString();
   } catch (e) { showError('Save failed: ' + e); }
 }
+// Single autosave timer for the split editor: fires 1.2s after typing stops
+// and saves silently (no toast). Cmd+S / blur still call saveNow() with
+// feedback. (This replaces the earlier 800ms non-silent timer that lived
+// here in Phase 1 — keeping only one autosave mechanism avoids double-saves.)
 let saveTimer = null, previewTimer = null;
 async function refreshEditPreview() {
   editPreview.innerHTML = await invoke('render_markdown',
@@ -1533,12 +1543,13 @@ editor.addEventListener('input', () => {
   dirty = true;
   saveState.textContent = 'editing…';
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveNow, 800);
+  saveTimer = setTimeout(() => { if (viewMode === 'split') saveNow(true); }, 1200);
   clearTimeout(previewTimer);
   previewTimer = setTimeout(refreshEditPreview, 150);
   maybeAutocomplete();
+  acMaybeShow(editor);
 });
-editor.addEventListener('blur', saveNow);
+editor.addEventListener('blur', () => { acHide(); saveNow(); });
 
 // ---- Find & replace ----
 const findInput = document.getElementById('find-input');
@@ -1581,7 +1592,52 @@ document.getElementById('insert-table').onclick = () => {
   editor.focus();
 };
 
-// ---- Autocomplete for [[wikilinks]] and #tags ----
+// ---- Wikilink autocomplete ([[ trigger); shared between the source editor and
+// live-mode block textareas. Supersedes the `[[` branch of the legacy tag/link
+// autocomplete below (which now only handles #tags) so the two popups never
+// compete for the same trigger. Uses server-ranked wikilink_complete (Task 3).
+const wikiAc = document.getElementById('wiki-ac');
+let wacItems = [], wacSel = 0, wacTarget = null, wacStart = -1;
+function acHide() { wikiAc.style.display = 'none'; wacTarget = null; }
+function acApply() {
+  const it = wacItems[wacSel]; if (!it || !wacTarget) return;
+  const v = wacTarget.value, caret = wacTarget.selectionStart;
+  wacTarget.value = v.slice(0, wacStart) + it.label + ']]' + v.slice(caret);
+  const pos = wacStart + it.label.length + 2;
+  wacTarget.setSelectionRange(pos, pos);
+  wacTarget.dispatchEvent(new Event('input'));
+  acHide();
+}
+async function acMaybeShow(ta) {
+  const upto = ta.value.slice(0, ta.selectionStart);
+  const m = upto.match(/\[\[([^\]\n]*)$/);
+  if (!m || !currentFolder) { acHide(); return; }
+  wacTarget = ta; wacStart = ta.selectionStart - m[1].length;
+  try {
+    const hits = await invoke('wikilink_complete', { root: currentFolder, prefix: m[1] });
+    wacItems = hits; wacSel = 0;
+    if (!hits.length) { acHide(); return; }
+    wikiAc.innerHTML = hits.map((h, i) => `<div class="${i === 0 ? 'sel' : ''}">${escapeHtml(h.label)}</div>`).join('');
+    const r = ta.getBoundingClientRect();
+    wikiAc.style.left = r.left + 16 + 'px';
+    wikiAc.style.top = Math.min(r.top + 60, innerHeight - 200) + 'px';
+    wikiAc.style.display = 'block';
+    Array.from(wikiAc.children).forEach((el, i) => { el.onmousedown = (e) => { e.preventDefault(); wacSel = i; acApply(); }; });
+  } catch { acHide(); }
+}
+function acKeydown(e) {
+  if (wikiAc.style.display !== 'block') return false;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    wacSel = (wacSel + (e.key === 'ArrowDown' ? 1 : wacItems.length - 1)) % wacItems.length;
+    Array.from(wikiAc.children).forEach((el, i) => el.classList.toggle('sel', i === wacSel));
+    e.preventDefault(); return true;
+  }
+  if (e.key === 'Enter' || e.key === 'Tab') { acApply(); e.preventDefault(); return true; }
+  if (e.key === 'Escape') { acHide(); e.stopPropagation(); return true; }
+  return false;
+}
+
+// ---- Autocomplete for #tags (legacy [[wikilink]] branch removed; superseded above) ----
 const acBox = document.getElementById('autocomplete');
 let acItems = [], acSel = 0, acStart = -1, acKind = null;
 
@@ -1612,16 +1668,8 @@ async function maybeAutocomplete() {
   if (!currentFolder) return hideAc();
   const pos = editor.selectionEnd;
   const before = editor.value.slice(Math.max(0, pos - 60), pos);
-  const linkMatch = before.match(/\[\[([^\[\]\|#]*)$/);
   const tagMatch = before.match(/(^|\s)#([A-Za-z0-9_\/-]*)$/);
-  if (linkMatch) {
-    acKind = 'link'; acStart = pos - linkMatch[1].length;
-    if (!window._quickCache) { try { window._quickCache = await invoke('quick_list', { root: currentFolder }); } catch { return hideAc(); } }
-    const q = linkMatch[1].toLowerCase();
-    acItems = window._quickCache
-      .filter(n => n.title.toLowerCase().includes(q) || (n.aliases || []).some(a => a.toLowerCase().includes(q)))
-      .slice(0, 8).map(n => ({ label: n.title, insert: n.title }));
-  } else if (tagMatch) {
+  if (tagMatch) {
     acKind = 'tag'; acStart = pos - tagMatch[2].length;
     if (!window._tagCache) { try { window._tagCache = await invoke('tag_list', { root: currentFolder }); } catch { return hideAc(); } }
     const q = tagMatch[2].toLowerCase();
@@ -1662,6 +1710,7 @@ function acceptAc(i) {
   editor.focus();
 }
 editor.addEventListener('keydown', (e) => {
+  if (acKeydown(e)) return;
   if (!acItems.length) return;
   if (e.key === 'ArrowDown') { e.preventDefault(); acSel = (acSel + 1) % acItems.length; renderAc(); }
   else if (e.key === 'ArrowUp') { e.preventDefault(); acSel = (acSel - 1 + acItems.length) % acItems.length; renderAc(); }
@@ -1911,6 +1960,7 @@ const COMMANDS = [
   { label: 'View: Reading', run: () => setViewMode('read') },
   { label: 'View: Live Editing (Cmd+E)', run: () => setViewMode('live') },
   { label: 'View: Split Source (Cmd+Shift+E)', run: () => setViewMode('split') },
+  { label: 'Insert Wikilink ([[)', run: () => { if (viewMode === 'split') { const p = editor.selectionStart; editor.setRangeText('[[', p, p, 'end'); editor.focus(); acMaybeShow(editor); } } },
   { label: 'Text: Larger (Cmd+=)', run: () => setFontSize((parseInt(localStorage.getItem('fontSize'), 10) || 16) + 1) },
   { label: 'Text: Smaller (Cmd+-)', run: () => setFontSize((parseInt(localStorage.getItem('fontSize'), 10) || 16) - 1) },
   { label: 'Quick Switcher', run: openSwitcher },
@@ -2126,7 +2176,7 @@ function formatKeydown(e, el) {
     }
   }
 }
-editor.addEventListener('keydown', (e) => formatKeydown(e, editor));
+editor.addEventListener('keydown', (e) => { if (acKeydown(e)) return; formatKeydown(e, editor); });
 
 // ---- Selection stats ----
 document.addEventListener('selectionchange', () => {
@@ -2597,14 +2647,17 @@ function activateBlock(el) {
       autosize(ta);
       clearTimeout(blockHlTimer);
       blockHlTimer = setTimeout(() => refreshBlockHighlight(ta, backdrop), 120);
+      acMaybeShow(ta);
     });
     ta.addEventListener('scroll', () => { backdrop.scrollTop = ta.scrollTop; }, { passive: true });
     ta.addEventListener('keydown', (e) => {
+      if (acKeydown(e)) return;
       if (e.key === 'Escape') { e.preventDefault(); commitActiveBlock(); return; }
       formatKeydown(e, ta);
     });
     ta.addEventListener('paste', (e) => editorPaste(e, ta));
     ta.addEventListener('blur', () => {
+      acHide();
       // Delay so clicks on other blocks activate them after this commit.
       setTimeout(() => { if (activeBlockEl === el) commitActiveBlock(); }, 120);
     });
@@ -2685,6 +2738,7 @@ function flipTaskInString(str, index) {
 // ---- View modes: read / live / split ----
 async function setViewMode(mode) {
   if (mode === viewMode) return;
+  acHide();
   // Leave the current mode cleanly.
   if (viewMode === 'split') { if (dirty) await saveNow(); editMode = false; editorWrap.classList.remove('show'); }
   if (viewMode === 'live') { await commitActiveBlock(false); await saveLive(); liveWrap.classList.remove('show'); }
