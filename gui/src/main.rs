@@ -577,25 +577,73 @@ fn store_attachment(root: String, src_path: String) -> Result<StoredAttachment, 
 /// Derive a filename for a downloaded URL, falling back to a timestamped
 /// name and a content-type-derived extension when the URL path is
 /// uninformative.
-fn url_attachment_name(url: &str, content_type: Option<&str>) -> String {
+/// Minimal percent-decoding for URL path segments (%20 → space, etc.).
+/// Invalid sequences are kept literally; only valid UTF-8 results are used.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if let (Some(h), Some(l)) = (
+                bytes.get(i + 1).and_then(|b| (*b as char).to_digit(16)),
+                bytes.get(i + 2).and_then(|b| (*b as char).to_digit(16)),
+            ) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| s.to_string())
+}
+
+fn ext_for_content_type(content_type: Option<&str>) -> Option<&'static str> {
+    match content_type.map(|c| c.split(';').next().unwrap_or(c).trim()) {
+        Some("image/jpeg") => Some("jpg"),
+        Some("image/png") => Some("png"),
+        Some("image/gif") => Some("gif"),
+        Some("image/webp") => Some("webp"),
+        Some("image/svg+xml") => Some("svg"),
+        Some("image/bmp") => Some("bmp"),
+        Some("application/pdf") => Some("pdf"),
+        _ => None,
+    }
+}
+
+fn url_attachment_name(url: &str, content_type: Option<&str>, server_name: Option<&str>) -> String {
+    // Content-Disposition filename is the authoritative original name.
+    if let Some(n) = server_name {
+        let n = n.trim();
+        if !n.is_empty() {
+            return n.to_string();
+        }
+    }
     let path_part = url.split('?').next().unwrap_or(url).split('#').next().unwrap_or(url);
     let last = path_part.trim_end_matches('/').rsplit('/').next().unwrap_or("");
-    let mut name = if last.is_empty() || last.contains("://") { format!("Downloaded {}", chrono_stamp()) } else { last.to_string() };
+    let last = percent_decode(last);
+    let last = last.replace(['/', '\\'], "_");
+    let mut name = if last.is_empty() || last.contains("://") {
+        format!("Downloaded {}", chrono_stamp())
+    } else {
+        last
+    };
+    // Ensure the extension reflects the actual content: append one when the
+    // name has none; the URL-derived extension is kept when present (it is
+    // part of the original filename).
     if !name.contains('.') {
-        let ext = match content_type.map(|c| c.split(';').next().unwrap_or(c).trim()) {
-            Some("image/jpeg") => "jpg", Some("image/png") => "png", Some("image/gif") => "gif",
-            Some("image/webp") => "webp", Some("image/svg+xml") => "svg", Some("application/pdf") => "pdf",
-            _ => "bin",
-        };
-        name = format!("{}.{}", name, ext);
+        name = format!("{}.{}", name, ext_for_content_type(content_type).unwrap_or("bin"));
     }
     name
 }
 
 #[tauri::command]
 async fn store_url_attachment(root: String, url: String) -> Result<StoredAttachment, String> {
-    let (bytes, ctype) = to_markdown_mcp::sources::fetch_url_bytes(&url).await.map_err(|e| e.to_string())?;
-    let name0 = url_attachment_name(&url, ctype.as_deref());
+    let (bytes, ctype, server_name) =
+        to_markdown_mcp::sources::fetch_url_bytes(&url).await.map_err(|e| e.to_string())?;
+    let name0 = url_attachment_name(&url, ctype.as_deref(), server_name.as_deref());
     let rootp = Path::new(&root);
     let dir = attachment_dir(rootp)?;
     let (stem, ext) = match name0.rsplit_once('.') { Some((s, e)) => (s.to_string(), e.to_string()), None => (name0.clone(), String::new()) };
@@ -1761,10 +1809,26 @@ mod tests {
 
     #[test]
     fn url_attachment_name_derivation() {
-        assert_eq!(url_attachment_name("https://x.com/a/photo.png?w=2", None), "photo.png");
-        assert_eq!(url_attachment_name("https://x.com/img", Some("image/jpeg")), "img.jpg");
-        let n = url_attachment_name("https://x.com/", None);
+        assert_eq!(url_attachment_name("https://x.com/a/photo.png?w=2", None, None), "photo.png");
+        assert_eq!(url_attachment_name("https://x.com/img", Some("image/jpeg"), None), "img.jpg");
+        let n = url_attachment_name("https://x.com/", None, None);
         assert!(!n.is_empty() && !n.contains('/'));
+    }
+
+    #[test]
+    fn url_attachment_name_keeps_original_names() {
+        // Percent-encoded original filename is decoded.
+        assert_eq!(
+            url_attachment_name("https://x.com/my%20vacation%20photo.png", None, None),
+            "my vacation photo.png"
+        );
+        // Content-Disposition name wins over the URL path.
+        assert_eq!(
+            url_attachment_name("https://cdn.x.com/asset?id=42", Some("image/png"), Some("original.png")),
+            "original.png"
+        );
+        // Extension-less CDN URL gets the content-type extension.
+        assert_eq!(url_attachment_name("https://cdn.x.com/abc123", Some("image/webp"), None), "abc123.webp");
     }
 
     #[test]

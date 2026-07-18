@@ -83,7 +83,7 @@ async fn fetch_from_url(url: &str) -> Result<String> {
 ///
 /// Mirrors `fetch_from_url`'s request path but skips the UTF-8/HTML
 /// decoding, returning the raw response body instead.
-pub async fn fetch_url_bytes(url: &str) -> Result<(Vec<u8>, Option<String>)> {
+pub async fn fetch_url_bytes(url: &str) -> Result<(Vec<u8>, Option<String>, Option<String>)> {
     let client = reqwest::Client::new();
     let response = client
         .get(url)
@@ -105,12 +105,38 @@ pub async fn fetch_url_bytes(url: &str) -> Result<(Vec<u8>, Option<String>)> {
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
+    // Server-declared original filename, when provided (Content-Disposition:
+    // attachment; filename="photo.png").
+    let filename = response
+        .headers()
+        .get(reqwest::header::CONTENT_DISPOSITION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(parse_content_disposition_filename);
+
     let bytes = response
         .bytes()
         .await
         .map_err(|e| anyhow!("Failed to read response: {}", e))?;
 
-    Ok((bytes.to_vec(), content_type))
+    Ok((bytes.to_vec(), content_type, filename))
+}
+
+/// Extract `filename=` (quoted or bare) from a Content-Disposition header value.
+pub fn parse_content_disposition_filename(value: &str) -> Option<String> {
+    let lower = value.to_lowercase();
+    let idx = lower.find("filename=")?;
+    let rest = &value[idx + "filename=".len()..];
+    let name = if let Some(stripped) = rest.strip_prefix('"') {
+        stripped.split('"').next().unwrap_or("")
+    } else {
+        rest.split(';').next().unwrap_or("").trim()
+    };
+    let name = name.trim();
+    // Reject path tricks; keep only a bare file name.
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
+        return None;
+    }
+    Some(name.to_string())
 }
 
 /// Fetch content from stdin
