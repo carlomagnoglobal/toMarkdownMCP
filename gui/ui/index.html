@@ -77,7 +77,9 @@
   #toc li { padding: 2px 6px; border-radius: 4px; cursor: pointer; color: var(--muted);
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #toc li:hover { background: var(--hover); color: var(--fg); }
-  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #read-progress { position: absolute; top: 0; left: 0; height: 2px; width: 0;
+    background: var(--accent, #4a7dd0); z-index: 50; transition: width .1s linear; }
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
   #scroll { flex: 1; overflow-y: auto; }
   #content { max-width: 860px; margin: 0 auto; padding: 32px 40px 80px; line-height: 1.6; }
   #placeholder { color: var(--muted); text-align: center; margin-top: 30vh; }
@@ -375,10 +377,29 @@
     width: 100%; padding: 7px 9px; font-size: 13px; border: 1px solid var(--border);
     border-radius: 6px; background: var(--bg); color: var(--fg);
   }
+  #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none;
+    align-items: center; justify-content: center; z-index: 300; cursor: zoom-out; }
+  #lightbox.show { display: flex; }
+  #lightbox img { max-width: 94vw; max-height: 94vh; border-radius: 4px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6); }
+  #content img, #edit-preview img { cursor: zoom-in; }
+  #cheatsheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none;
+    align-items: center; justify-content: center; z-index: 260; }
+  #cheatsheet-overlay.show { display: flex; }
+  #cheatsheet { background: var(--bg, #fff); color: inherit; border-radius: 10px; padding: 20px 26px;
+    max-height: 80vh; overflow-y: auto; min-width: 420px; box-shadow: 0 8px 40px rgba(0,0,0,.35); }
+  #cheatsheet h3 { margin: 12px 0 6px; font-size: 13px; text-transform: uppercase; opacity: .6; }
+  #cheatsheet div.row { display: flex; justify-content: space-between; gap: 24px; padding: 3px 0; font-size: 13.5px; }
+  #cheatsheet kbd { background: rgba(128,128,128,.18); border-radius: 4px; padding: 1px 7px;
+    font: 12px ui-monospace, monospace; }
   @media print {
-    #sidebar, #statusbar, #error { display: none !important; }
+    #sidebar, #statusbar, #error, #tabbar, #read-progress, #toast-stack { display: none !important; }
     #main, #scroll { overflow: visible !important; }
     body { height: auto; overflow: visible; }
+    #content { max-width: none; padding: 0; font-size: 12pt; }
+    #content pre, #content blockquote, #content table { break-inside: avoid; }
+    #content h1, #content h2, #content h3 { break-after: avoid; }
+    #content a { color: inherit; text-decoration: underline; }
   }
 </style>
 <style id="user-css"></style>
@@ -438,6 +459,7 @@
     <div id="note-panel"></div>
   </div>
   <div id="main">
+    <div id="read-progress"></div>
     <div id="tabbar"></div>
     <div id="error"></div>
     <div id="scroll">
@@ -501,6 +523,13 @@
         </select>
         <label for="set-font">Content font size (px)</label>
         <input id="set-font" type="number" min="11" max="24" step="1">
+        <label for="set-lineheight">Line height</label>
+        <select id="set-lineheight">
+          <option value="1.4">Compact (1.4)</option>
+          <option value="1.6" selected>Normal (1.6)</option>
+          <option value="1.8">Relaxed (1.8)</option>
+          <option value="2.0">Airy (2.0)</option>
+        </select>
         <label for="set-key">Anthropic API key (stored locally; enables AI actions)</label>
         <input id="set-key" type="password" placeholder="sk-ant-…">
         <label><input id="set-reopen" type="checkbox" style="width:auto;margin-right:6px">Reopen last vault on launch</label>
@@ -526,6 +555,8 @@
       <canvas id="graph-canvas"></canvas>
     </div>
   </div>
+  <div id="lightbox" role="dialog" aria-label="Image preview"><img alt=""></div>
+  <div id="cheatsheet-overlay" role="dialog" aria-label="Keyboard shortcuts"><div id="cheatsheet"></div></div>
 <script>
 const invoke = window.__TAURI__.core.invoke;
 const listen = window.__TAURI__.event.listen;
@@ -554,7 +585,49 @@ async function postRender(container) {
     for (const n of nodes) n.id = 'mmd-' + (mermaidSeq++);
     if (nodes.length) { try { await mermaid.run({ nodes }); } catch {} }
   }
+  container.querySelectorAll('img').forEach(img => {
+    img.onclick = (e) => { e.preventDefault(); openLightbox(img.src); };
+  });
 }
+
+// ---- Image lightbox ----
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = lightbox.querySelector('img');
+function openLightbox(src) { lightboxImg.src = src; lightbox.classList.add('show'); }
+function closeLightbox() { lightbox.classList.remove('show'); lightboxImg.src = ''; }
+lightbox.addEventListener('click', closeLightbox);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && lightbox.classList.contains('show')) { e.stopPropagation(); closeLightbox(); }
+}, true);
+
+// ---- Shortcut cheat sheet ----
+const SHORTCUTS = [
+  ['General', [['Cmd/Ctrl+K', 'Command palette'], ['Cmd/Ctrl+O / Cmd/Ctrl+P', 'Quick switcher'],
+    ['Cmd/Ctrl+,', 'Settings'], ['?', 'This cheat sheet'], ['Esc', 'Close overlay']]],
+  ['View', [['Cmd/Ctrl+E', 'Toggle live editing'], ['Cmd/Ctrl+Shift+E', 'Toggle split source'],
+    ['Cmd/Ctrl+=', 'Larger text'], ['Cmd/Ctrl+-', 'Smaller text'], ['Cmd/Ctrl+0', 'Reset text size']]],
+  ['Notes', [['Cmd/Ctrl+D', 'Daily note'], ['Cmd/Ctrl+S', 'Save (editor)'], ['Cmd/Ctrl+W', 'Close tab'],
+    ['Cmd/Ctrl+Shift+Z', 'Zen mode (toggle sidebar)'], ['Cmd/Ctrl+1-9', 'Jump to tab N']]],
+  ['Editing', [['Cmd/Ctrl+B', 'Bold'], ['Cmd/Ctrl+I', 'Italic'], ['Cmd/Ctrl+Shift+X', 'Strikethrough'],
+    ['Cmd/Ctrl+Shift+K', 'Insert link']]],
+];
+const cheatOverlay = document.getElementById('cheatsheet-overlay');
+function openCheatsheet() {
+  const box = document.getElementById('cheatsheet');
+  box.innerHTML = SHORTCUTS.map(([title, rows]) =>
+    `<h3>${title}</h3>` + rows.map(([k, d]) =>
+      `<div class="row"><span>${escapeHtml(d)}</span><kbd>${escapeHtml(k)}</kbd></div>`).join('')
+  ).join('');
+  cheatOverlay.classList.add('show'); trapFocus(cheatOverlay);
+}
+function closeCheatsheet() { cheatOverlay.classList.remove('show'); releaseFocus(cheatOverlay); }
+cheatOverlay.addEventListener('click', (e) => { if (e.target === cheatOverlay) closeCheatsheet(); });
+document.addEventListener('keydown', (e) => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+  if (e.key === '?' && !typing && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openCheatsheet(); }
+  if (e.key === 'Escape' && cheatOverlay.classList.contains('show')) closeCheatsheet();
+});
+
 invoke('syntax_css').then(css => {
   const st = document.createElement('style');
   st.textContent = css;
@@ -566,6 +639,13 @@ const scrollBox = document.getElementById('scroll');
 const contentBox = document.getElementById('content');
 let currentFile = null;
 let currentFolder = null;
+
+// ---- Reading progress ----
+const readProgress = document.getElementById('read-progress');
+scrollBox.addEventListener('scroll', () => {
+  const max = scrollBox.scrollHeight - scrollBox.clientHeight;
+  readProgress.style.width = max > 0 ? (scrollBox.scrollTop / max * 100) + '%' : '0';
+}, { passive: true });
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
@@ -1724,22 +1804,34 @@ async function runAi(kind, extraPromptTitle) {
 const settingsOverlay = document.getElementById('settings-overlay');
 const setTheme = document.getElementById('set-theme');
 const setFont = document.getElementById('set-font');
+const setLineHeight_el = document.getElementById('set-lineheight');
 const setKey = document.getElementById('set-key');
 function openSettings() {
   setTheme.value = localStorage.getItem('theme') || 'system';
   setFont.value = localStorage.getItem('fontSize') || '16';
+  setLineHeight_el.value = localStorage.getItem('lineHeight') || '1.6';
   setKey.value = localStorage.getItem('apiKey') || '';
   document.getElementById('set-reopen').checked = !!localStorage.getItem('reopenLast');
   document.getElementById('set-live').checked = liveDefaultOn();
   renderVaultList();
   settingsOverlay.classList.add('show');
 }
-function applySettings() {
-  applyTheme(setTheme.value);
-  const px = Math.max(11, Math.min(24, parseInt(setFont.value, 10) || 16));
+function setFontSize(px) {
+  px = Math.max(11, Math.min(24, px));
   localStorage.setItem('fontSize', String(px));
   contentBox.style.fontSize = px + 'px';
   editPreview.style.fontSize = px + 'px';
+}
+function setLineHeight(lh) {
+  lh = Math.max(1.3, Math.min(2.2, lh));
+  localStorage.setItem('lineHeight', String(lh));
+  contentBox.style.lineHeight = lh;
+  editPreview.style.lineHeight = lh;
+}
+function applySettings() {
+  applyTheme(setTheme.value);
+  setFontSize(parseInt(setFont.value, 10) || 16);
+  setLineHeight(parseFloat(setLineHeight_el.value) || 1.6);
   const key = setKey.value.trim();
   localStorage.setItem('apiKey', key);
   invoke('set_api_key', { key }).catch(() => {});
@@ -1751,10 +1843,8 @@ document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === ',') { e.preventDefault(); openSettings(); }
 });
 // Restore persisted settings on launch.
-if (localStorage.getItem('fontSize')) {
-  contentBox.style.fontSize = localStorage.getItem('fontSize') + 'px';
-  editPreview.style.fontSize = localStorage.getItem('fontSize') + 'px';
-}
+if (localStorage.getItem('fontSize')) setFontSize(parseInt(localStorage.getItem('fontSize'), 10));
+if (localStorage.getItem('lineHeight')) setLineHeight(parseFloat(localStorage.getItem('lineHeight')));
 if (localStorage.getItem('apiKey')) invoke('set_api_key', { key: localStorage.getItem('apiKey') }).catch(() => {});
 
 // ---- Command palette (Cmd+K) ----
@@ -1766,6 +1856,8 @@ const COMMANDS = [
   { label: 'View: Reading', run: () => setViewMode('read') },
   { label: 'View: Live Editing (Cmd+E)', run: () => setViewMode('live') },
   { label: 'View: Split Source (Cmd+Shift+E)', run: () => setViewMode('split') },
+  { label: 'Text: Larger (Cmd+=)', run: () => setFontSize((parseInt(localStorage.getItem('fontSize'), 10) || 16) + 1) },
+  { label: 'Text: Smaller (Cmd+-)', run: () => setFontSize((parseInt(localStorage.getItem('fontSize'), 10) || 16) - 1) },
   { label: 'Quick Switcher', run: openSwitcher },
   { label: 'Graph: Global', run: () => showGraph(null) },
   { label: 'Graph: Current Note', run: () => showGraph(currentFile) },
@@ -1796,6 +1888,7 @@ const COMMANDS = [
   { label: 'Theme: Dark', run: () => applyTheme('dark') },
   { label: 'Theme: Sepia', run: () => applyTheme('sepia') },
   { label: 'Settings…', run: openSettings },
+  { label: 'Keyboard Shortcuts (?)', run: openCheatsheet },
 ];
 function openPalette() {
   switcherOverlay.classList.add('show');
@@ -2295,6 +2388,9 @@ document.addEventListener('keydown', (e) => {
     const i = parseInt(e.key, 10) - 1;
     if (tabs[i]) { e.preventDefault(); activeTab = i; renderTabs(); saveTabs(); openFile(tabs[i], false); }
   }
+  if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); setFontSize((parseInt(localStorage.getItem('fontSize'), 10) || 16) + 1); }
+  if (mod && e.key === '-') { e.preventDefault(); setFontSize((parseInt(localStorage.getItem('fontSize'), 10) || 16) - 1); }
+  if (mod && e.key === '0') { e.preventDefault(); setFontSize(16); }
 });
 
 // ---- Multi-vault manager (Settings) ----
