@@ -64,9 +64,27 @@ Three view modes, cycled with the **Edit** button:
 | **Live editing** | Cmd+E | Typora-style: every block rendered; click a paragraph to edit its Markdown in place; Escape or click away to re-render |
 | **Split source** | Cmd+Shift+E | Raw Markdown beside an instant preview with synced scrolling |
 
+### Live editing mode
+
+Click any paragraph, heading, code block, or list to edit its Markdown source in place. The active block is highlighted. Press Escape or click elsewhere to re-render and move to the next block. Links, checkboxes, and tags stay interactive around the editing area — click a checkbox to toggle the task, or a wikilink to navigate.
+
+### Split source mode
+
+Raw Markdown in the editor pane on the left; rendered output on the right with **proportional scroll sync** — scroll the editor and the preview stays aligned. The editor shows **Rust-computed syntax highlighting** as a backdrop layer, highlighting:
+
+- Headings, bold, italic, code
+- Wikilinks (`[[…]]`) and embed blocks (`![[…]]`)
+- Comments (`%%…%%`) and task markers (`- [ ]`)
+- Fenced code blocks with language detection
+
+Autosave fires silently **1.2 seconds after you stop typing**, preserving your position; the status bar shows "editing…" while unsaved changes exist.
+
+### Shared editing features
+
 Everything autosaves (debounced, atomic writes). Editing extras:
 
-- `[[` wikilink and `#` tag **autocomplete** at the caret
+- **`[[` wikilink autocomplete**: Start typing `[[` in either live or split mode; a popup shows ranked matches (title prefix, substring, alias). Navigate with Arrow Up/Down, accept with Enter or Tab, close with Escape.
+- **`#` tag autocomplete** at the caret
 - **Formatting**: Cmd+B bold, Cmd+I italic, Cmd+Shift+X strikethrough, Cmd+Shift+K link; lists auto-continue; Tab indents lists and jumps table cells
 - **Paste** an image → filed into the vault's attachment folder as an `![[embed]]`; paste a URL over selected text → Markdown link
 - **Find & replace**, table skeleton insertion, YAML **Properties** editor, **Rename** with inbound-link rewriting
