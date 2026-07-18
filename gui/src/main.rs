@@ -607,6 +607,118 @@ async fn store_url_attachment(root: String, url: String) -> Result<StoredAttachm
     Ok(StoredAttachment { name, embed })
 }
 
+/// An external (non-vault) link target found in a note: a URL, image URL,
+/// or `file://` reference that could be localized into the vault.
+#[derive(serde::Serialize, Debug)]
+struct ExtLink {
+    link: String,
+    kind: String,
+}
+
+/// Scan `note` for `[text](target)` / `![alt](target)` constructs whose
+/// target is an external `http(s)://` or `file://` URL (vault-internal
+/// wikilinks and relative paths are excluded). Duplicate targets are
+/// collapsed to a single entry.
+fn scan_external_links_impl(_root: &Path, note: &Path) -> Result<Vec<ExtLink>, String> {
+    let src = std::fs::read_to_string(note).map_err(|e| e.to_string())?;
+    let mut out: Vec<ExtLink> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    // Markdown links/images: ![alt](target) and [text](target)
+    let mut i = 0;
+    while let Some(open) = src[i..].find("](") {
+        let start = i + open + 2;
+        if let Some(close) = src[start..].find(')') {
+            let target =
+                src[start..start + close].split_whitespace().next().unwrap_or("").to_string();
+            i = start + close + 1;
+            let is_image = {
+                let before = &src[..start - 2];
+                before.rfind('[').map(|b| before[..b].ends_with('!')).unwrap_or(false)
+            };
+            let kind = if target.starts_with("http://") || target.starts_with("https://") {
+                let clean = target.split('?').next().unwrap_or(&target);
+                let ext = clean.rsplit('.').next().unwrap_or("").to_lowercase();
+                if is_image || IMAGE_EXTS.contains(&ext.as_str()) { "image_url" } else { "url" }
+            } else if target.starts_with("file://") {
+                "file"
+            } else {
+                continue;
+            };
+            if seen.insert(target.clone()) {
+                out.push(ExtLink { link: target, kind: kind.into() });
+            }
+        } else {
+            break;
+        }
+    }
+    Ok(out)
+}
+
+/// Convert a `file://` (or `file://localhost/...`) URL to a filesystem
+/// path. Percent-decoding is intentionally out of scope: paths containing
+/// `%xx` escapes are not currently supported.
+fn file_url_to_path(url: &str) -> &str {
+    let rest = url.trim_start_matches("file://");
+    rest.strip_prefix("localhost").unwrap_or(rest)
+}
+
+/// Resolve `link` + `action` (`store` | `convert`) to the wikilink/embed
+/// text that should replace it in the note.
+async fn localize_target(root: &Path, link: &str, action: &str) -> Result<String, String> {
+    match (action, link) {
+        ("store", l) if l.starts_with("file://") => {
+            let p = file_url_to_path(l);
+            Ok(store_attachment_impl(root, Path::new(p))?.embed)
+        }
+        ("store", l) => Ok(store_url_attachment(root.display().to_string(), l.to_string()).await?.embed),
+        ("convert", l) => {
+            let conv = if l.starts_with("file://") {
+                convert_file_to_markdown(file_url_to_path(l).to_string()).await?
+            } else {
+                convert_url_to_markdown(l.to_string()).await?
+            };
+            let path = save_markdown_to_imports(root, &conv.suggested_name, &conv.markdown)?;
+            let title = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            Ok(format!("[[{}]]", title))
+        }
+        _ => Err(format!("Unknown action: {}", action)),
+    }
+}
+
+/// Replace every `[text](link)` / `![alt](link)` occurrence in `note` with
+/// the localized wikilink/embed produced by `action`, and persist the
+/// updated source. Returns the full updated note text.
+async fn localize_link_impl(root: &Path, note: &Path, link: &str, action: &str) -> Result<String, String> {
+    let src = std::fs::read_to_string(note).map_err(|e| e.to_string())?;
+    let replacement = localize_target(root, link, action).await?;
+    // `replacement` is always a wikilink (`[[...]]` / `![[...]]`) and can
+    // never itself contain the search pattern `](link)`, so each iteration
+    // strictly shrinks the number of matches and this loop terminates.
+    let pat = format!("]({})", link);
+    let mut updated = src;
+    while let Some(pos) = updated.find(&pat) {
+        let before = &updated[..pos];
+        let open = before.rfind('[').ok_or("malformed link")?;
+        let bang = open > 0 && updated.as_bytes()[open - 1] == b'!';
+        let start = if bang { open - 1 } else { open };
+        let end = pos + pat.len();
+        updated.replace_range(start..end, &replacement);
+    }
+    std::fs::write(note, &updated).map_err(|e| e.to_string())?;
+    vault::invalidate(root);
+    Ok(updated)
+}
+
+#[tauri::command]
+fn scan_external_links(root: String, note_path: String) -> Result<Vec<ExtLink>, String> {
+    scan_external_links_impl(Path::new(&root), Path::new(&note_path))
+}
+
+#[tauri::command]
+async fn localize_link(root: String, note_path: String, link: String, action: String) -> Result<String, String> {
+    localize_link_impl(Path::new(&root), Path::new(&note_path), &link, &action).await
+}
+
 fn chrono_stamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
@@ -1131,6 +1243,22 @@ async fn convert_url_to_markdown(url: String) -> Result<Converted, String> {
     Ok(Converted { markdown, suggested_name: format!("{}.md", slugify(&title)), source: url })
 }
 
+/// Write `markdown` into `<root>/Imports/`, deduping the filename derived
+/// from `suggested_name` against any existing files there.
+fn save_markdown_to_imports(root: &Path, suggested_name: &str, markdown: &str) -> Result<PathBuf, String> {
+    let dir = root.join("Imports");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let base = suggested_name.trim_end_matches(".md");
+    let mut path = dir.join(format!("{}.md", base));
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("{} {}.md", base, n));
+        n += 1;
+    }
+    std::fs::write(&path, markdown).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
 /// Save converted markdown: into `<root>/Imports/` (deduped) or via Save As dialog.
 #[tauri::command]
 async fn save_import(
@@ -1154,16 +1282,7 @@ async fn save_import(
         std::fs::write(&path, markdown).map_err(|e| e.to_string())?;
         return Ok(Some(path.display().to_string()));
     }
-    let dir = PathBuf::from(root.unwrap()).join("Imports");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let base = suggested_name.trim_end_matches(".md");
-    let mut path = dir.join(format!("{}.md", base));
-    let mut n = 2;
-    while path.exists() {
-        path = dir.join(format!("{} {}.md", base, n));
-        n += 1;
-    }
-    std::fs::write(&path, markdown).map_err(|e| e.to_string())?;
+    let path = save_markdown_to_imports(&PathBuf::from(root.unwrap()), &suggested_name, &markdown)?;
     Ok(Some(path.display().to_string()))
 }
 
@@ -1346,6 +1465,7 @@ fn main() {
             resolve_wikilink, graph_data, quick_list, wikilink_complete,
             read_source, save_file, render_markdown, toggle_task,
             create_note, rename_note, set_frontmatter, paste_image, store_attachment, store_url_attachment, tag_list,
+            scan_external_links, localize_link,
             related_notes, semantic_search, set_api_key, ai_action, syntax_css,
             doc_stats, peek_note,
             daily_note, list_templates, new_folder, delete_path,
@@ -1695,5 +1815,51 @@ mod tests {
         let root = fixture_vault();
         let r = tauri::async_runtime::block_on(open_file(format!("{}/Board.canvas", root), Some(root))).unwrap();
         assert!(!r.html.trim().is_empty());
+    }
+
+    /// Sync test wrapper mirroring the `tauri::async_runtime::block_on`
+    /// pattern used elsewhere in this file (e.g. `unlinked_mentions`,
+    /// `canvas_files_render`) to drive an async command from a plain test.
+    fn localize_link_blocking(root: &Path, note: &Path, link: &str, action: &str) -> Result<String, String> {
+        tauri::async_runtime::block_on(localize_link_impl(root, note, link, action))
+    }
+
+    #[test]
+    fn scan_external_links_finds_targets() {
+        let root = temp_vault("scan_external_links");
+        let note = root.path().join("Ext.md");
+        std::fs::write(
+            &note,
+            "![a](https://x.com/p.png)\n[b](https://x.com/page)\n[c](file:///tmp/d.pdf)\n[[Note A]]\n![local](local.png)\n[dup](https://x.com/page)\n",
+        )
+        .unwrap();
+        let links = scan_external_links_impl(root.path(), &note).unwrap();
+        let kinds: Vec<(&str, &str)> = links.iter().map(|l| (l.link.as_str(), l.kind.as_str())).collect();
+        assert!(kinds.contains(&("https://x.com/p.png", "image_url")));
+        assert!(kinds.contains(&("https://x.com/page", "url")));
+        assert!(kinds.contains(&("file:///tmp/d.pdf", "file")));
+        assert_eq!(
+            links.iter().filter(|l| l.link == "https://x.com/page").count(),
+            1,
+            "dedup identical targets"
+        );
+        assert!(
+            !kinds.iter().any(|(l, _)| l.contains("Note A") || l.contains("local.png")),
+            "vault-internal links excluded"
+        );
+    }
+
+    #[test]
+    fn localize_link_store_rewrites_all_occurrences_of_file_url() {
+        let root = temp_vault("localize_link_store");
+        let src = root.path().join("att.pdf");
+        std::fs::write(&src, b"%PDF").unwrap();
+        let file_url = format!("file://{}", src.display());
+        let note = root.path().join("Loc.md");
+        std::fs::write(&note, format!("[x]({0})\ntext\n[y]({0})\n", file_url)).unwrap();
+        let updated = localize_link_blocking(root.path(), &note, &file_url, "store").unwrap();
+        assert!(!updated.contains(&file_url), "no occurrence of the old target remains");
+        assert_eq!(updated.matches("[[att").count(), 2, "both occurrences rewritten to the same local target");
+        assert_eq!(std::fs::read_to_string(&note).unwrap(), updated, "note saved");
     }
 }
