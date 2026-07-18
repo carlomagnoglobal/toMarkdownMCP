@@ -1395,14 +1395,22 @@ mod tests {
     #[test]
     fn wikilink_complete_ranks_prefix_first() {
         let root = fixture_vault();
-        // "note" prefixes the fixture titles "Note A", "Note B", and "Note A (nested)".
+        // "note" title-prefixes "Note A" (x2) and "Note B", and is a
+        // non-prefix substring of the fixture note "Another Note" — so this
+        // exercises both rank 0 (prefix) and rank 1 (substring) results.
         let hits = wikilink_matches(Path::new(&root), "note").unwrap();
         assert!(!hits.is_empty());
         let labels: Vec<String> = hits.iter().map(|h| h.label.to_lowercase()).collect();
-        if let Some(fs) = labels.iter().position(|l| !l.starts_with("note")) {
-            assert!(labels[..fs].iter().all(|l| l.starts_with("note")));
-            assert!(labels[fs..].iter().all(|l| !l.starts_with("note")));
-        }
+        // Guard against fixture drift silently making this test vacuous.
+        assert!(
+            labels.iter().any(|l| !l.starts_with("note")),
+            "expected at least one non-prefix (substring) match in fixtures; got {:?}",
+            labels
+        );
+        let fs = labels.iter().position(|l| !l.starts_with("note")).unwrap();
+        assert!(labels[..fs].iter().all(|l| l.starts_with("note")));
+        assert!(labels[fs..].iter().all(|l| !l.starts_with("note")));
+        assert!(labels.contains(&"another note".to_string()));
     }
 
     #[test]
@@ -1411,6 +1419,25 @@ mod tests {
         let hits = wikilink_matches(Path::new(&root), "").unwrap();
         assert!(!hits.is_empty());
         assert!(hits.len() <= 20);
+    }
+
+    #[test]
+    fn wikilink_complete_finds_alias_only_matches() {
+        let root = fixture_vault();
+        // "Note A" has alias "First Note"; no fixture title contains "first",
+        // so this query only matches via rank-2 alias-substring.
+        let hits = wikilink_matches(Path::new(&root), "first").unwrap();
+        assert!(
+            hits.iter().any(|h| h.label == "Note A"),
+            "expected alias-only match for 'Note A'; got {:?}",
+            hits.iter().map(|h| &h.label).collect::<Vec<_>>()
+        );
+        let labels: Vec<String> = hits.iter().map(|h| h.label.to_lowercase()).collect();
+        assert!(
+            labels.iter().all(|l| !l.starts_with("first") && !l.contains("first")),
+            "no fixture title should contain 'first'; got {:?}",
+            labels
+        );
     }
 
     #[test]
