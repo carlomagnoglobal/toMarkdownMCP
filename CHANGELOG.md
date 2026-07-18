@@ -2,6 +2,13 @@
 
 All notable changes to toMarkdownMCP.
 
+## Unreleased
+
+### Added — GUI: drop into notes and link localization
+
+- **Drop into notes**: Drag files, images, or URLs into the note editor to add content. Image files are instantly embedded into the vault's attachment folder; other files and URLs show a four-action dialog (Copy into vault & link / Link original location / Convert to new linked note / Convert inline, with oversized content requiring confirmation). Multi-file drops apply a single action to all files. Safari/browser image drags download and embed, with a link fallback if offline.
+- **Link localization**: Right-click external links or remote images in the reader to "Store in vault" (download and rewrite the link) or "Convert to markdown note" (create an Imports/ note and rewrite as a wikilink). Palette command "Localize External Links…" scans the entire note for external targets, lists them with per-item actions (images default to Store, links default to Skip), and processes sequentially with failure tolerance.
+
 ## gui-v0.3.0 — 2026-07-18 (GUI-only release)
 
 toMarkdown Viewer 0.3.0. The `to_markdown_mcp` crate is unchanged (stays 0.2.0 on crates.io).

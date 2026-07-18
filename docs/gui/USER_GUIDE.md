@@ -7,17 +7,19 @@ toMarkdown Viewer is the desktop app for reading, editing, and organizing Markdo
 1. [Getting started](#getting-started)
 2. [Opening files and vaults](#opening-files-and-vaults)
 3. [Reading view](#reading-view)
-4. [Editing](#editing)
-5. [Importing & converting (files and URLs)](#importing--converting-files-and-urls)
-6. [Search, tags, and tasks](#search-tags-and-tasks)
-7. [Navigation: switcher, graph, backlinks](#navigation-switcher-graph-backlinks)
-8. [Text analysis & document statistics](#text-analysis--document-statistics)
-9. [AI actions](#ai-actions)
-10. [Export & sharing](#export--sharing)
-11. [Themes & appearance](#themes--appearance)
-12. [Settings](#settings)
-13. [Keyboard shortcuts](#keyboard-shortcuts)
-14. [Troubleshooting](#troubleshooting)
+4. [Localizing external links](#localizing-external-links)
+5. [Editing](#editing)
+6. [Dropping files into notes](#dropping-files-into-notes)
+7. [Importing & converting (files and URLs)](#importing--converting-files-and-urls)
+8. [Search, tags, and tasks](#search-tags-and-tasks)
+9. [Navigation: switcher, graph, backlinks](#navigation-switcher-graph-backlinks)
+10. [Text analysis & document statistics](#text-analysis--document-statistics)
+11. [AI actions](#ai-actions)
+12. [Export & sharing](#export--sharing)
+13. [Themes & appearance](#themes--appearance)
+14. [Settings](#settings)
+15. [Keyboard shortcuts](#keyboard-shortcuts)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -54,6 +56,16 @@ Markdown renders with headings, tables, task lists, footnotes, syntax-highlighte
 - **Table of contents** appears in the Files pane for documents with 2+ headings.
 - The **status bar** shows words · characters · estimated tokens · read time. Click it for the full [Text analysis](#text-analysis--document-statistics).
 
+## Localizing external links
+
+In the reading view, you can convert external links and remote images to vault-local copies:
+
+- **Right-click an external link or remote image** → **"Store in vault"** saves the resource (image or URL document) locally and rewrites the link in the note
+- **Right-click → "Convert to markdown note"** converts a URL's content to Markdown, saves it as a new note, and rewrites the link as a wikilink
+- **Palette command "Localize External Links…"** scans the entire note for external targets and shows a list with per-item actions (images default to Store, links default to Skip); processes sequentially and skips failed downloads with a toast message
+
+Localizing is useful for building a self-contained, offline vault and for capturing web content that might disappear.
+
 ## Editing
 
 Three view modes, cycled with the **Edit** button:
@@ -89,6 +101,21 @@ Everything autosaves (debounced, atomic writes). Editing extras:
 - **Paste** an image → filed into the vault's attachment folder as an `![[embed]]`; paste a URL over selected text → Markdown link
 - **Find & replace**, table skeleton insertion, YAML **Properties** editor, **Rename** with inbound-link rewriting
 - **Zen mode** (Cmd+Shift+Z) hides the sidebar, tabs, and status bar; **typewriter mode** keeps the caret centered
+
+## Dropping files into notes
+
+When a note is open in the editor, you can drag files into the note area to add their content:
+
+- **Image files** (PNG, JPG, GIF, WebP, SVG, BMP) are **instantly embedded** — copied into the vault's attachment folder and referenced as `![[image.png]]`
+- **Other files & URLs** show a **four-action dialog**:
+  - **Copy into vault & link** — save the file (or URL resource) to attachments and link it
+  - **Link original location** — insert a link to the file or URL as-is
+  - **Convert to new linked note** — convert to Markdown and save as a new note, link it with `[[Note]]`
+  - **Convert inline** — embed the converted Markdown directly in the current note (files over 200 KB ask for confirmation)
+  - Press **Esc** to cancel
+- **Multi-file drops** apply a single action to all files
+- **Safari/browser image drags** (raw image data) download and embed; if offline or the URL is unreachable, a link is inserted instead
+- **Drops on the sidebar or with no note open** keep the original behavior (open the file or import as a new note)
 
 ## Importing & converting (files and URLs)
 

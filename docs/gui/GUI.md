@@ -75,6 +75,20 @@ Packaging: `cargo tauri build` from `gui/` produces the `.app`/`.dmg` (tauri-cli
 - **Scroll sync (split mode)**: Open a long note in split mode; scroll the editor (left pane); the preview (right pane) should scroll proportionally to keep alignment, and vice versa.
 - **Render cache snappiness (long notes)**: Open a note with 50+ paragraphs; switch between reading, live, and split modes; verify UI remains responsive and mode transitions complete without lag or visual glitches.
 
+### Phase 3 — Drop-and-localize
+
+- **Finder file drop on note**: Drag a PDF or DOCX file from Finder onto the note content area; dialog appears with four actions; select "Convert inline" and verify content is inserted.
+- **Finder file drop on sidebar**: Drag a file onto the sidebar (tree area); verify the old import-as-new-note behavior occurs (no dialog).
+- **Image file instant embed**: Drag a PNG/JPG from Finder onto the note; verify it is immediately embedded as `![[filename]]` with no dialog, file is copied to attachments folder.
+- **Safari image drag**: Drag an image from a webpage onto the note; verify it downloads and embeds; test offline by unplugging network — verify fallback inserts a plain link with "Could not download" toast.
+- **Multi-file one-action**: Drag three mixed files (image + PDF + DOCX) onto note; image embeds instantly; dialog appears for the others offering one action that applies to both.
+- **Esc cancels drop**: Drag a file onto the note, dialog appears; press Esc; verify dialog closes and nothing is inserted.
+- **Oversized inline confirm**: Drag a 250+ KB file onto note, select "Convert inline"; verify a toast asks to drop again within 10s to confirm; dropping a second file within the window confirms the insert.
+- **Right-click store remote image**: In reading view, right-click a remote image (http/https); select "Store in vault"; verify the file downloads, image now loads from local attachments, link is rewritten.
+- **Right-click convert remote link**: Right-click an external link in the reader; select "Convert to markdown note"; verify a new Imports/ note is created, link becomes a wikilink.
+- **Whole-note localize with dead URL**: Palette → "Localize External Links…" on a note with a 404 URL; verify the dead link is listed, attempt fails with a toast, note is untouched for that link.
+- **devicePixelRatio hit-test on retina**: On a Retina Mac (2x DPI), drag a file onto the note; verify drop dialog appears correctly (position is adjusted by device pixel ratio, not clipped off-screen).
+
 ## Architecture
 
 - `gui/src/main.rs` — Tauri commands: `list_tree` (recursive, sorted, filtered), `open_file` (convert → Markdown → HTML), `pick_folder`/`pick_file` (native dialogs)
