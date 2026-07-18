@@ -1133,6 +1133,72 @@ fn is_convertible(path: String) -> bool {
     )
 }
 
+#[derive(serde::Serialize, Debug)]
+struct Span {
+    start: usize,
+    end: usize,
+    kind: String,
+}
+
+fn highlight_spans(source: &str) -> Vec<Span> {
+    use pulldown_cmark::{Event, Options, Parser, Tag};
+    let mut spans: Vec<Span> = Vec::new();
+    let mut push = |range: std::ops::Range<usize>, kind: &str| {
+        if range.start < range.end {
+            spans.push(Span { start: range.start, end: range.end, kind: kind.into() });
+        }
+    };
+    // Frontmatter is not markdown; detect it textually before parsing.
+    let mut body_off = 0usize;
+    if let Some(rest) = source.strip_prefix("---\n") {
+        if let Some(end) = rest.find("\n---") {
+            let after = 4 + end + 4;
+            let fm_end = source[after..].find('\n').map(|n| after + n + 1).unwrap_or(source.len());
+            push(0..fm_end, "frontmatter");
+            body_off = fm_end;
+        }
+    }
+    let body = &source[body_off..];
+    // Wikilinks: pulldown-cmark doesn't know them; linear scan.
+    let mut i = 0;
+    while let Some(open) = body[i..].find("[[") {
+        let s = i + open;
+        match body[s..].find("]]") {
+            Some(close) => {
+                push(body_off + s..body_off + s + close + 2, "wikilink");
+                i = s + close + 2;
+            }
+            None => break,
+        }
+    }
+    for (event, range) in Parser::new_ext(body, Options::all()).into_offset_iter() {
+        let r = body_off + range.start..body_off + range.end;
+        match event {
+            Event::Start(Tag::Heading { .. }) => push(r, "heading"),
+            Event::Start(Tag::Emphasis) => push(r, "emphasis"),
+            Event::Start(Tag::Strong) => push(r, "strong"),
+            Event::Start(Tag::CodeBlock(_)) => push(r, "codeblock"),
+            Event::Start(Tag::Link { .. }) | Event::Start(Tag::Image { .. }) => push(r, "link"),
+            Event::Start(Tag::BlockQuote(_)) => push(r, "blockquote"),
+            Event::Code(_) => push(r, "code"),
+            Event::Start(Tag::Item) => {
+                let text = &body[range.start..range.end];
+                let marker_len = text.find(|c: char| !"-*+0123456789. \t".contains(c)).unwrap_or(0);
+                let end = (r.start + marker_len).min(r.end);
+                push(r.start..end, "list_marker");
+            }
+            _ => {}
+        }
+    }
+    spans.sort_by_key(|s| (s.start, s.end));
+    spans
+}
+
+#[tauri::command]
+fn highlight_markdown(source: String) -> Vec<Span> {
+    highlight_spans(&source)
+}
+
 fn main() {
     use tauri::Manager;
     let app = tauri::Builder::default()
@@ -1168,7 +1234,7 @@ fn main() {
             reveal_in_finder, unlinked_mentions, render_blocks,
             export_docx, export_rtf, take_pending_opens,
             convert_file_to_markdown, convert_url_to_markdown, save_import, is_convertible,
-            text_metrics
+            text_metrics, highlight_markdown
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");
@@ -1199,6 +1265,31 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn highlight_markdown_spans_basic() {
+        let spans = highlight_spans("# Title\n\nsome **bold** and `code`\n");
+        let kind_at = |off: usize| spans.iter().find(|s| s.start <= off && off < s.end).map(|s| s.kind.as_str());
+        assert_eq!(kind_at(0), Some("heading"));      // '#'
+        assert_eq!(kind_at(14), Some("strong"));      // inside **bold**
+        assert_eq!(kind_at(28), Some("code"));        // inside `code`
+        assert!(spans.iter().all(|s| s.start < s.end));
+    }
+
+    #[test]
+    fn highlight_markdown_spans_wikilink_and_fence() {
+        let src = "see [[Other Note]]\n\n```rust\nfn x() {}\n```\n";
+        let spans = highlight_spans(src);
+        assert!(spans.iter().any(|s| s.kind == "wikilink" && &src[s.start..s.end] == "[[Other Note]]"));
+        assert!(spans.iter().any(|s| s.kind == "codeblock"));
+    }
+
+    #[test]
+    fn highlight_markdown_spans_frontmatter() {
+        let src = "---\ntitle: X\n---\n# H\n";
+        let spans = highlight_spans(src);
+        assert!(spans.iter().any(|s| s.kind == "frontmatter" && s.start == 0));
+    }
 
     fn fixture_vault() -> String {
         Path::new(env!("CARGO_MANIFEST_DIR"))
