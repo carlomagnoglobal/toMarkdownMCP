@@ -6,7 +6,7 @@ All notable changes to toMarkdownMCP.
 
 ### Added — GUI: Rust-first hybrid editing
 
-- **Rust-computed syntax highlighting** in split-source mode (backdrop overlay): headings, bold, italic, code, wikilinks, embeds, comments, and task markers rendered live as you type
+- **Rust-computed syntax highlighting** in split-source mode (backdrop overlay): headings, bold, italic, inline code, wikilinks, links, blockquotes, list markers, fenced code blocks, and frontmatter rendered live as you type
 - **Live-block highlighting**: in Typora-style live mode, the active editing block is highlighted for better focus
 - **`[[` wikilink autocomplete** (shared between source and live modes): ranked results by title prefix, substring, then alias; navigate with Arrow Up/Down, accept with Enter/Tab, dismiss with Escape
 - **Silent autosave**: 1.2-second debounce after typing stops; saves atomically without toast notifications in split mode

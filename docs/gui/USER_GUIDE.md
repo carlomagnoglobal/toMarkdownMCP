@@ -72,10 +72,10 @@ Click any paragraph, heading, code block, or list to edit its Markdown source in
 
 Raw Markdown in the editor pane on the left; rendered output on the right with **proportional scroll sync** — scroll the editor and the preview stays aligned. The editor shows **Rust-computed syntax highlighting** as a backdrop layer, highlighting:
 
-- Headings, bold, italic, code
-- Wikilinks (`[[…]]`) and embed blocks (`![[…]]`)
-- Comments (`%%…%%`) and task markers (`- [ ]`)
-- Fenced code blocks with language detection
+- Headings, bold, italic, inline code
+- Wikilinks (`[[…]]`)
+- Links, blockquotes, list markers
+- Fenced code blocks, frontmatter
 
 Autosave fires silently **1.2 seconds after you stop typing**, preserving your position; the status bar shows "editing…" while unsaved changes exist.
 
