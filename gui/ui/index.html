@@ -351,11 +351,17 @@
   #live-doc .block blockquote { border-left: 4px solid var(--border); margin-left: 0;
                                 padding-left: 14px; color: var(--muted); }
   #live-doc .block img { max-width: 100%; }
-  #live-doc textarea.block-edit {
-    width: 100%; border: none; outline: none; resize: none; padding: 4px 0;
+  #live-doc textarea.block-edit, #live-doc .block-backdrop {
+    width: 100%; border: none; padding: 4px 0; margin: 0;
     font: 13.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: transparent; color: var(--fg); display: block; overflow: hidden;
+    white-space: pre-wrap; overflow-wrap: anywhere; box-sizing: border-box;
   }
+  #live-doc textarea.block-edit { outline: none; resize: none; background: transparent; color: var(--fg);
+                                   display: block; overflow: hidden; }
+  #live-doc .block-backdrop { color: var(--fg, inherit); }
+  .block-shell { position: relative; }
+  .block-shell .block-backdrop { position: absolute; inset: 0; pointer-events: none; margin: 0; }
+  .block-shell textarea { position: relative; background: transparent; color: transparent; caret-color: var(--fg, currentColor); }
   #live-doc .block-append { color: var(--muted); font-size: 13px; padding: 8px;
                             cursor: text; border-radius: 6px; }
   #live-doc .block-append:hover { outline: 1px dashed var(--border); }
@@ -2551,23 +2557,48 @@ async function commitActiveBlock(rerender = true) {
   if (rerender) await renderLiveDoc();
 }
 
+// ---- Active-block highlighting (mirrors the source-editor backdrop technique) ----
+let blockHlTimer = null, blockHlSeq = 0;
+async function refreshBlockHighlight(ta, backdrop) {
+  const text = ta.value, seq = ++blockHlSeq;
+  try {
+    const raw = await invoke('highlight_markdown', { source: text });
+    if (seq !== blockHlSeq) return;               // stale response
+    const toChar = byteToCharIndex(text);
+    const spans = raw.map(s => ({ start: toChar(s.start), end: toChar(s.end), kind: s.kind }));
+    backdrop.innerHTML = spansToHtml(text, spans) + '\n';
+  } catch { backdrop.textContent = text; }
+}
+
 function activateBlock(el) {
   if (activeBlockEl === el) return;
   commitActiveBlock(false).then(() => {
     const i = parseInt(el.dataset.i, 10);
     el.classList.add('active');
     el.innerHTML = '';
+    const shell = document.createElement('div');
+    shell.className = 'block-shell';
+    const backdrop = document.createElement('pre');
+    backdrop.className = 'block-backdrop';
     const ta = document.createElement('textarea');
     ta.className = 'block-edit';
     ta.value = liveBlocks[i].text;
-    el.appendChild(ta);
+    shell.appendChild(backdrop);
+    shell.appendChild(ta);
+    el.appendChild(shell);
     activeBlockEl = el;
     autosize(ta);
+    refreshBlockHighlight(ta, backdrop);
     ta.focus();
     // Caret at the end of the content (before trailing blank lines).
     const end = ta.value.replace(/\n+$/, '').length;
     ta.setSelectionRange(end, end);
-    ta.addEventListener('input', () => autosize(ta));
+    ta.addEventListener('input', () => {
+      autosize(ta);
+      clearTimeout(blockHlTimer);
+      blockHlTimer = setTimeout(() => refreshBlockHighlight(ta, backdrop), 120);
+    });
+    ta.addEventListener('scroll', () => { backdrop.scrollTop = ta.scrollTop; }, { passive: true });
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); commitActiveBlock(); return; }
       formatKeydown(e, ta);

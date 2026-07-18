@@ -425,7 +425,7 @@ async fn render_blocks(
     render::split_blocks(&md)
         .into_iter()
         .map(|text| {
-            let html = render_note(&text, &opts, 0);
+            let html = render::render_block_cached(&text, &opts);
             serde_json::json!({ "text": text, "html": html })
         })
         .collect()

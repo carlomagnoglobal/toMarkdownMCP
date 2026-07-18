@@ -734,6 +734,53 @@ pub fn render_note(md: &str, opts: &RenderOpts, depth: usize) -> String {
     inline_local_media(&html, opts)
 }
 
+// ---- Per-block render cache (live editor: unchanged sibling blocks reuse
+// their rendered HTML instead of re-running the full pipeline) ----
+
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
+
+static RENDER_CACHE: once_cell::sync::Lazy<Mutex<(std::collections::HashMap<u64, String>, u64)>> =
+    once_cell::sync::Lazy::new(|| Mutex::new((std::collections::HashMap::new(), 0)));
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn render_cache_clear() {
+    let mut c = RENDER_CACHE.lock().unwrap();
+    c.0.clear();
+    c.1 = 0;
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn render_cache_stats() -> (u64, usize) {
+    let c = RENDER_CACHE.lock().unwrap();
+    (c.1, c.0.len())
+}
+
+/// Render a single block's markdown, memoized by content hash. Used by the
+/// live editor to avoid re-rendering blocks that haven't changed.
+pub fn render_block_cached(text: &str, opts: &RenderOpts) -> String {
+    let mut h = DefaultHasher::new();
+    text.hash(&mut h);
+    opts.vault_root.map(|p| p.to_path_buf()).hash(&mut h);
+    opts.file_dir.map(|p| p.to_path_buf()).hash(&mut h);
+    let key = h.finish();
+    {
+        let mut c = RENDER_CACHE.lock().unwrap();
+        if let Some(html) = c.0.get(&key).cloned() {
+            c.1 += 1;
+            return html;
+        }
+    }
+    let html = render_note(text, opts, 0);
+    let mut c = RENDER_CACHE.lock().unwrap();
+    if c.0.len() > 4096 {
+        c.0.clear(); // crude bound; blocks are small
+    }
+    c.0.insert(key, html.clone());
+    html
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -812,6 +859,18 @@ mod tests {
         // Non-embed wikilinks stay anchors.
         let html = render_note("See [[Note B|second]]", &opts, 0);
         assert!(html.contains("href=\"wikilink:Note%20B\""));
+    }
+
+    #[test]
+    fn render_block_cache_hits() {
+        render_cache_clear();
+        let opts = RenderOpts { file_dir: None, vault_root: None };
+        let html1 = render_block_cached("**hi**", &opts);
+        let (hits0, _) = render_cache_stats();
+        let html2 = render_block_cached("**hi**", &opts);
+        let (hits1, _) = render_cache_stats();
+        assert_eq!(html1, html2);
+        assert_eq!(hits1, hits0 + 1);
     }
 
     #[test]
