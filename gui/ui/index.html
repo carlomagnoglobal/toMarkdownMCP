@@ -294,6 +294,9 @@
   /* Always-visible scrollbars (macOS overlay scrollbars hide until scrolled) */
   #scroll, #live-wrap, #sidebar, #editor, #edit-preview, #note-panel,
   #switcher-results, #result-body { scrollbar-gutter: stable; }
+  /* The highlight backdrop must reserve the same scrollbar gutter as the
+     textarea above it, or wrap points diverge and text drifts off the caret. */
+  #editor-backdrop { scrollbar-gutter: stable; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
