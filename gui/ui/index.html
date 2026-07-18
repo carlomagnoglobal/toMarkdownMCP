@@ -433,6 +433,13 @@
   #confirm-insert-dialog h3 { margin: 0 0 6px; font-size: 14px; font-weight: 400; }
   #confirm-insert-dialog button { text-align: left; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); cursor: pointer; }
   #confirm-insert-dialog button:hover { background: var(--hover); }
+  #image-drop-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 270; }
+  #image-drop-overlay.show { display: flex; }
+  #image-drop-dialog { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; min-width: 320px; max-width: 480px; display: flex; flex-direction: column; gap: 8px; }
+  #image-drop-dialog h3 { margin: 0 0 6px; font-size: 14px; font-weight: 400; overflow-wrap: anywhere; }
+  #image-drop-dialog button { text-align: left; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); cursor: pointer; }
+  #image-drop-dialog button:hover:not(:disabled) { background: var(--hover); }
+  #image-drop-dialog button:disabled { opacity: .45; cursor: default; }
   @media print {
     #sidebar, #statusbar, #error, #tabbar, #read-progress, #toast-stack { display: none !important; }
     #main, #scroll { overflow: visible !important; }
@@ -613,6 +620,14 @@
     <div id="confirm-insert-dialog">
       <h3 id="confirm-insert-title"></h3>
       <button data-act="insert">Insert anyway</button>
+      <button data-act="cancel">Cancel (Esc)</button>
+    </div>
+  </div>
+  <div id="image-drop-overlay" role="dialog" aria-label="Dropped image">
+    <div id="image-drop-dialog">
+      <h3 id="image-drop-title"></h3>
+      <button data-act="store">Save image into vault &amp; embed</button>
+      <button data-act="link">Link only (keep remote URL)</button>
       <button data-act="cancel">Cancel (Esc)</button>
     </div>
   </div>
@@ -3144,26 +3159,69 @@ listen('tauri://drag-drop', async (event) => {
   }
 });
 
-// ---- DOM drop handler for non-file drags (image data / URLs from other apps) ----
+// ---- Web-image drop dialog: store in vault vs link only ----
+const imageDropOverlay = document.getElementById('image-drop-overlay');
+let pendingImageResolve = null;
+function resolveImageDrop(act) {
+  imageDropOverlay.classList.remove('show'); releaseFocus(imageDropOverlay);
+  dropDialogBusy = false;
+  const resolve = pendingImageResolve;
+  pendingImageResolve = null;
+  if (resolve) resolve(act);
+}
+function askImageAction(label, linkAvailable) {
+  dropDialogBusy = true;
+  return new Promise((resolve) => {
+    pendingImageResolve = resolve;
+    document.getElementById('image-drop-title').textContent = label;
+    imageDropOverlay.querySelectorAll('button').forEach(b => {
+      b.disabled = b.dataset.act === 'link' && !linkAvailable;
+      b.title = b.disabled ? 'No URL available for this image — it can only be saved' : '';
+      b.onclick = () => resolveImageDrop(b.dataset.act);
+    });
+    imageDropOverlay.classList.add('show'); trapFocus(imageDropOverlay);
+  });
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && imageDropOverlay.classList.contains('show')) { e.stopPropagation(); resolveImageDrop('cancel'); }
+}, true);
+
+// ---- DOM drop handler for non-file drags (web images, image data, URLs) ----
+// NOTE: Safari (and other browsers) deliver dragged webpage images as FILE
+// PROMISES — dataTransfer.types includes "Files" but there is no path on disk,
+// so tauri://drag-drop never fires for them. The DOM handler must therefore
+// accept drops even when "Files" is present and read the File item's bytes;
+// real Finder file drops are intercepted by Tauri before the webview and never
+// reach this handler on macOS.
 for (const el of [document.getElementById('scroll'), document.getElementById('editor-wrap'), document.getElementById('live-wrap')]) {
-  el.addEventListener('dragover', (e) => { if (!e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
+  el.addEventListener('dragover', (e) => { e.preventDefault(); });
   el.addEventListener('drop', async (e) => {
-    if (e.dataTransfer?.types?.includes('Files')) return; // handled by tauri://drag-drop
     if (!currentFile) return;
     if (dropDialogBusy) { e.preventDefault(); toast('Finish the current drop dialog first', 'info'); return; }
     e.preventDefault();
     const uri = e.dataTransfer.getData('text/uri-list').split('\n').find(l => l && !l.startsWith('#'));
     const item = [...(e.dataTransfer.items || [])].find(i => i.kind === 'file' && i.type.startsWith('image/'));
     try {
-      if (item) { // raw image data
+      if (item) { // image data or a browser file promise (Safari webpage drags)
         const file = item.getAsFile();
-        const buf = new Uint8Array(await file.arrayBuffer());
-        let bin = ''; buf.forEach(b => bin += String.fromCharCode(b));
-        const ext = (item.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
-        const embed = await invoke('paste_image', { root: currentFolder, base64Data: btoa(bin), extension: ext });
-        await insertIntoNote(embed);
+        if (!file) { toast('Could not read the dropped image', 'error'); return; }
+        const httpUri = uri && /^https?:\/\//.test(uri) ? uri : null;
+        const act = await askImageAction(file.name || httpUri || 'Dropped image', !!httpUri);
+        if (act === 'cancel') return;
+        if (act === 'link') {
+          await insertIntoNote(`![](${httpUri})`);
+        } else {
+          const buf = new Uint8Array(await file.arrayBuffer());
+          let bin = ''; buf.forEach(b => bin += String.fromCharCode(b));
+          const ext = (item.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace('svg+xml', 'svg');
+          const embed = await invoke('paste_image', { root: currentFolder, base64Data: btoa(bin), extension: ext });
+          await insertIntoNote(embed);
+        }
       } else if (uri && /^https?:\/\//.test(uri)) {
         if (IMG_RE.test(uri.split('?')[0])) {
+          const act = await askImageAction(uri, true);
+          if (act === 'cancel') return;
+          if (act === 'link') { await insertIntoNote(`![](${uri})`); return; }
           try { const a = await invoke('store_url_attachment', { root: currentFolder, url: uri }); await insertIntoNote(a.embed); }
           catch { await insertIntoNote(`![](${uri})`); toast('Could not download — inserted a link instead', 'info'); }
         } else {

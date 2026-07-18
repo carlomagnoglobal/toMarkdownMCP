@@ -23,8 +23,8 @@ Applies when a note is open and the drop lands on the note area (reader, split e
 | Dropped thing | Behavior |
 |---|---|
 | Image file (png/jpg/jpeg/gif/webp/svg/bmp) | No dialog. Copied to the vault attachment folder (same one `paste_image` uses, deduped name) and embedded at the insertion point. |
-| Raw image data (from an app) | No dialog. Routed through existing `paste_image`; embedded. |
-| Image URL (dragged from Safari/Chrome; `text/uri-list` with image extension or image content-type) | No dialog. New Rust command downloads it, stores via the attachment path, embeds. If download fails (offline, hotlink-protected): insert `![](url)` instead and toast that it was linked, not stored. |
+| Raw image data / browser file promise (webpage image dragged from Safari/Chrome; delivered as a DOM File item, often with a companion URL) | Two-action dialog (revised 2026-07-18 at user request): **Save into vault & embed** (bytes via `paste_image`) or **Link only** (`![](url)`, enabled only when a URL accompanies the data). Esc cancels. |
+| Image URL (`text/uri-list` with image extension, no file data) | Same two-action dialog; Save downloads via the Rust command and embeds; failed downloads fall back to `![](url)` with a toast. |
 | Any other file | Four-action dialog (below). |
 | Non-image URL | Four-action dialog; its convert actions use the existing URL→markdown converter. |
 
