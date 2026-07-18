@@ -2,6 +2,17 @@
 
 All notable changes to toMarkdownMCP.
 
+## Unreleased
+
+### Added — GUI: Rust-first hybrid editing
+
+- **Rust-computed syntax highlighting** in split-source mode (backdrop overlay): headings, bold, italic, inline code, wikilinks, links, blockquotes, list markers, fenced code blocks, and frontmatter rendered live as you type
+- **Live-block highlighting**: in Typora-style live mode, the active editing block is highlighted for better focus
+- **`[[` wikilink autocomplete** (shared between source and live modes): ranked results by title prefix, substring, then alias; navigate with Arrow Up/Down, accept with Enter/Tab, dismiss with Escape
+- **Silent autosave**: 1.2-second debounce after typing stops; saves atomically without toast notifications in split mode
+- **Proportional scroll sync**: editor ↔ preview in split mode stay aligned as you scroll either pane
+- **Render-block caching**: performance optimization for long notes and frequent mode switches
+
 ## gui-v0.2.0 — 2026-07-16 (GUI-only release)
 
 toMarkdown Viewer 0.2.0. The `to_markdown_mcp` crate is unchanged (stays 0.2.0 on crates.io).

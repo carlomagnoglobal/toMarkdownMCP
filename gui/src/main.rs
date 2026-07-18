@@ -318,6 +318,46 @@ async fn graph_data(root: String, focus: Option<String>) -> Result<serde_json::V
     Ok(serde_json::json!({ "nodes": nodes, "links": links }))
 }
 
+/// A ranked wikilink-completion candidate.
+#[derive(serde::Serialize, Debug)]
+struct WikiMatch {
+    label: String,
+    path: String,
+}
+
+/// Rank vault notes against `prefix`: 0 = title-prefix (or empty prefix), 1 =
+/// title-substring, 2 = alias-substring; case-insensitive, ties alphabetical.
+fn wikilink_matches(root: &Path, prefix: &str) -> Result<Vec<WikiMatch>, String> {
+    let idx = vault::get_index(root).map_err(|e| e.to_string())?;
+    let q = prefix.to_lowercase();
+    let mut ranked: Vec<(u8, String, String)> = Vec::new();
+    for n in idx.notes.values() {
+        let t = n.title.to_lowercase();
+        let rank = if q.is_empty() || t.starts_with(&q) {
+            0
+        } else if t.contains(&q) {
+            1
+        } else if n.aliases.iter().any(|a| a.to_lowercase().contains(&q)) {
+            2
+        } else {
+            continue;
+        };
+        ranked.push((rank, n.title.clone(), n.path.clone()));
+    }
+    ranked.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+    Ok(ranked
+        .into_iter()
+        .take(20)
+        .map(|(_, label, path)| WikiMatch { label, path })
+        .collect())
+}
+
+/// Top 20 vault-note completions for a wikilink query, ranked by relevance.
+#[tauri::command]
+fn wikilink_complete(root: String, prefix: String) -> Result<Vec<WikiMatch>, String> {
+    wikilink_matches(Path::new(&root), &prefix)
+}
+
 /// Titles + aliases for the quick switcher's fuzzy matching.
 #[tauri::command]
 fn quick_list(root: String) -> Result<serde_json::Value, String> {
@@ -385,7 +425,7 @@ async fn render_blocks(
     render::split_blocks(&md)
         .into_iter()
         .map(|text| {
-            let html = render_note(&text, &opts, 0);
+            let html = render::render_block_cached(&text, &opts);
             serde_json::json!({ "text": text, "html": html })
         })
         .collect()
@@ -1133,6 +1173,72 @@ fn is_convertible(path: String) -> bool {
     )
 }
 
+#[derive(serde::Serialize, Debug)]
+struct Span {
+    start: usize,
+    end: usize,
+    kind: String,
+}
+
+fn highlight_spans(source: &str) -> Vec<Span> {
+    use pulldown_cmark::{Event, Options, Parser, Tag};
+    let mut spans: Vec<Span> = Vec::new();
+    let mut push = |range: std::ops::Range<usize>, kind: &str| {
+        if range.start < range.end {
+            spans.push(Span { start: range.start, end: range.end, kind: kind.into() });
+        }
+    };
+    // Frontmatter is not markdown; detect it textually before parsing.
+    let mut body_off = 0usize;
+    if let Some(rest) = source.strip_prefix("---\n") {
+        if let Some(end) = rest.find("\n---") {
+            let after = 4 + end + 4;
+            let fm_end = source[after..].find('\n').map(|n| after + n + 1).unwrap_or(source.len());
+            push(0..fm_end, "frontmatter");
+            body_off = fm_end;
+        }
+    }
+    let body = &source[body_off..];
+    // Wikilinks: pulldown-cmark doesn't know them; linear scan.
+    let mut i = 0;
+    while let Some(open) = body[i..].find("[[") {
+        let s = i + open;
+        match body[s..].find("]]") {
+            Some(close) => {
+                push(body_off + s..body_off + s + close + 2, "wikilink");
+                i = s + close + 2;
+            }
+            None => break,
+        }
+    }
+    for (event, range) in Parser::new_ext(body, Options::all()).into_offset_iter() {
+        let r = body_off + range.start..body_off + range.end;
+        match event {
+            Event::Start(Tag::Heading { .. }) => push(r, "heading"),
+            Event::Start(Tag::Emphasis) => push(r, "emphasis"),
+            Event::Start(Tag::Strong) => push(r, "strong"),
+            Event::Start(Tag::CodeBlock(_)) => push(r, "codeblock"),
+            Event::Start(Tag::Link { .. }) | Event::Start(Tag::Image { .. }) => push(r, "link"),
+            Event::Start(Tag::BlockQuote(_)) => push(r, "blockquote"),
+            Event::Code(_) => push(r, "code"),
+            Event::Start(Tag::Item) => {
+                let text = &body[range.start..range.end];
+                let marker_len = text.find(|c: char| !"-*+0123456789. \t".contains(c)).unwrap_or(0);
+                let end = (r.start + marker_len).min(r.end);
+                push(r.start..end, "list_marker");
+            }
+            _ => {}
+        }
+    }
+    spans.sort_by_key(|s| (s.start, s.end));
+    spans
+}
+
+#[tauri::command]
+fn highlight_markdown(source: String) -> Vec<Span> {
+    highlight_spans(&source)
+}
+
 fn main() {
     use tauri::Manager;
     let app = tauri::Builder::default()
@@ -1159,7 +1265,7 @@ fn main() {
             list_tree, open_file, pick_folder, pick_file,
             watch_tree, watch_file, export_html, read_text_file,
             note_info, vault_overview, vault_search, vault_tasks,
-            resolve_wikilink, graph_data, quick_list,
+            resolve_wikilink, graph_data, quick_list, wikilink_complete,
             read_source, save_file, render_markdown, toggle_task,
             create_note, rename_note, set_frontmatter, paste_image, tag_list,
             related_notes, semantic_search, set_api_key, ai_action, syntax_css,
@@ -1168,7 +1274,7 @@ fn main() {
             reveal_in_finder, unlinked_mentions, render_blocks,
             export_docx, export_rtf, take_pending_opens,
             convert_file_to_markdown, convert_url_to_markdown, save_import, is_convertible,
-            text_metrics
+            text_metrics, highlight_markdown
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");
@@ -1199,6 +1305,31 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn highlight_markdown_spans_basic() {
+        let spans = highlight_spans("# Title\n\nsome **bold** and `code`\n");
+        let kind_at = |off: usize| spans.iter().find(|s| s.start <= off && off < s.end).map(|s| s.kind.as_str());
+        assert_eq!(kind_at(0), Some("heading"));      // '#'
+        assert_eq!(kind_at(14), Some("strong"));      // inside **bold**
+        assert_eq!(kind_at(28), Some("code"));        // inside `code`
+        assert!(spans.iter().all(|s| s.start < s.end));
+    }
+
+    #[test]
+    fn highlight_markdown_spans_wikilink_and_fence() {
+        let src = "see [[Other Note]]\n\n```rust\nfn x() {}\n```\n";
+        let spans = highlight_spans(src);
+        assert!(spans.iter().any(|s| s.kind == "wikilink" && &src[s.start..s.end] == "[[Other Note]]"));
+        assert!(spans.iter().any(|s| s.kind == "codeblock"));
+    }
+
+    #[test]
+    fn highlight_markdown_spans_frontmatter() {
+        let src = "---\ntitle: X\n---\n# H\n";
+        let spans = highlight_spans(src);
+        assert!(spans.iter().any(|s| s.kind == "frontmatter" && s.start == 0));
+    }
 
     fn fixture_vault() -> String {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1259,6 +1390,54 @@ mod tests {
         save_file(f.to_string_lossy().into(), "# Hi\n".into(), None).unwrap();
         assert_eq!(std::fs::read_to_string(&f).unwrap(), "# Hi\n");
         assert!(!f.with_extension("tomarkdown.tmp").exists());
+    }
+
+    #[test]
+    fn wikilink_complete_ranks_prefix_first() {
+        let root = fixture_vault();
+        // "note" title-prefixes "Note A" (x2) and "Note B", and is a
+        // non-prefix substring of the fixture note "Another Note" — so this
+        // exercises both rank 0 (prefix) and rank 1 (substring) results.
+        let hits = wikilink_matches(Path::new(&root), "note").unwrap();
+        assert!(!hits.is_empty());
+        let labels: Vec<String> = hits.iter().map(|h| h.label.to_lowercase()).collect();
+        // Guard against fixture drift silently making this test vacuous.
+        assert!(
+            labels.iter().any(|l| !l.starts_with("note")),
+            "expected at least one non-prefix (substring) match in fixtures; got {:?}",
+            labels
+        );
+        let fs = labels.iter().position(|l| !l.starts_with("note")).unwrap();
+        assert!(labels[..fs].iter().all(|l| l.starts_with("note")));
+        assert!(labels[fs..].iter().all(|l| !l.starts_with("note")));
+        assert!(labels.contains(&"another note".to_string()));
+    }
+
+    #[test]
+    fn wikilink_complete_empty_prefix_lists_up_to_20() {
+        let root = fixture_vault();
+        let hits = wikilink_matches(Path::new(&root), "").unwrap();
+        assert!(!hits.is_empty());
+        assert!(hits.len() <= 20);
+    }
+
+    #[test]
+    fn wikilink_complete_finds_alias_only_matches() {
+        let root = fixture_vault();
+        // "Note A" has alias "First Note"; no fixture title contains "first",
+        // so this query only matches via rank-2 alias-substring.
+        let hits = wikilink_matches(Path::new(&root), "first").unwrap();
+        assert!(
+            hits.iter().any(|h| h.label == "Note A"),
+            "expected alias-only match for 'Note A'; got {:?}",
+            hits.iter().map(|h| &h.label).collect::<Vec<_>>()
+        );
+        let labels: Vec<String> = hits.iter().map(|h| h.label.to_lowercase()).collect();
+        assert!(
+            labels.iter().all(|l| !l.starts_with("first") && !l.contains("first")),
+            "no fixture title should contain 'first'; got {:?}",
+            labels
+        );
     }
 
     #[test]

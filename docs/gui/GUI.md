@@ -55,7 +55,9 @@ cargo run -p to_markdown_gui              # launch the viewer
 
 Packaging: `cargo tauri build` from `gui/` produces the `.app`/`.dmg` (tauri-cli required: `cargo install tauri-cli --locked`). CI can build macOS/Linux/Windows bundles via the `GUI build` workflow (`.github/workflows/gui-release.yml`, manual dispatch or `gui-v*` tags). Signing/notarization requires Apple Developer certificates and is not configured — right-click → Open on first launch.
 
-## Manual test checklist (Phase 1 polish)
+## Manual test checklist
+
+### Phase 1 polish
 
 - **Image lightbox**: Click a note with images; click an image to zoom full-screen in a centered overlay; press Esc or click outside to close cleanly
 - **Reading-progress bar**: Open a long note; scroll to the middle, bar should be half-width; scroll to bottom, bar should span full width; verify it is hidden in print
@@ -63,6 +65,15 @@ Packaging: `cargo tauri build` from `gui/` produces the `.app`/`.dmg` (tauri-cli
 - **Text size controls**: Cmd/Ctrl+= to increase, − to decrease, 0 to reset; verify size clamps to 11–24 px; restart app, size should persist
 - **Line-height setting**: Cmd+, opens Settings; find Line height dropdown (Compact/Normal/Relaxed/Airy); change it; verify setting persists across restart
 - **Print / PDF output**: Cmd+K → "Print / Save as PDF" on a note with code, tables, and headings; verify PDF has no chrome (sidebar/tabs/statusbar hidden), no mid-block page breaks in code/tables, full-width text, and subtle links (inherit color, underlined)
+
+### Phase 2 — Rust-first hybrid editing
+
+- **Backdrop alignment (split mode)**: Cmd+Shift+E to open split editing; verify the highlighted syntax backdrop aligns precisely with the editor text (headings, bold, code, wikilinks). Emoji note: if bold or italics drift visually, adjust font-weight in CSS.
+- **Live-block highlighting**: Cmd+E to enter live mode; click a paragraph to edit; verify the editing block is highlighted with a subtle background color and remains distinct from rendered blocks around it.
+- **`[[` wikilink autocomplete (both modes)**: In split mode, type `[[` in a line; autocomplete popup appears ranked by title prefix, then substring, then alias. Navigate with Arrow Up/Down, accept with Enter or Tab, close with Escape. Repeat in live mode.
+- **Silent autosave timing (split mode)**: Type in split mode; the status bar shows "editing…" while unsaved. Wait 1.2 seconds after typing stops; status should update to "saved" with a timestamp, without a toast notification.
+- **Scroll sync (split mode)**: Open a long note in split mode; scroll the editor (left pane); the preview (right pane) should scroll proportionally to keep alignment, and vice versa.
+- **Render cache snappiness (long notes)**: Open a note with 50+ paragraphs; switch between reading, live, and split modes; verify UI remains responsive and mode transitions complete without lag or visual glitches.
 
 ## Architecture
 

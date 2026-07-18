@@ -20,6 +20,7 @@
     --hover: #15191f; --active: #0c2d6b;
     --danger: #f85149; --success: #3fb950; --warning: #d29922; --question: #a371f7;
     --mark-bg: #b8860b66; --shadow: 0 12px 40px rgba(0, 0, 0, .55);
+    --hl-heading: #7aa2f7; --hl-code: #e0af68; --hl-link: #7aa2f7; --hl-quote: #9aa5ce;
   }
   :root[data-theme="sepia"] {
     --bg: #f4ecd8; --fg: #433422; --muted: #8a7a5c; --border: #d8cba8;
@@ -214,11 +215,25 @@
   #edit-bar button:hover { background: var(--hover); }
   #save-state { font-size: 11px; color: var(--muted); margin-left: auto; }
   #edit-split { flex: 1; display: flex; overflow: hidden; }
-  #editor {
-    flex: 1; min-width: 0; resize: none; border: none; outline: none;
-    padding: 20px 24px; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: var(--bg); color: var(--fg); border-right: 1px solid var(--border);
+  #editor-shell { position: relative; flex: 1; min-width: 0; display: flex; border-right: 1px solid var(--border); }
+  #editor-backdrop, #editor-shell #editor {
+    margin: 0; border: 0; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+    font: 13.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 16px 20px; box-sizing: border-box;
   }
+  #editor-backdrop { position: absolute; inset: 0; pointer-events: none; color: var(--fg, inherit); }
+  #editor-shell #editor {
+    position: relative; flex: 1; min-width: 0; outline: none; resize: none;
+    background: transparent; color: transparent; caret-color: var(--fg, currentColor);
+  }
+  .hl-heading { font-weight: 700; color: var(--hl-heading, #2a6bcc); }
+  .hl-strong { font-weight: 700; }
+  .hl-emphasis { font-style: italic; }
+  .hl-code, .hl-codeblock { color: var(--hl-code, #8a5a00); }
+  .hl-link, .hl-wikilink { color: var(--hl-link, #2a6bcc); text-decoration: underline; }
+  .hl-blockquote { color: var(--hl-quote, #5a6472); font-style: italic; }
+  .hl-list_marker { color: var(--hl-heading, #2a6bcc); }
+  .hl-frontmatter { opacity: .55; }
   #edit-preview { flex: 1; min-width: 0; overflow-y: auto; padding: 20px 28px; line-height: 1.6; }
   #edit-preview pre { background: var(--code-bg); border: 1px solid var(--border);
                       border-radius: 6px; padding: 12px; overflow-x: auto; font-size: 13px; }
@@ -235,6 +250,11 @@
   }
   #autocomplete div { padding: 5px 10px; cursor: pointer; }
   #autocomplete div.sel, #autocomplete div:hover { background: var(--active); }
+  #wiki-ac { position: fixed; z-index: 280; display: none; min-width: 220px; max-height: 40vh; overflow-y: auto;
+    background: var(--bg, #fff); border: 1px solid rgba(128,128,128,.35); border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: 13px; }
+  #wiki-ac div { padding: 5px 10px; cursor: pointer; }
+  #wiki-ac div.sel { background: rgba(100,140,220,.25); }
   #prompt-box, .dialog-box {
     position: absolute; top: 20vh; left: 50%; transform: translateX(-50%);
     width: 520px; background: var(--bg); border: 1px solid var(--border);
@@ -336,11 +356,18 @@
   #live-doc .block blockquote { border-left: 4px solid var(--border); margin-left: 0;
                                 padding-left: 14px; color: var(--muted); }
   #live-doc .block img { max-width: 100%; }
-  #live-doc textarea.block-edit {
-    width: 100%; border: none; outline: none; resize: none; padding: 4px 0;
+  #live-doc textarea.block-edit, #live-doc .block-backdrop {
+    width: 100%; border: none; padding: 4px 0; margin: 0;
     font: 13.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: transparent; color: var(--fg); display: block; overflow: hidden;
+    white-space: pre-wrap; overflow-wrap: anywhere; box-sizing: border-box;
   }
+  /* color comes from .block-shell textarea (transparent over the highlight backdrop) */
+  #live-doc textarea.block-edit { outline: none; resize: none; background: transparent;
+                                   display: block; overflow: hidden; }
+  #live-doc .block-backdrop { color: var(--fg, inherit); }
+  .block-shell { position: relative; }
+  .block-shell .block-backdrop { position: absolute; inset: 0; pointer-events: none; margin: 0; }
+  .block-shell textarea { position: relative; background: transparent; color: transparent; caret-color: var(--fg, currentColor); }
   #live-doc .block-append { color: var(--muted); font-size: 13px; padding: 8px;
                             cursor: text; border-radius: 6px; }
   #live-doc .block-append:hover { outline: 1px dashed var(--border); }
@@ -478,7 +505,7 @@
         <span id="save-state"></span>
       </div>
       <div id="edit-split">
-        <textarea id="editor" spellcheck="false"></textarea>
+        <div id="editor-shell"><pre id="editor-backdrop" aria-hidden="true"></pre><textarea id="editor" spellcheck="false"></textarea></div>
         <div id="edit-preview"></div>
       </div>
     </div>
@@ -486,6 +513,7 @@
     <div id="statusbar"><span id="stats" role="button" tabindex="0" title="Click for full text analysis (tokens, frequencies)"></span><span id="sel-stats"></span><span id="live" class="live"></span></div>
   </div>
   <div id="autocomplete"></div>
+  <div id="wiki-ac" role="listbox"></div>
   <div id="hover-pop"></div>
   <div id="ctx-menu"></div>
   <div id="prompt-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
@@ -845,7 +873,7 @@ async function openFolder(root) {
     currentFolder = root;
     addRecent(root, 'dir');
     invoke('watch_tree', { root }).catch(() => {});
-    window._quickCache = null; window._tagCache = null;
+    window._tagCache = null;
     const vaults = JSON.parse(localStorage.getItem('vaults') || '[]').filter(v => v !== root);
     vaults.unshift(root);
     localStorage.setItem('vaults', JSON.stringify(vaults.slice(0, 10)));
@@ -1406,6 +1434,39 @@ const editPreview = document.getElementById('edit-preview');
 const saveState = document.getElementById('save-state');
 let editMode = false, dirty = false, lastSelfSave = 0;
 
+// ---- Rust-computed source highlighting (backdrop overlay) ----
+const editorBackdrop = document.getElementById('editor-backdrop');
+let hlTimer = null, hlSeq = 0;
+function byteToCharIndex(text) {
+  const enc = new TextEncoder();
+  const map = new Map(); let b = 0, c = 0;
+  for (const ch of text) { map.set(b, c); b += enc.encode(ch).length; c += ch.length; }
+  map.set(b, text.length);
+  return (off) => { while (off > 0 && !map.has(off)) off--; return map.get(off) ?? text.length; };
+}
+function spansToHtml(text, spans) {
+  let out = '', pos = 0;
+  for (const s of spans) {
+    if (s.start < pos) continue;               // skip overlaps; first span wins
+    out += escapeHtml(text.slice(pos, s.start));
+    out += '<span class="hl-' + s.kind + '">' + escapeHtml(text.slice(s.start, s.end)) + '</span>';
+    pos = s.end;
+  }
+  return out + escapeHtml(text.slice(pos));
+}
+async function refreshHighlight() {
+  const text = editor.value, seq = ++hlSeq;
+  try {
+    const raw = await invoke('highlight_markdown', { source: text });
+    if (seq !== hlSeq) return;                 // stale response
+    const toChar = byteToCharIndex(text);
+    const spans = raw.map(s => ({ start: toChar(s.start), end: toChar(s.end), kind: s.kind }));
+    editorBackdrop.innerHTML = spansToHtml(text, spans) + '\n';
+  } catch { editorBackdrop.textContent = text; }
+}
+editor.addEventListener('input', () => { clearTimeout(hlTimer); hlTimer = setTimeout(refreshHighlight, 120); });
+editor.addEventListener('scroll', () => { editorBackdrop.scrollTop = editor.scrollTop; }, { passive: true });
+
 // ---- Generic prompt overlay (input or textarea) ----
 const promptOverlay = document.getElementById('prompt-overlay');
 function ask(title, { multiline = false, value = '' } = {}) {
@@ -1460,15 +1521,19 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ---- Autosave + live preview ----
-async function saveNow() {
+async function saveNow(silent = false) {
   if (!currentFile || !dirty) return;
   try {
     lastSelfSave = Date.now();
     await invoke('save_file', { path: currentFile, content: editor.value, vaultRoot: currentFolder });
     dirty = false;
-    saveState.textContent = 'saved ' + new Date().toLocaleTimeString();
+    if (!silent) saveState.textContent = 'saved ' + new Date().toLocaleTimeString();
   } catch (e) { showError('Save failed: ' + e); }
 }
+// Single autosave timer for the split editor: fires 1.2s after typing stops
+// and saves silently (no toast). Cmd+S / blur still call saveNow() with
+// feedback. (This replaces the earlier 800ms non-silent timer that lived
+// here in Phase 1 — keeping only one autosave mechanism avoids double-saves.)
 let saveTimer = null, previewTimer = null;
 async function refreshEditPreview() {
   editPreview.innerHTML = await invoke('render_markdown',
@@ -1479,12 +1544,13 @@ editor.addEventListener('input', () => {
   dirty = true;
   saveState.textContent = 'editing…';
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveNow, 800);
+  saveTimer = setTimeout(() => { if (viewMode === 'split') saveNow(true); }, 1200);
   clearTimeout(previewTimer);
   previewTimer = setTimeout(refreshEditPreview, 150);
   maybeAutocomplete();
+  acMaybeShow(editor);
 });
-editor.addEventListener('blur', saveNow);
+editor.addEventListener('blur', () => { acHide(); saveNow(); });
 
 // ---- Find & replace ----
 const findInput = document.getElementById('find-input');
@@ -1527,7 +1593,52 @@ document.getElementById('insert-table').onclick = () => {
   editor.focus();
 };
 
-// ---- Autocomplete for [[wikilinks]] and #tags ----
+// ---- Wikilink autocomplete ([[ trigger); shared between the source editor and
+// live-mode block textareas. Supersedes the `[[` branch of the legacy tag/link
+// autocomplete below (which now only handles #tags) so the two popups never
+// compete for the same trigger. Uses server-ranked wikilink_complete (Task 3).
+const wikiAc = document.getElementById('wiki-ac');
+let wacItems = [], wacSel = 0, wacTarget = null, wacStart = -1;
+function acHide() { wikiAc.style.display = 'none'; wacTarget = null; }
+function acApply() {
+  const it = wacItems[wacSel]; if (!it || !wacTarget) return;
+  const v = wacTarget.value, caret = wacTarget.selectionStart;
+  wacTarget.value = v.slice(0, wacStart) + it.label + ']]' + v.slice(caret);
+  const pos = wacStart + it.label.length + 2;
+  wacTarget.setSelectionRange(pos, pos);
+  wacTarget.dispatchEvent(new Event('input'));
+  acHide();
+}
+async function acMaybeShow(ta) {
+  const upto = ta.value.slice(0, ta.selectionStart);
+  const m = upto.match(/\[\[([^\]\n]*)$/);
+  if (!m || !currentFolder) { acHide(); return; }
+  wacTarget = ta; wacStart = ta.selectionStart - m[1].length;
+  try {
+    const hits = await invoke('wikilink_complete', { root: currentFolder, prefix: m[1] });
+    wacItems = hits; wacSel = 0;
+    if (!hits.length) { acHide(); return; }
+    wikiAc.innerHTML = hits.map((h, i) => `<div class="${i === 0 ? 'sel' : ''}">${escapeHtml(h.label)}</div>`).join('');
+    const r = ta.getBoundingClientRect();
+    wikiAc.style.left = r.left + 16 + 'px';
+    wikiAc.style.top = Math.min(r.top + 60, innerHeight - 200) + 'px';
+    wikiAc.style.display = 'block';
+    Array.from(wikiAc.children).forEach((el, i) => { el.onmousedown = (e) => { e.preventDefault(); wacSel = i; acApply(); }; });
+  } catch { acHide(); }
+}
+function acKeydown(e) {
+  if (wikiAc.style.display !== 'block') return false;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    wacSel = (wacSel + (e.key === 'ArrowDown' ? 1 : wacItems.length - 1)) % wacItems.length;
+    Array.from(wikiAc.children).forEach((el, i) => el.classList.toggle('sel', i === wacSel));
+    e.preventDefault(); e.stopImmediatePropagation(); return true;
+  }
+  if (e.key === 'Enter' || e.key === 'Tab') { acApply(); e.preventDefault(); e.stopImmediatePropagation(); return true; }
+  if (e.key === 'Escape') { acHide(); e.stopPropagation(); e.stopImmediatePropagation(); return true; }
+  return false;
+}
+
+// ---- Autocomplete for #tags (legacy [[wikilink]] branch removed; superseded above) ----
 const acBox = document.getElementById('autocomplete');
 let acItems = [], acSel = 0, acStart = -1, acKind = null;
 
@@ -1558,16 +1669,8 @@ async function maybeAutocomplete() {
   if (!currentFolder) return hideAc();
   const pos = editor.selectionEnd;
   const before = editor.value.slice(Math.max(0, pos - 60), pos);
-  const linkMatch = before.match(/\[\[([^\[\]\|#]*)$/);
   const tagMatch = before.match(/(^|\s)#([A-Za-z0-9_\/-]*)$/);
-  if (linkMatch) {
-    acKind = 'link'; acStart = pos - linkMatch[1].length;
-    if (!window._quickCache) { try { window._quickCache = await invoke('quick_list', { root: currentFolder }); } catch { return hideAc(); } }
-    const q = linkMatch[1].toLowerCase();
-    acItems = window._quickCache
-      .filter(n => n.title.toLowerCase().includes(q) || (n.aliases || []).some(a => a.toLowerCase().includes(q)))
-      .slice(0, 8).map(n => ({ label: n.title, insert: n.title }));
-  } else if (tagMatch) {
+  if (tagMatch) {
     acKind = 'tag'; acStart = pos - tagMatch[2].length;
     if (!window._tagCache) { try { window._tagCache = await invoke('tag_list', { root: currentFolder }); } catch { return hideAc(); } }
     const q = tagMatch[2].toLowerCase();
@@ -1598,16 +1701,13 @@ function acceptAc(i) {
   if (!it) return;
   const end = editor.selectionEnd;
   let insert = it.insert;
-  if (acKind === 'link') insert += ']]';
   editor.setRangeText(insert, acStart, end, 'end');
-  // Skip over an existing ]] the user may have already typed.
-  if (acKind === 'link' && editor.value.slice(editor.selectionEnd, editor.selectionEnd + 2) === ']]')
-    editor.setRangeText('', editor.selectionEnd, editor.selectionEnd + 2, 'end');
   hideAc();
   editor.dispatchEvent(new Event('input'));
   editor.focus();
 }
 editor.addEventListener('keydown', (e) => {
+  if (acKeydown(e)) return;
   if (!acItems.length) return;
   if (e.key === 'ArrowDown') { e.preventDefault(); acSel = (acSel + 1) % acItems.length; renderAc(); }
   else if (e.key === 'ArrowUp') { e.preventDefault(); acSel = (acSel - 1 + acItems.length) % acItems.length; renderAc(); }
@@ -1667,7 +1767,6 @@ document.getElementById('new-note').onclick = async () => {
   if (!title) return;
   try {
     const path = await invoke('create_note', { root: currentFolder, title, daily: false });
-    window._quickCache = null;
     openFolder(currentFolder);
     await openFile(path);
     enterEditMode();
@@ -1681,7 +1780,6 @@ document.getElementById('rename-btn').onclick = async () => {
   if (dirty) await saveNow();
   try {
     const newPath = await invoke('rename_note', { root: currentFolder, path: currentFile, newName });
-    window._quickCache = null;
     openFolder(currentFolder);
     editMode = false;
     editorWrap.classList.remove('show');
@@ -1707,6 +1805,7 @@ document.getElementById('edit-props').onclick = async () => {
     editor.value = await invoke('read_source', { path: currentFile });
     dirty = false;
     refreshEditPreview();
+    refreshHighlight();
     renderNotePanel(currentFile);
     flashLive('properties updated');
   } catch (e) { showError(String(e)); }
@@ -1856,6 +1955,7 @@ const COMMANDS = [
   { label: 'View: Reading', run: () => setViewMode('read') },
   { label: 'View: Live Editing (Cmd+E)', run: () => setViewMode('live') },
   { label: 'View: Split Source (Cmd+Shift+E)', run: () => setViewMode('split') },
+  { label: 'Insert Wikilink ([[)', run: () => { if (viewMode === 'split') { const p = editor.selectionStart; editor.setRangeText('[[', p, p, 'end'); editor.focus(); acMaybeShow(editor); } } },
   { label: 'Text: Larger (Cmd+=)', run: () => setFontSize((parseInt(localStorage.getItem('fontSize'), 10) || 16) + 1) },
   { label: 'Text: Smaller (Cmd+-)', run: () => setFontSize((parseInt(localStorage.getItem('fontSize'), 10) || 16) - 1) },
   { label: 'Quick Switcher', run: openSwitcher },
@@ -2071,7 +2171,7 @@ function formatKeydown(e, el) {
     }
   }
 }
-editor.addEventListener('keydown', (e) => formatKeydown(e, editor));
+editor.addEventListener('keydown', (e) => { if (acKeydown(e)) return; formatKeydown(e, editor); });
 
 // ---- Selection stats ----
 document.addEventListener('selectionchange', () => {
@@ -2293,7 +2393,6 @@ async function refreshTree() {
     box.innerHTML = '<div class="section-title">Files</div>';
     renderTree(nodes, box);
   } catch {}
-  window._quickCache = null;
 }
 document.getElementById('tree-box').addEventListener('contextmenu', (e) => {
   const node = e.target.closest('.node');
@@ -2502,29 +2601,57 @@ async function commitActiveBlock(rerender = true) {
   if (rerender) await renderLiveDoc();
 }
 
+// ---- Active-block highlighting (mirrors the source-editor backdrop technique) ----
+let blockHlTimer = null, blockHlSeq = 0;
+async function refreshBlockHighlight(ta, backdrop) {
+  const text = ta.value, seq = ++blockHlSeq;
+  try {
+    const raw = await invoke('highlight_markdown', { source: text });
+    if (seq !== blockHlSeq) return;               // stale response
+    const toChar = byteToCharIndex(text);
+    const spans = raw.map(s => ({ start: toChar(s.start), end: toChar(s.end), kind: s.kind }));
+    backdrop.innerHTML = spansToHtml(text, spans) + '\n';
+  } catch { backdrop.textContent = text; }
+}
+
 function activateBlock(el) {
   if (activeBlockEl === el) return;
   commitActiveBlock(false).then(() => {
     const i = parseInt(el.dataset.i, 10);
     el.classList.add('active');
     el.innerHTML = '';
+    const shell = document.createElement('div');
+    shell.className = 'block-shell';
+    const backdrop = document.createElement('pre');
+    backdrop.className = 'block-backdrop';
     const ta = document.createElement('textarea');
     ta.className = 'block-edit';
     ta.value = liveBlocks[i].text;
-    el.appendChild(ta);
+    shell.appendChild(backdrop);
+    shell.appendChild(ta);
+    el.appendChild(shell);
     activeBlockEl = el;
     autosize(ta);
+    refreshBlockHighlight(ta, backdrop);
     ta.focus();
     // Caret at the end of the content (before trailing blank lines).
     const end = ta.value.replace(/\n+$/, '').length;
     ta.setSelectionRange(end, end);
-    ta.addEventListener('input', () => autosize(ta));
+    ta.addEventListener('input', () => {
+      autosize(ta);
+      clearTimeout(blockHlTimer);
+      blockHlTimer = setTimeout(() => refreshBlockHighlight(ta, backdrop), 120);
+      acMaybeShow(ta);
+    });
+    ta.addEventListener('scroll', () => { backdrop.scrollTop = ta.scrollTop; }, { passive: true });
     ta.addEventListener('keydown', (e) => {
+      if (acKeydown(e)) return;
       if (e.key === 'Escape') { e.preventDefault(); commitActiveBlock(); return; }
       formatKeydown(e, ta);
     });
     ta.addEventListener('paste', (e) => editorPaste(e, ta));
     ta.addEventListener('blur', () => {
+      acHide();
       // Delay so clicks on other blocks activate them after this commit.
       setTimeout(() => { if (activeBlockEl === el) commitActiveBlock(); }, 120);
     });
@@ -2605,6 +2732,7 @@ function flipTaskInString(str, index) {
 // ---- View modes: read / live / split ----
 async function setViewMode(mode) {
   if (mode === viewMode) return;
+  acHide();
   // Leave the current mode cleanly.
   if (viewMode === 'split') { if (dirty) await saveNow(); editMode = false; editorWrap.classList.remove('show'); }
   if (viewMode === 'live') { await commitActiveBlock(false); await saveLive(); liveWrap.classList.remove('show'); }
@@ -2634,6 +2762,7 @@ async function setViewMode(mode) {
     editorWrap.classList.add('show');
     btn.textContent = 'Live';
     refreshEditPreview();
+    refreshHighlight();
     editor.focus();
   }
 }
