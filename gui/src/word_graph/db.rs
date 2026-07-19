@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Result};
 use rusqlite::Connection;
 use std::path::Path;
+use std::cell::UnsafeCell;
 
 pub struct WordGraphDb {
-    conn: Connection,
+    conn: UnsafeCell<Connection>,
 }
 
 impl WordGraphDb {
@@ -12,14 +13,15 @@ impl WordGraphDb {
         let conn = Connection::open(&db_path)
             .map_err(|e| anyhow!("Failed to open word graph database: {}", e))?;
 
-        let db = Self { conn };
+        let db = Self { conn: UnsafeCell::new(conn) };
         db.initialize_schema()?;
         Ok(db)
     }
 
     pub fn initialize_schema(&self) -> Result<()> {
-        self.conn.execute_batch(
-            r#"
+        unsafe {
+            (*self.conn.get()).execute_batch(
+                r#"
             CREATE TABLE IF NOT EXISTS words (
                 id INTEGER PRIMARY KEY,
                 word TEXT UNIQUE NOT NULL,
@@ -46,13 +48,18 @@ impl WordGraphDb {
             CREATE INDEX IF NOT EXISTS idx_words_frequency ON words(frequency);
             CREATE INDEX IF NOT EXISTS idx_index_state_vault ON index_state(vault_path);
             "#
-        ).map_err(|e| anyhow!("Failed to initialize schema: {}", e))?;
+            )
+        }.map_err(|e| anyhow!("Failed to initialize schema: {}", e))?;
 
         Ok(())
     }
 
     pub fn conn(&self) -> &Connection {
-        &self.conn
+        unsafe { &*self.conn.get() }
+    }
+
+    pub fn conn_mut(&self) -> &mut Connection {
+        unsafe { &mut *self.conn.get() }
     }
 }
 
