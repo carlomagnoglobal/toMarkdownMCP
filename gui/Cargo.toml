@@ -27,6 +27,7 @@ chrono = "0.4"
 docx-rs = "0.4"
 anyhow = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
+log = "0.4"
 
 # Already in the dependency tree via tauri (same versions); declared directly
 # only to read the macOS drag pasteboard for browser image drops.

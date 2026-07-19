@@ -5,77 +5,106 @@ use std::collections::HashMap;
 use std::path::Path;
 
 pub fn index_vault_full(db: &WordGraphDb, vault_path: &Path) -> Result<()> {
+    use log::info;
+
     // Find all markdown files
     let md_files = find_markdown_files(vault_path)?;
+    info!("[WORD_GRAPH] Found {} markdown files to index", md_files.len());
 
     // Clear existing index
-    db.conn_mut().execute("DELETE FROM co_occurrence", [])?;
-    db.conn_mut().execute("DELETE FROM words", [])?;
+    {
+        let tx = db.conn_mut().transaction()?;
+        tx.execute("DELETE FROM co_occurrence", [])?;
+        tx.execute("DELETE FROM words", [])?;
+        tx.commit()?;
+    }
+    info!("[WORD_GRAPH] Cleared existing index");
 
-    // Index each file
-    let mut word_freq: HashMap<String, i32> = HashMap::new();
-    let mut co_occur: HashMap<(String, String), (i32, Vec<String>)> = HashMap::new();
+    // Process files in batches
+    let batch_size = 50; // Commit every 50 files
+    for (batch_num, file_batch) in md_files.chunks(batch_size).enumerate() {
+        info!("[WORD_GRAPH] Processing batch {} ({} files)", batch_num + 1, file_batch.len());
 
-    for file_path in &md_files {
-        let content = std::fs::read_to_string(file_path)?;
-        let words = tokenize(&content);
-        let pairs = get_word_pairs(&words);
+        let mut word_freq: HashMap<String, i32> = HashMap::new();
+        let mut co_occur: HashMap<(String, String), (i32, Vec<String>)> = HashMap::new();
 
-        // Track word frequencies
-        for word in &words {
-            *word_freq.entry(word.clone()).or_insert(0) += 1;
-        }
+        // Index files in this batch
+        for file_path in file_batch {
+            let content = match std::fs::read_to_string(file_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    info!("[WORD_GRAPH] Skipping {}: {}", file_path.display(), e);
+                    continue;
+                }
+            };
 
-        // Track co-occurrence
-        for (w1, w2) in pairs {
-            let key = (w1, w2);
-            let entry = co_occur.entry(key.clone()).or_insert((0, vec![]));
-            entry.0 += 1;
-            let rel_path = file_path.strip_prefix(vault_path)
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| file_path.to_string_lossy().to_string());
-            if !entry.1.contains(&rel_path) {
-                entry.1.push(rel_path);
+            let words = tokenize(&content);
+            let pairs = get_word_pairs(&words);
+
+            for word in &words {
+                *word_freq.entry(word.clone()).or_insert(0) += 1;
+            }
+
+            for (w1, w2) in pairs {
+                let key = (w1, w2);
+                let entry = co_occur.entry(key.clone()).or_insert((0, vec![]));
+                entry.0 += 1;
+                let rel_path = file_path.strip_prefix(vault_path)
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| file_path.to_string_lossy().to_string());
+                if !entry.1.contains(&rel_path) {
+                    entry.1.push(rel_path);
+                }
             }
         }
-    }
 
-    // Store in SQLite
-    let tx = db.conn_mut().transaction()?;
+        // Commit this batch to database
+        {
+            let tx = db.conn_mut().transaction()?;
 
-    for (word, freq) in word_freq {
-        tx.execute(
-            "INSERT INTO words (word, frequency) VALUES (?1, ?2)",
-            [word, freq.to_string()],
-        )?;
-    }
+            for (word, freq) in word_freq {
+                tx.execute(
+                    "INSERT OR REPLACE INTO words (word, frequency) VALUES (?1, ?2)",
+                    [word, freq.to_string()],
+                )?;
+            }
 
-    for ((w1, w2), (count, notes)) in co_occur {
-        let w1_id: i32 = tx.query_row(
-            "SELECT id FROM words WHERE word = ?1",
-            [&w1],
-            |row| row.get(0)
-        )?;
-        let w2_id: i32 = tx.query_row(
-            "SELECT id FROM words WHERE word = ?1",
-            [&w2],
-            |row| row.get(0)
-        )?;
-        let notes_json = serde_json::to_string(&notes)?;
+            for ((w1, w2), (count, notes)) in co_occur {
+                let w1_id: i32 = tx.query_row(
+                    "SELECT id FROM words WHERE word = ?1",
+                    [&w1],
+                    |row| row.get(0)
+                )?;
+                let w2_id: i32 = tx.query_row(
+                    "SELECT id FROM words WHERE word = ?1",
+                    [&w2],
+                    |row| row.get(0)
+                )?;
+                let notes_json = serde_json::to_string(&notes)?;
 
-        tx.execute(
-            "INSERT OR REPLACE INTO co_occurrence (word1_id, word2_id, count, notes_list_json) VALUES (?1, ?2, ?3, ?4)",
-            [w1_id.to_string(), w2_id.to_string(), count.to_string(), notes_json],
-        )?;
+                tx.execute(
+                    "INSERT OR REPLACE INTO co_occurrence (word1_id, word2_id, count, notes_list_json) VALUES (?1, ?2, ?3, ?4)",
+                    [w1_id.to_string(), w2_id.to_string(), count.to_string(), notes_json],
+                )?;
+            }
+
+            tx.commit()?;
+        }
+
+        info!("[WORD_GRAPH] Batch {} committed", batch_num + 1);
     }
 
     // Update index state
-    tx.execute(
-        "INSERT OR REPLACE INTO index_state (vault_path, last_full_index, changed_files_since) VALUES (?1, CURRENT_TIMESTAMP, ?2)",
-        [vault_path.to_string_lossy().to_string(), "[]".to_string()],
-    )?;
+    {
+        let tx = db.conn_mut().transaction()?;
+        tx.execute(
+            "INSERT OR REPLACE INTO index_state (vault_path, last_full_index, changed_files_since) VALUES (?1, CURRENT_TIMESTAMP, ?2)",
+            [vault_path.to_string_lossy().to_string(), "[]".to_string()],
+        )?;
+        tx.commit()?;
+    }
 
-    tx.commit()?;
+    info!("[WORD_GRAPH] Full index completed successfully");
     Ok(())
 }
 
