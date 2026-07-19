@@ -1430,6 +1430,7 @@ let currentGraphMode = 'global'; // 'global' | 'current' | 'word'
 
 let graphNodes = [], graphLinks = [], graphAnim = null, dragNode = null;
 let selectedWordNode = null;
+let graphAnimating = true;
 
 async function showGraph(focus) {
   if (!currentFolder) { showError('Open a vault folder first.'); return; }
@@ -1478,7 +1479,7 @@ async function showGraph(focus) {
         n.x += n.vx; n.y += n.vy;
       }
       drawGraph();
-      if (++ticks < 300) graphAnim = requestAnimationFrame(step);
+      if (++ticks < 300 && graphAnimating) graphAnim = requestAnimationFrame(step);
     };
     step();
   } catch (e) { showError(String(e)); }
@@ -1717,6 +1718,23 @@ document.getElementById('graph-zoom-reset').addEventListener('click', () => {
   zoom.panX = 0;
   zoom.panY = 0;
   redrawGraph();
+});
+
+function setIndexingStatus(isIndexing) {
+  const timestamp = document.getElementById('graph-timestamp');
+  if (isIndexing) {
+    timestamp.textContent = 'Indexing...';
+  } else {
+    timestamp.textContent = 'Last updated: Now';
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    graphAnimating = false;
+  } else {
+    graphAnimating = true;
+  }
 });
 
 async function loadWordGraphData() {
