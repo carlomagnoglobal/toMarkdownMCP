@@ -1734,12 +1734,12 @@ fn index_vault_words(root: String) -> Result<(), String> {
 fn delta_index_vault_words(root: String, changed_files: Vec<String>) -> Result<(), String> {
     // Spawn in background
     tauri::async_runtime::spawn_blocking(move || {
-        let vault_path = std::path::Path::new(&root);
+        let vault_path = std::path::PathBuf::from(&root);
         let file_paths: Vec<std::path::PathBuf> = changed_files.iter()
             .map(|f| vault_path.join(f))
             .collect();
-        let db = WordGraphDb::new(vault_path).map_err(|e| e.to_string())?;
-        crate::word_graph::indexer::index_vault_delta(&db, vault_path, &file_paths)
+        let db = WordGraphDb::new(&vault_path).map_err(|e| e.to_string())?;
+        crate::word_graph::indexer::index_vault_delta(&db, &vault_path, &file_paths)
             .map_err(|e| e.to_string())
     });
 
