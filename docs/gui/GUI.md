@@ -108,6 +108,17 @@ super-links: tight word clusters indicate related notes that should be linked.
 - Co-occurrence edges shown for word pairs appearing together in 2+ notes
 - Index stored locally in `.tomarkdown_word_graph.db` SQLite database
 
+### Word Graph Manual Tests
+
+- [ ] Open Word tab, verify graph renders with word nodes sized by frequency
+- [ ] Zoom with mouse wheel, verify per-view zoom independent
+- [ ] Zoom with +/− buttons, verify zoom increments by 10%
+- [ ] Press 0 to reset zoom, verify returns to fit-all
+- [ ] Click a word node, verify related notes highlight in sidebar
+- [ ] Hover word node, verify tooltip shows stats
+- [ ] Modify a note, open Word tab, verify index updates within 1s
+- [ ] Verify stopwords (the, and, is) excluded from graph
+
 ## Architecture
 
 - `gui/src/main.rs` — Tauri commands: `list_tree` (recursive, sorted, filtered), `open_file` (convert → Markdown → HTML), `pick_folder`/`pick_file` (native dialogs)
