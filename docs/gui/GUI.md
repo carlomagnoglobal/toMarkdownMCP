@@ -89,6 +89,25 @@ Packaging: `cargo tauri build` from `gui/` produces the `.app`/`.dmg` (tauri-cli
 - **Whole-note localize with dead URL**: Palette → "Localize External Links…" on a note with a 404 URL; verify the dead link is listed, attempt fails with a toast, note is untouched for that link.
 - **devicePixelRatio hit-test on retina**: On a Retina Mac (2x DPI), drag a file onto the note; verify drop dialog appears correctly (position is adjusted by device pixel ratio, not clipped off-screen).
 
+## Word Graph
+
+The Word graph visualizes relationships between words in your vault based on 
+co-occurrence—words that appear together in notes. Use it to discover potential 
+super-links: tight word clusters indicate related notes that should be linked.
+
+### How to use
+1. Open a note, click the Graph button
+2. Click "Word" to switch to word-relationship view
+3. Larger words appear more frequently; edge thickness shows co-occurrence strength
+4. Click a word to highlight all notes containing it
+5. Zoom with mouse wheel, touch pinch, or +/− buttons; press 0 to reset
+
+### Technical details
+- Index built automatically on app startup (if fresh) or when opening Word tab (delta update)
+- Top 200 words by frequency (excluding common stopwords like "the", "and")
+- Co-occurrence edges shown for word pairs appearing together in 2+ notes
+- Index stored locally in `.tomarkdown_word_graph.db` SQLite database
+
 ## Architecture
 
 - `gui/src/main.rs` — Tauri commands: `list_tree` (recursive, sorted, filtered), `open_file` (convert → Markdown → HTML), `pick_folder`/`pick_file` (native dialogs)
