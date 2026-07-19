@@ -1646,6 +1646,108 @@ fn highlight_markdown(source: String) -> Vec<Span> {
     highlight_spans(&source)
 }
 
+// ---- Word Graph (Phase 10) ----
+
+use crate::word_graph::{queries, db::WordGraphDb};
+
+#[derive(Serialize)]
+struct WordGraphNode {
+    id: i32,
+    word: String,
+    frequency: i32,
+}
+
+#[derive(Serialize)]
+struct WordGraphLink {
+    source: i32,
+    target: i32,
+    weight: i32,
+}
+
+#[derive(Serialize)]
+struct WordGraphResponse {
+    nodes: Vec<WordGraphNode>,
+    links: Vec<WordGraphLink>,
+    last_updated: Option<String>,
+}
+
+#[tauri::command]
+fn word_graph_data(root: String) -> Result<WordGraphResponse, String> {
+    let vault_path = std::path::Path::new(&root);
+    let db = WordGraphDb::new(vault_path).map_err(|e| e.to_string())?;
+
+    // Adaptive word limit
+    let vault_size = count_markdown_files(vault_path).unwrap_or(0);
+    let word_limit = std::cmp::min(200, std::cmp::max(50, vault_size / 10));
+
+    let words = queries::get_top_words(&db, word_limit).map_err(|e| e.to_string())?;
+
+    let word_ids: Vec<i32> = words.iter()
+        .map(|(w, _)| {
+            db.conn().query_row("SELECT id FROM words WHERE word = ?1", [w], |row| row.get(0))
+        })
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let nodes = words.into_iter().enumerate().map(|(idx, (word, freq))| {
+        WordGraphNode {
+            id: idx as i32,
+            word,
+            frequency: freq,
+        }
+    }).collect();
+
+    let pairs = queries::get_word_pairs_for_graph(&db, &word_ids, 2)
+        .map_err(|e| e.to_string())?;
+
+    let links = pairs.into_iter().filter_map(|(w1_id, w2_id, count)| {
+        let source = word_ids.iter().position(|&id| id == w1_id)? as i32;
+        let target = word_ids.iter().position(|&id| id == w2_id)? as i32;
+        Some(WordGraphLink {
+            source,
+            target,
+            weight: count,
+        })
+    }).collect();
+
+    // TODO: Get last_updated from index_state table
+    Ok(WordGraphResponse {
+        nodes,
+        links,
+        last_updated: None,
+    })
+}
+
+#[tauri::command]
+fn index_vault_words(root: String) -> Result<(), String> {
+    // Spawn indexing in background
+    tauri::async_runtime::spawn_blocking(move || {
+        let vault_path = std::path::Path::new(&root);
+        let db = WordGraphDb::new(vault_path).map_err(|e| e.to_string())?;
+        crate::word_graph::indexer::index_vault_full(&db, vault_path).map_err(|e| e.to_string())
+    });
+
+    Ok(())
+}
+
+fn count_markdown_files(path: &std::path::Path) -> std::io::Result<usize> {
+    let mut count = 0;
+    fn walk(path: &std::path::Path, count: &mut usize) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() && !path.file_name().unwrap_or_default().to_string_lossy().starts_with('.') {
+                walk(&path, count)?;
+            } else if path.extension().map(|e| e == "md").unwrap_or(false) {
+                *count += 1;
+            }
+        }
+        Ok(())
+    }
+    walk(path, &mut count)?;
+    Ok(count)
+}
+
 fn main() {
     use tauri::Manager;
     let app = tauri::Builder::default()
@@ -1682,7 +1784,8 @@ fn main() {
             reveal_in_finder, unlinked_mentions, render_blocks,
             export_docx, export_rtf, take_pending_opens,
             convert_file_to_markdown, convert_url_to_markdown, save_import, is_convertible,
-            text_metrics, highlight_markdown, debug_log, debug_log_path, read_drag_pasteboard
+            text_metrics, highlight_markdown, debug_log, debug_log_path, read_drag_pasteboard,
+            word_graph_data, index_vault_words
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");
