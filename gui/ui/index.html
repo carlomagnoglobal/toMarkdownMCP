@@ -1886,11 +1886,36 @@ function onWordNodeClick(wordNode) {
   // Query for notes containing this word
   invoke('word_graph_notes', { root: currentFolder, word: wordNode.word })
     .then(notes => {
+      console.log('[WORD_GRAPH] Notes for', wordNode.word, ':', notes);
+
+      // Try multiple selectors to find sidebar note elements
+      let noteElements = document.querySelectorAll('[data-file]');
+      if (noteElements.length === 0) {
+        noteElements = document.querySelectorAll('[data-path]');
+      }
+      if (noteElements.length === 0) {
+        noteElements = document.querySelectorAll('.file-item, .note-item');
+      }
+
+      console.log('[WORD_GRAPH] Found', noteElements.length, 'sidebar elements');
+
       // Highlight these notes in sidebar
-      document.querySelectorAll('[data-file]').forEach(noteEl => {
-        const fileName = noteEl.getAttribute('data-file');
-        if (notes.includes(fileName)) {
+      noteElements.forEach(noteEl => {
+        const fileName = noteEl.getAttribute('data-file') ||
+                        noteEl.getAttribute('data-path') ||
+                        noteEl.getAttribute('title') ||
+                        noteEl.textContent?.trim();
+
+        if (!fileName) return;
+
+        // Check if this note is in the list (handle path format differences)
+        const isMatch = notes.some(note =>
+          note.includes(fileName) || fileName.includes(note) || note === fileName
+        );
+
+        if (isMatch) {
           noteEl.classList.add('highlighted');
+          console.log('[WORD_GRAPH] Highlighted:', fileName);
         } else {
           noteEl.classList.remove('highlighted');
         }
