@@ -70,6 +70,7 @@
           overflow: hidden; text-overflow: ellipsis; }
   .node:hover { background: var(--hover); }
   .node.selected { background: var(--active); }
+  .node.highlighted { background: color-mix(in srgb, var(--accent) 20%, transparent); border-left: 3px solid var(--accent); padding-left: 3px; }
   .node.dir { font-weight: 600; }
   .node.dir::before { content: "▸ "; color: var(--muted); }
   .node.dir.open::before { content: "▾ "; }
@@ -1428,6 +1429,7 @@ const graphZoom = {
 let currentGraphMode = 'global'; // 'global' | 'current' | 'word'
 
 let graphNodes = [], graphLinks = [], graphAnim = null, dragNode = null;
+let selectedWordNode = null;
 
 async function showGraph(focus) {
   if (!currentFolder) { showError('Open a vault folder first.'); return; }
@@ -1570,22 +1572,59 @@ function graphNodeAt(e) {
   const y = (e.clientY - rect.top) * devicePixelRatio;
   return graphNodes.find(n => (n.x - x) ** 2 + (n.y - y) ** 2 < (14 * devicePixelRatio) ** 2);
 }
+
+function wordGraphNodeAt(e) {
+  // Transform event coordinates to graph space with zoom and pan
+  const rect = graphCanvas.getBoundingClientRect();
+  const zoom = graphZoom[currentGraphMode];
+  const x = ((e.clientX - rect.left) / zoom.scale) + zoom.panX;
+  const y = ((e.clientY - rect.top) / zoom.scale) + zoom.panY;
+
+  // Check if click hits a word node (node radius ~20px)
+  const hitNode = graphNodes.find(node => {
+    const dx = node.x - x;
+    const dy = node.y - y;
+    return Math.sqrt(dx*dx + dy*dy) < 20;
+  });
+
+  return hitNode;
+}
 graphCanvas.addEventListener('mousedown', (e) => { dragNode = graphNodeAt(e); });
 graphCanvas.addEventListener('mousemove', (e) => {
-  if (!dragNode) return;
-  const rect = graphCanvas.getBoundingClientRect();
-  dragNode.x = (e.clientX - rect.left) * devicePixelRatio;
-  dragNode.y = (e.clientY - rect.top) * devicePixelRatio;
-  drawGraph();
-});
+  if (dragNode) {
+    const rect = graphCanvas.getBoundingClientRect();
+    dragNode.x = (e.clientX - rect.left) * devicePixelRatio;
+    dragNode.y = (e.clientY - rect.top) * devicePixelRatio;
+    drawGraph();
+  } else if (currentGraphMode === 'word') {
+    // Word mode hover tooltip (only when not dragging)
+    const n = wordGraphNodeAt(e);
+    if (n) {
+      showWordTooltip(n, e.clientX, e.clientY - 10);
+    } else {
+      hideWordTooltip();
+    }
+  }
+}, { passive: true });
+
 graphCanvas.addEventListener('mouseup', (e) => {
-  const n = graphNodeAt(e);
-  if (n && dragNode === n) {
-    graphOverlay.classList.remove('show');
-    openFile(currentFolder + '/' + n.id);
+  if (currentGraphMode === 'word') {
+    const n = wordGraphNodeAt(e);
+    if (n && dragNode === n) {
+      onWordNodeClick(n);
+    }
+  } else {
+    const n = graphNodeAt(e);
+    if (n && dragNode === n) {
+      graphOverlay.classList.remove('show');
+      openFile(currentFolder + '/' + n.id);
+    }
   }
   dragNode = null;
 });
+
+graphCanvas.addEventListener('mouseleave', hideWordTooltip);
+
 document.getElementById('show-graph').onclick = (e) => withBusy(e.target, () => showGraph(null));
 
 // Graph mode toggle
@@ -1636,6 +1675,56 @@ document.getElementById('graph-zoom-reset').addEventListener('click', () => {
 function loadWordGraphData() {
   // Placeholder for loading word graph data from current selection
   // TODO: Implement word graph data loading
+}
+
+function onWordNodeClick(wordNode) {
+  selectedWordNode = wordNode;
+
+  // Query for notes containing this word
+  invoke('word_graph_notes', { root: currentFolder, word: wordNode.word })
+    .then(notes => {
+      // Highlight these notes in sidebar
+      document.querySelectorAll('[data-file]').forEach(noteEl => {
+        const fileName = noteEl.getAttribute('data-file');
+        if (notes.includes(fileName)) {
+          noteEl.classList.add('highlighted');
+        } else {
+          noteEl.classList.remove('highlighted');
+        }
+      });
+    })
+    .catch(err => console.error('Failed to get notes for word:', err));
+
+  redrawGraph();
+}
+
+function showWordTooltip(wordNode, x, y) {
+  const tooltip = document.getElementById('graph-tooltip') || document.createElement('div');
+  tooltip.id = 'graph-tooltip';
+  tooltip.style.cssText = `
+    position: absolute;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    z-index: 1000;
+    left: ${x}px;
+    top: ${y}px;
+    max-width: 200px;
+  `;
+  tooltip.innerHTML = `
+    <strong>${wordNode.word}</strong><br>
+    Frequency: ${wordNode.frequency}<br>
+    Partners: loading...
+  `;
+
+  document.body.appendChild(tooltip);
+}
+
+function hideWordTooltip() {
+  const tooltip = document.getElementById('graph-tooltip');
+  if (tooltip) tooltip.remove();
 }
 
 function redrawGraph() {
