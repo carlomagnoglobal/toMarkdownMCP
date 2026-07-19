@@ -1548,20 +1548,67 @@ function drawGraph() {
   ctx.scale(zoom.scale, zoom.scale);
   ctx.translate(-zoom.panX, -zoom.panY);
 
-  ctx.strokeStyle = css.getPropertyValue('--border');
-  ctx.lineWidth = devicePixelRatio;
-  const match = (n) => !graphFilter || n.title.toLowerCase().includes(graphFilter);
-  for (const { a, b } of graphLinks) {
-    if (!match(a) || !match(b)) continue;
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-  }
-  ctx.fillStyle = css.getPropertyValue('--accent');
-  ctx.font = `${11 * devicePixelRatio}px -apple-system, sans-serif`;
-  for (const n of graphNodes.filter(match)) {
-    const r = (4 + Math.min(n.links, 8)) * devicePixelRatio;
-    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2); ctx.fill();
-    ctx.fillText(n.title, n.x + r + 3, n.y + 3);
+  if (currentGraphMode === 'word') {
+    // Word mode: size by frequency and color by heat-map
+    ctx.lineWidth = devicePixelRatio;
+
+    // Find max frequency for heat-map scaling
+    const maxFrequency = Math.max(...graphNodes.map(n => n.frequency || 1), 1);
+
+    // Draw links
+    ctx.strokeStyle = css.getPropertyValue('--border');
+    for (const link of graphLinks) {
+      const sourceNode = graphNodes.find(n => n.word === link.source);
+      const targetNode = graphNodes.find(n => n.word === link.target);
+      if (sourceNode && targetNode) {
+        ctx.beginPath();
+        ctx.moveTo(sourceNode.x, sourceNode.y);
+        ctx.lineTo(targetNode.x, targetNode.y);
+        ctx.stroke();
+      }
+    }
+
+    // Draw nodes
+    ctx.font = `${12 * devicePixelRatio}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    for (const node of graphNodes) {
+      // Size nodes by log(frequency)
+      const size = 5 + Math.log(Math.max(1, node.frequency)) * 3;
+
+      // Heat-map coloring: blue (0) to red (120 hue)
+      const hue = (node.frequency / maxFrequency) * 120;
+      const color = `hsl(${hue}, 70%, 50%)`;
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, size, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw label for large nodes
+      if (size > 10) {
+        ctx.fillStyle = 'white';
+        ctx.fillText(node.word.substring(0, 10), node.x, node.y);
+      }
+    }
+  } else {
+    // Global/Current mode
+    ctx.strokeStyle = css.getPropertyValue('--border');
+    ctx.lineWidth = devicePixelRatio;
+    const match = (n) => !graphFilter || n.title.toLowerCase().includes(graphFilter);
+    for (const { a, b } of graphLinks) {
+      if (!match(a) || !match(b)) continue;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
     ctx.fillStyle = css.getPropertyValue('--accent');
+    ctx.font = `${11 * devicePixelRatio}px -apple-system, sans-serif`;
+    for (const n of graphNodes.filter(match)) {
+      const r = (4 + Math.min(n.links, 8)) * devicePixelRatio;
+      ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillText(n.title, n.x + r + 3, n.y + 3);
+      ctx.fillStyle = css.getPropertyValue('--accent');
+    }
   }
 
   ctx.restore();
@@ -1672,9 +1719,38 @@ document.getElementById('graph-zoom-reset').addEventListener('click', () => {
   redrawGraph();
 });
 
-function loadWordGraphData() {
-  // Placeholder for loading word graph data from current selection
-  // TODO: Implement word graph data loading
+async function loadWordGraphData() {
+  try {
+    const response = await invoke('word_graph_data', { root: currentFolder });
+
+    const rect = graphCanvas.getBoundingClientRect();
+    const W = rect.width * devicePixelRatio;
+    const H = rect.height * devicePixelRatio;
+
+    graphNodes = response.nodes.map(node => ({
+      ...node,
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: 0,
+      vy: 0,
+    }));
+
+    graphLinks = response.links.map(link => ({
+      source: link.source,
+      target: link.target,
+      weight: link.weight,
+    }));
+
+    // Update timestamp
+    if (response.last_updated) {
+      document.getElementById('graph-timestamp').textContent = `Last updated: ${response.last_updated}`;
+    }
+
+    redrawGraph();
+  } catch (err) {
+    console.error('Failed to load word graph:', err);
+    toast('Failed to load word graph');
+  }
 }
 
 function onWordNodeClick(wordNode) {
