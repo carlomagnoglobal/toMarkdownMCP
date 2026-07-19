@@ -1513,7 +1513,7 @@ async function refreshHighlight() {
     editorBackdrop.innerHTML = spansToHtml(text, spans) + '\n';
   } catch { editorBackdrop.textContent = text; }
 }
-editor.addEventListener('input', () => { clearTimeout(hlTimer); hlTimer = setTimeout(refreshHighlight, 120); });
+editor.addEventListener('input', () => { editorBackdrop.textContent = editor.value + '\n'; clearTimeout(hlTimer); hlTimer = setTimeout(refreshHighlight, 120); });
 editor.addEventListener('scroll', () => { editorBackdrop.scrollTop = editor.scrollTop; }, { passive: true });
 
 // ---- Generic prompt overlay (input or textarea) ----
@@ -2746,6 +2746,7 @@ function activateBlock(el) {
     ta.setSelectionRange(end, end);
     ta.addEventListener('input', () => {
       autosize(ta);
+      backdrop.textContent = ta.value + '\n';
       clearTimeout(blockHlTimer);
       blockHlTimer = setTimeout(() => refreshBlockHighlight(ta, backdrop), 120);
       acMaybeShow(ta);
