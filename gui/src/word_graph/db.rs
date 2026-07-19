@@ -13,6 +13,10 @@ impl WordGraphDb {
         let conn = Connection::open(&db_path)
             .map_err(|e| anyhow!("Failed to open word graph database: {}", e))?;
 
+        // Enable WAL mode immediately after opening connection
+        conn.pragma_update(None, "journal_mode", "WAL")
+            .map_err(|e| anyhow!("Failed to enable WAL mode: {}", e))?;
+
         let db = Self { conn: UnsafeCell::new(conn) };
         db.initialize_schema()?;
         Ok(db)
@@ -47,6 +51,8 @@ impl WordGraphDb {
 
             CREATE INDEX IF NOT EXISTS idx_words_frequency ON words(frequency);
             CREATE INDEX IF NOT EXISTS idx_index_state_vault ON index_state(vault_path);
+
+            PRAGMA journal_mode=WAL;
             "#
             )
         }.map_err(|e| anyhow!("Failed to initialize schema: {}", e))?;
