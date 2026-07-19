@@ -220,6 +220,11 @@
     justify-content: space-between;
     align-items: center;
   }
+  #graph-header-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
   #graph-zoom-controls button {
     padding: 4px 8px;
     margin-left: 4px;
@@ -228,6 +233,24 @@
     border: 1px solid var(--border);
     background: var(--bg);
     border-radius: 3px;
+  }
+  #graph-refresh {
+    padding: 4px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  #graph-refresh:hover {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  #graph-refresh:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   #graph-canvas { flex: 1; width: 100%; }
   #editor-wrap { flex: 1; display: none; flex-direction: column; overflow: hidden; }
@@ -643,10 +666,13 @@
       <div id="graph-header" style="display: none;">
         <div id="graph-title">Word Relationships</div>
         <div id="graph-timestamp" style="font-size: 12px; color: var(--muted);">Last updated: Never</div>
-        <div id="graph-zoom-controls">
-          <button id="graph-zoom-in" title="Zoom in (+ key)">+</button>
-          <button id="graph-zoom-out" title="Zoom out (- key)">−</button>
-          <button id="graph-zoom-reset" title="Reset zoom (0 key)">Reset</button>
+        <div id="graph-header-controls">
+          <div id="graph-zoom-controls">
+            <button id="graph-zoom-in" title="Zoom in (+ key)">+</button>
+            <button id="graph-zoom-out" title="Zoom out (- key)">−</button>
+            <button id="graph-zoom-reset" title="Reset zoom (0 key)">Reset</button>
+          </div>
+          <button id="graph-refresh" title="Refresh index now">🔄 Refresh</button>
         </div>
       </div>
       <canvas id="graph-canvas"></canvas>
@@ -1718,6 +1744,31 @@ document.getElementById('graph-zoom-reset').addEventListener('click', () => {
   zoom.panX = 0;
   zoom.panY = 0;
   redrawGraph();
+});
+
+document.getElementById('graph-refresh').addEventListener('click', async () => {
+  const button = document.getElementById('graph-refresh');
+  button.disabled = true;
+  button.textContent = '⏳ Refreshing...';
+
+  try {
+    // Trigger full indexing in background
+    await invoke('index_vault_words', { root: currentFolder });
+
+    // Wait a moment for indexing to start
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Reload graph data
+    await loadWordGraphData();
+
+    button.textContent = '🔄 Refresh';
+  } catch (err) {
+    console.error('Refresh failed:', err);
+    toast('Refresh failed: ' + err);
+    button.textContent = '🔄 Refresh';
+  } finally {
+    button.disabled = false;
+  }
 });
 
 function setIndexingStatus(isIndexing) {
