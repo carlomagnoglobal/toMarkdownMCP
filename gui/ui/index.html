@@ -197,6 +197,37 @@
                 border-bottom: 1px solid var(--border); font-size: 13px; }
   #graph-head button { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
                        background: var(--bg); color: var(--fg); cursor: pointer; font-size: 12px; }
+  .graph-mode-btn {
+    padding: 6px 12px;
+    margin: 0 2px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .graph-mode-btn.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  #graph-header {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #graph-zoom-controls button {
+    padding: 4px 8px;
+    margin-left: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    border-radius: 3px;
+  }
   #graph-canvas { flex: 1; width: 100%; }
   #editor-wrap { flex: 1; display: none; flex-direction: column; overflow: hidden; }
   #editor-wrap.show { display: flex; }
@@ -600,10 +631,22 @@
       <div id="graph-head">
         <strong>Vault graph</strong>
         <input id="graph-filter" placeholder="Filter notes…">
-        <button id="graph-global">Global</button>
-        <button id="graph-local">Current note</button>
+        <div id="graph-toggle">
+          <button id="graph-global" class="graph-mode-btn">Global</button>
+          <button id="graph-current" class="graph-mode-btn">Current</button>
+          <button id="graph-word" class="graph-mode-btn">Word</button>
+        </div>
         <span style="flex:1"></span>
         <button id="graph-close">Close</button>
+      </div>
+      <div id="graph-header" style="display: none;">
+        <div id="graph-title">Word Relationships</div>
+        <div id="graph-timestamp" style="font-size: 12px; color: var(--muted);">Last updated: Never</div>
+        <div id="graph-zoom-controls">
+          <button id="graph-zoom-in" title="Zoom in (+ key)">+</button>
+          <button id="graph-zoom-out" title="Zoom out (- key)">−</button>
+          <button id="graph-zoom-reset" title="Reset zoom (0 key)">Reset</button>
+        </div>
       </div>
       <canvas id="graph-canvas"></canvas>
     </div>
@@ -1544,8 +1587,61 @@ graphCanvas.addEventListener('mouseup', (e) => {
   dragNode = null;
 });
 document.getElementById('show-graph').onclick = (e) => withBusy(e.target, () => showGraph(null));
-document.getElementById('graph-global').onclick = () => showGraph(null);
-document.getElementById('graph-local').onclick = () => showGraph(currentFile);
+
+// Graph mode toggle
+document.getElementById('graph-global').addEventListener('click', () => switchGraphMode('global'));
+document.getElementById('graph-current').addEventListener('click', () => switchGraphMode('current'));
+document.getElementById('graph-word').addEventListener('click', () => switchGraphMode('word'));
+
+function switchGraphMode(mode) {
+  currentGraphMode = mode;
+
+  // Update button states
+  document.querySelectorAll('.graph-mode-btn').forEach(btn => btn.classList.remove('active'));
+  document.getElementById('graph-' + mode).classList.add('active');
+
+  // Show/hide Word header
+  const wordHeader = document.getElementById('graph-header');
+  if (mode === 'word') {
+    wordHeader.style.display = 'block';
+    loadWordGraphData();
+  } else {
+    wordHeader.style.display = 'none';
+  }
+
+  redrawGraph();
+}
+
+// Zoom button handlers
+document.getElementById('graph-zoom-in').addEventListener('click', () => {
+  const zoom = graphZoom[currentGraphMode];
+  zoom.scale = Math.min(5, zoom.scale * 1.2);
+  redrawGraph();
+});
+
+document.getElementById('graph-zoom-out').addEventListener('click', () => {
+  const zoom = graphZoom[currentGraphMode];
+  zoom.scale = Math.max(0.2, zoom.scale / 1.2);
+  redrawGraph();
+});
+
+document.getElementById('graph-zoom-reset').addEventListener('click', () => {
+  const zoom = graphZoom[currentGraphMode];
+  zoom.scale = 1;
+  zoom.panX = 0;
+  zoom.panY = 0;
+  redrawGraph();
+});
+
+function loadWordGraphData() {
+  // Placeholder for loading word graph data from current selection
+  // TODO: Implement word graph data loading
+}
+
+function redrawGraph() {
+  drawGraph();
+}
+
 document.getElementById('graph-close').onclick = () => graphOverlay.classList.remove('show');
 graphOverlay.addEventListener('click', (e) => { if (e.target === graphOverlay) graphOverlay.classList.remove('show'); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') graphOverlay.classList.remove('show'); });
