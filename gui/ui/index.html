@@ -252,6 +252,20 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
+  #graph-refresh-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+  }
+  #graph-refresh-spinner {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
   #graph-canvas { flex: 1; width: 100%; }
   #editor-wrap { flex: 1; display: none; flex-direction: column; overflow: hidden; }
   #editor-wrap.show { display: flex; }
@@ -673,6 +687,9 @@
             <button id="graph-zoom-reset" title="Reset zoom (0 key)">Reset</button>
           </div>
           <button id="graph-refresh" title="Refresh index now">🔄 Refresh</button>
+          <div id="graph-refresh-indicator" style="display: none; font-size: 12px; color: var(--muted); margin-left: 8px;">
+            <span id="graph-refresh-spinner">⏳</span> Refreshing...
+          </div>
         </div>
       </div>
       <canvas id="graph-canvas"></canvas>
@@ -1748,26 +1765,56 @@ document.getElementById('graph-zoom-reset').addEventListener('click', () => {
 
 document.getElementById('graph-refresh').addEventListener('click', async () => {
   const button = document.getElementById('graph-refresh');
+  const indicator = document.getElementById('graph-refresh-indicator');
+
   button.disabled = true;
-  button.textContent = '⏳ Refreshing...';
+  button.style.display = 'none';
+  indicator.style.display = 'flex';
+
+  // Log start of refresh
+  console.log('[WORD_GRAPH] Refresh started at', new Date().toISOString());
 
   try {
     // Trigger full indexing in background
+    console.log('[WORD_GRAPH] Invoking index_vault_words for:', currentFolder);
     await invoke('index_vault_words', { root: currentFolder });
+    console.log('[WORD_GRAPH] Index command sent, waiting for completion...');
 
-    // Wait a moment for indexing to start
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Wait for indexing to complete (check if we can query non-zero data)
+    let attempts = 0;
+    const maxAttempts = 30; // ~30 seconds max wait
+
+    while (attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      attempts++;
+
+      try {
+        const response = await invoke('word_graph_data', { root: currentFolder });
+        if (response.nodes && response.nodes.length > 0) {
+          console.log('[WORD_GRAPH] Index complete, found', response.nodes.length, 'words');
+          break;
+        }
+      } catch (err) {
+        // Still indexing, continue waiting
+        if (attempts % 5 === 0) {
+          console.log('[WORD_GRAPH] Waiting for index... (attempt', attempts, ')');
+        }
+      }
+    }
 
     // Reload graph data
+    console.log('[WORD_GRAPH] Loading refreshed graph data...');
     await loadWordGraphData();
+    console.log('[WORD_GRAPH] Refresh completed successfully at', new Date().toISOString());
 
-    button.textContent = '🔄 Refresh';
   } catch (err) {
-    console.error('Refresh failed:', err);
+    console.error('[WORD_GRAPH] Refresh failed:', err);
     toast('Refresh failed: ' + err);
-    button.textContent = '🔄 Refresh';
   } finally {
+    button.style.display = 'inline-block';
+    indicator.style.display = 'none';
     button.disabled = false;
+    console.log('[WORD_GRAPH] Refresh operation finished');
   }
 });
 

@@ -1674,7 +1674,12 @@ struct WordGraphResponse {
 #[tauri::command]
 fn word_graph_data(root: String) -> Result<WordGraphResponse, String> {
     let vault_path = std::path::Path::new(&root);
-    let db = WordGraphDb::new(vault_path).map_err(|e| e.to_string())?;
+    eprintln!("[WORD_GRAPH] Fetching graph data for vault: {}", vault_path.display());
+
+    let db = WordGraphDb::new(vault_path).map_err(|e| {
+        eprintln!("[WORD_GRAPH] Failed to open database for data fetch: {}", e);
+        e.to_string()
+    })?;
 
     // Adaptive word limit
     let vault_size = count_markdown_files(vault_path).unwrap_or(0);
@@ -1689,7 +1694,7 @@ fn word_graph_data(root: String) -> Result<WordGraphResponse, String> {
         .filter_map(|r| r.ok())
         .collect();
 
-    let nodes = words.into_iter().enumerate().map(|(idx, (word, freq))| {
+    let nodes: Vec<WordGraphNode> = words.into_iter().enumerate().map(|(idx, (word, freq))| {
         WordGraphNode {
             id: idx as i32,
             word,
@@ -1700,7 +1705,7 @@ fn word_graph_data(root: String) -> Result<WordGraphResponse, String> {
     let pairs = queries::get_word_pairs_for_graph(&db, &word_ids, 2)
         .map_err(|e| e.to_string())?;
 
-    let links = pairs.into_iter().filter_map(|(w1_id, w2_id, count)| {
+    let links: Vec<WordGraphLink> = pairs.into_iter().filter_map(|(w1_id, w2_id, count)| {
         let source = word_ids.iter().position(|&id| id == w1_id)? as i32;
         let target = word_ids.iter().position(|&id| id == w2_id)? as i32;
         Some(WordGraphLink {
@@ -1711,6 +1716,8 @@ fn word_graph_data(root: String) -> Result<WordGraphResponse, String> {
     }).collect();
 
     let last_updated = queries::get_last_updated_timestamp(&db).ok().flatten();
+    eprintln!("[WORD_GRAPH] Successfully fetched {} nodes and {} links",
+        nodes.len(), links.len());
     Ok(WordGraphResponse {
         nodes,
         links,
@@ -1720,11 +1727,22 @@ fn word_graph_data(root: String) -> Result<WordGraphResponse, String> {
 
 #[tauri::command]
 fn index_vault_words(root: String) -> Result<(), String> {
+    let vault_path = std::path::Path::new(&root);
+    eprintln!("[WORD_GRAPH] Starting full index of vault: {}", vault_path.display());
+
     // Spawn indexing in background
     tauri::async_runtime::spawn_blocking(move || {
         let vault_path = std::path::Path::new(&root);
-        let db = WordGraphDb::new(vault_path).map_err(|e| e.to_string())?;
-        crate::word_graph::indexer::index_vault_full(&db, vault_path).map_err(|e| e.to_string())
+        match WordGraphDb::new(vault_path) {
+            Ok(db) => {
+                eprintln!("[WORD_GRAPH] Database opened, beginning indexing...");
+                match crate::word_graph::indexer::index_vault_full(&db, vault_path) {
+                    Ok(_) => eprintln!("[WORD_GRAPH] Full index completed successfully"),
+                    Err(e) => eprintln!("[WORD_GRAPH] Full index failed: {}", e),
+                }
+            }
+            Err(e) => eprintln!("[WORD_GRAPH] Failed to open database: {}", e),
+        }
     });
 
     Ok(())
