@@ -1374,6 +1374,16 @@ document.addEventListener('keydown', (e) => {
 // ---- Graph view: tiny force simulation on canvas ----
 const graphOverlay = document.getElementById('graph-overlay');
 const graphCanvas = document.getElementById('graph-canvas');
+
+// Per-view zoom state: {scale: number, panX: number, panY: number, centerX: number, centerY: number}
+const graphZoom = {
+  global: { scale: 1, panX: 0, panY: 0, centerX: 0, centerY: 0 },
+  current: { scale: 1, panX: 0, panY: 0, centerX: 0, centerY: 0 },
+  word: { scale: 1, panX: 0, panY: 0, centerX: 0, centerY: 0 },
+};
+
+let currentGraphMode = 'global'; // 'global' | 'current' | 'word'
+
 let graphNodes = [], graphLinks = [], graphAnim = null, dragNode = null;
 
 async function showGraph(focus) {
@@ -1428,10 +1438,71 @@ async function showGraph(focus) {
     step();
   } catch (e) { showError(String(e)); }
 }
+
+// Zoom event listeners
+graphCanvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const zoom = graphZoom[currentGraphMode];
+  const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+  const newScale = Math.max(0.2, Math.min(5, zoom.scale * zoomFactor));
+  zoom.scale = newScale;
+  drawGraph();
+});
+
+// Touch pinch (two-finger)
+let lastTouchDistance = 0;
+graphCanvas.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    lastTouchDistance = Math.sqrt(dx * dx + dy * dy);
+  }
+});
+
+graphCanvas.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 2) {
+    e.preventDefault();
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const zoom = graphZoom[currentGraphMode];
+
+    if (lastTouchDistance > 0) {
+      const ratio = distance / lastTouchDistance;
+      zoom.scale = Math.max(0.2, Math.min(5, zoom.scale * ratio));
+      drawGraph();
+    }
+    lastTouchDistance = distance;
+  }
+});
+
+// Keyboard zoom
+document.addEventListener('keydown', (e) => {
+  const zoom = graphZoom[currentGraphMode];
+  if (e.key === '+' || e.key === '=') {
+    zoom.scale = Math.max(0.2, Math.min(5, zoom.scale * 1.2));
+    drawGraph();
+  } else if (e.key === '-' || e.key === '_') {
+    zoom.scale = Math.max(0.2, Math.min(5, zoom.scale / 1.2));
+    drawGraph();
+  } else if (e.key === '0') {
+    zoom.scale = 1;
+    zoom.panX = 0;
+    zoom.panY = 0;
+    drawGraph();
+  }
+});
+
 function drawGraph() {
   const ctx = graphCanvas.getContext('2d');
   const css = getComputedStyle(document.documentElement);
   ctx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
+
+  const zoom = graphZoom[currentGraphMode];
+  ctx.save();
+  ctx.scale(zoom.scale, zoom.scale);
+  ctx.translate(-zoom.panX, -zoom.panY);
+
   ctx.strokeStyle = css.getPropertyValue('--border');
   ctx.lineWidth = devicePixelRatio;
   const match = (n) => !graphFilter || n.title.toLowerCase().includes(graphFilter);
@@ -1447,6 +1518,8 @@ function drawGraph() {
     ctx.fillText(n.title, n.x + r + 3, n.y + 3);
     ctx.fillStyle = css.getPropertyValue('--accent');
   }
+
+  ctx.restore();
 }
 function graphNodeAt(e) {
   const rect = graphCanvas.getBoundingClientRect();
