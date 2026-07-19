@@ -18,6 +18,7 @@ use to_markdown_mcp::pipeline::convert_any_to_markdown;
 
 mod export;
 mod render;
+mod word_graph;
 use render::{render_note, RenderOpts};
 
 #[derive(Serialize)]
