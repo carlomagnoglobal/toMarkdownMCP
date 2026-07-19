@@ -541,7 +541,7 @@ struct StoredAttachment {
     embed: String,
 }
 
-const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"];
+const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "tif"];
 
 /// Find a filename of the form `stem.ext` (or `stem N.ext` for `N >= 2`) that
 /// does not already exist in `dir`.
@@ -1837,6 +1837,20 @@ mod tests {
         std::fs::write(&src, b"%PDF").unwrap();
         let a = store_attachment_impl(root.path(), &src).unwrap();
         assert!(a.embed.starts_with("[[") && !a.embed.starts_with("![["));
+    }
+
+    #[test]
+    fn store_attachment_tiff_embeds() {
+        let root = temp_vault("tiff_embed");
+        let src = root.path().join("image.tiff");
+        std::fs::write(&src, b"fakeTIFF").unwrap();
+        let a = store_attachment_impl(root.path(), &src).unwrap();
+        assert!(a.embed.starts_with("![["), "tiff should embed: {}", a.embed);
+        // Also test lowercase tif extension
+        let src2 = root.path().join("image2.tif");
+        std::fs::write(&src2, b"fakeTIFF").unwrap();
+        let b = store_attachment_impl(root.path(), &src2).unwrap();
+        assert!(b.embed.starts_with("![["), "tif should embed: {}", b.embed);
     }
 
     #[test]

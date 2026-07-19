@@ -11,7 +11,7 @@ use syntect::util::LinesWithEndings;
 
 use to_markdown_mcp::obsidian::{callout, vault, wikilink};
 
-const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"];
+const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "tiff", "tif"];
 const AUDIO_EXTS: &[&str] = &["mp3", "wav", "m4a", "ogg", "flac"];
 const VIDEO_EXTS: &[&str] = &["mp4", "webm", "mov", "ogv"];
 const MAX_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
@@ -117,6 +117,7 @@ fn mime_for_ext(ext: &str) -> &'static str {
         "svg" => "image/svg+xml",
         "bmp" => "image/bmp",
         "ico" => "image/x-icon",
+        "tiff" | "tif" => "image/tiff",
         "pdf" => "application/pdf",
         "mp3" => "audio/mpeg",
         "wav" => "audio/wav",
@@ -847,6 +848,27 @@ mod tests {
         // Missing image degrades to the original src.
         let html = render_note("![alt](nope.png)", &opts, 0);
         assert!(html.contains("nope.png"));
+    }
+
+    #[test]
+    fn tiff_images_render_as_data_urls() {
+        let root = vault();
+        let tiff_dir = root.join("attachments");
+        std::fs::create_dir_all(&tiff_dir).ok();
+        let tiff_path = tiff_dir.join("sample.tiff");
+        std::fs::write(&tiff_path, b"fakeTIFFdata").unwrap();
+        let opts = RenderOpts { file_dir: Some(&root), vault_root: Some(&root) };
+        let html = render_note("![[sample.tiff]]", &opts, 0);
+        assert!(
+            html.contains("data:image/tiff;base64,"),
+            "tiff should render as data URL; html: {}",
+            html
+        );
+        // Also test .tif extension
+        let tif_path = tiff_dir.join("sample.tif");
+        std::fs::write(&tif_path, b"fakeTIFFdata").unwrap();
+        let html = render_note("![[sample.tif]]", &opts, 0);
+        assert!(html.contains("data:image/tiff;base64,"), "tif should render as data URL; html: {}", html);
     }
 
     #[test]
