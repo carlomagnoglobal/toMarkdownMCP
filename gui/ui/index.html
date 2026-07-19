@@ -1886,7 +1886,8 @@ function onWordNodeClick(wordNode) {
   // Query for notes containing this word
   invoke('word_graph_notes', { root: currentFolder, word: wordNode.word })
     .then(notes => {
-      console.log('[WORD_GRAPH] Notes for', wordNode.word, ':', notes);
+      console.log('%c[WORD_GRAPH] Clicked:', 'color: blue; font-weight: bold', wordNode.word);
+      console.log('%c[WORD_GRAPH] API returned notes:', 'color: green', notes);
 
       // Try multiple selectors to find sidebar note elements
       let noteElements = document.querySelectorAll('[data-file]');
@@ -1897,9 +1898,19 @@ function onWordNodeClick(wordNode) {
         noteElements = document.querySelectorAll('.file-item, .note-item');
       }
 
-      console.log('[WORD_GRAPH] Found', noteElements.length, 'sidebar elements');
+      console.log('%c[WORD_GRAPH] Found sidebar elements:', 'color: orange', noteElements.length);
+
+      // Show all sidebar paths for debugging
+      const sidebarPaths = Array.from(noteElements).map(el => ({
+        'data-file': el.getAttribute('data-file'),
+        'data-path': el.getAttribute('data-path'),
+        'title': el.getAttribute('title'),
+        'text': el.textContent?.trim().substring(0, 50)
+      }));
+      console.log('%c[WORD_GRAPH] Sidebar paths:', 'color: purple', sidebarPaths);
 
       // Highlight these notes in sidebar
+      let matchCount = 0;
       noteElements.forEach(noteEl => {
         const fileName = noteEl.getAttribute('data-file') ||
                         noteEl.getAttribute('data-path') ||
@@ -1915,13 +1926,16 @@ function onWordNodeClick(wordNode) {
 
         if (isMatch) {
           noteEl.classList.add('highlighted');
-          console.log('[WORD_GRAPH] Highlighted:', fileName);
+          matchCount++;
+          console.log('%c[WORD_GRAPH] ✓ Matched:', 'color: green', fileName);
         } else {
           noteEl.classList.remove('highlighted');
         }
       });
+
+      console.log('%c[WORD_GRAPH] Result: ' + matchCount + ' notes highlighted', 'color: ' + (matchCount > 0 ? 'green' : 'red') + '; font-weight: bold');
     })
-    .catch(err => console.error('Failed to get notes for word:', err));
+    .catch(err => console.error('[WORD_GRAPH] Error:', err));
 
   redrawGraph();
 }
