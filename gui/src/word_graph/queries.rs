@@ -70,6 +70,16 @@ pub fn get_co_occurrence_partners(db: &WordGraphDb, word: &str, limit: usize) ->
     Ok(partners)
 }
 
+pub fn get_last_updated_timestamp(db: &WordGraphDb) -> Result<Option<String>> {
+    let timestamp: Option<String> = db.conn().query_row(
+        "SELECT last_full_index FROM index_state ORDER BY last_full_index DESC LIMIT 1",
+        [],
+        |row| row.get(0)
+    ).ok();
+
+    Ok(timestamp)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

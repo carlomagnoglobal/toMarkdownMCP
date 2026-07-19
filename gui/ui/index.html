@@ -1739,6 +1739,17 @@ document.addEventListener('visibilitychange', () => {
 
 async function loadWordGraphData() {
   try {
+    // Check if we have changed files from file watcher
+    // For now, pass empty array (file watcher integration in future phase)
+    const changedFiles = []; // TODO: integrate with vault file watcher
+
+    if (changedFiles.length > 0) {
+      // Trigger delta indexing in background
+      invoke('delta_index_vault_words', { root: currentFolder, changed_files: changedFiles }).catch(err => {
+        console.warn('Delta indexing failed, will use cached data:', err);
+      });
+    }
+
     const response = await invoke('word_graph_data', { root: currentFolder });
 
     const rect = graphCanvas.getBoundingClientRect();

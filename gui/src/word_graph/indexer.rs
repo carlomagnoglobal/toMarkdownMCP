@@ -80,12 +80,50 @@ pub fn index_vault_full(db: &WordGraphDb, vault_path: &Path) -> Result<()> {
 }
 
 pub fn index_vault_delta(db: &WordGraphDb, vault_path: &Path, changed_files: &[std::path::PathBuf]) -> Result<()> {
-    // Similar to full indexing, but only process changed files
-    // Merge results into existing tables
     if changed_files.is_empty() {
         return Ok(());
     }
 
+    let tx = db.conn_mut().transaction()?;
+
+    // Step 1: Remove old entries for changed files
+    for file_path in changed_files {
+        let rel_path = file_path.strip_prefix(vault_path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| file_path.to_string_lossy().to_string());
+
+        // Find all co-occurrence pairs that reference this file and remove it from the list
+        let mut stmt = tx.prepare(
+            "SELECT word1_id, word2_id, notes_list_json FROM co_occurrence"
+        )?;
+        let pairs: Vec<(i32, i32, String)> = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        for (w1_id, w2_id, notes_json) in pairs {
+            let mut notes: Vec<String> = serde_json::from_str(&notes_json).unwrap_or_default();
+            let orig_len = notes.len();
+            notes.retain(|n| n != &rel_path);
+
+            if notes.len() < orig_len {
+                if notes.is_empty() {
+                    tx.execute(
+                        "DELETE FROM co_occurrence WHERE word1_id = ?1 AND word2_id = ?2",
+                        [w1_id, w2_id],
+                    )?;
+                } else {
+                    let updated_json = serde_json::to_string(&notes)?;
+                    tx.execute(
+                        "UPDATE co_occurrence SET notes_list_json = ?1 WHERE word1_id = ?2 AND word2_id = ?3",
+                        [updated_json, w1_id.to_string(), w2_id.to_string()],
+                    )?;
+                }
+            }
+        }
+    }
+
+    // Step 2: Re-index changed files (add new entries)
     let mut word_freq_delta: HashMap<String, i32> = HashMap::new();
     let mut co_occur_delta: HashMap<(String, String), (i32, Vec<String>)> = HashMap::new();
 
@@ -111,9 +149,7 @@ pub fn index_vault_delta(db: &WordGraphDb, vault_path: &Path, changed_files: &[s
         }
     }
 
-    let tx = db.conn_mut().transaction()?;
-
-    // Update word frequencies
+    // Step 3: Update word frequencies and co-occurrence in database
     for (word, delta) in word_freq_delta {
         let existing: i32 = tx.query_row(
             "SELECT frequency FROM words WHERE word = ?1",
@@ -124,7 +160,7 @@ pub fn index_vault_delta(db: &WordGraphDb, vault_path: &Path, changed_files: &[s
         if existing == 0 {
             tx.execute(
                 "INSERT INTO words (word, frequency) VALUES (?1, ?2)",
-                [word, (delta).to_string()],
+                [word, delta.to_string()],
             )?;
         } else {
             tx.execute(
@@ -134,7 +170,6 @@ pub fn index_vault_delta(db: &WordGraphDb, vault_path: &Path, changed_files: &[s
         }
     }
 
-    // Update co-occurrence counts
     for ((w1, w2), (count_delta, notes)) in co_occur_delta {
         let w1_id: i32 = tx.query_row(
             "SELECT id FROM words WHERE word = ?1",

@@ -1678,7 +1678,7 @@ fn word_graph_data(root: String) -> Result<WordGraphResponse, String> {
 
     // Adaptive word limit
     let vault_size = count_markdown_files(vault_path).unwrap_or(0);
-    let word_limit = std::cmp::min(200, std::cmp::max(50, vault_size / 10));
+    let word_limit = std::cmp::min(100, std::cmp::max(1, vault_size / 10));
 
     let words = queries::get_top_words(&db, word_limit).map_err(|e| e.to_string())?;
 
@@ -1710,11 +1710,11 @@ fn word_graph_data(root: String) -> Result<WordGraphResponse, String> {
         })
     }).collect();
 
-    // TODO: Get last_updated from index_state table
+    let last_updated = queries::get_last_updated_timestamp(&db).ok().flatten();
     Ok(WordGraphResponse {
         nodes,
         links,
-        last_updated: None,
+        last_updated,
     })
 }
 
@@ -1728,6 +1728,30 @@ fn index_vault_words(root: String) -> Result<(), String> {
     });
 
     Ok(())
+}
+
+#[tauri::command]
+fn delta_index_vault_words(root: String, changed_files: Vec<String>) -> Result<(), String> {
+    // Spawn in background
+    tauri::async_runtime::spawn_blocking(move || {
+        let vault_path = std::path::Path::new(&root);
+        let file_paths: Vec<std::path::PathBuf> = changed_files.iter()
+            .map(|f| vault_path.join(f))
+            .collect();
+        let db = WordGraphDb::new(vault_path).map_err(|e| e.to_string())?;
+        crate::word_graph::indexer::index_vault_delta(&db, vault_path, &file_paths)
+            .map_err(|e| e.to_string())
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+fn word_graph_notes(root: String, word: String) -> Result<Vec<String>, String> {
+    let vault_path = std::path::Path::new(&root);
+    let db = WordGraphDb::new(vault_path).map_err(|e| e.to_string())?;
+    let notes = queries::get_notes_for_word(&db, &word).map_err(|e| e.to_string())?;
+    Ok(notes)
 }
 
 fn count_markdown_files(path: &std::path::Path) -> std::io::Result<usize> {
@@ -1785,7 +1809,7 @@ fn main() {
             export_docx, export_rtf, take_pending_opens,
             convert_file_to_markdown, convert_url_to_markdown, save_import, is_convertible,
             text_metrics, highlight_markdown, debug_log, debug_log_path, read_drag_pasteboard,
-            word_graph_data, index_vault_words
+            word_graph_data, index_vault_words, delta_index_vault_words, word_graph_notes
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");
