@@ -22,3 +22,4 @@ developer_examples/output.md
 developer_examples/__pycache__/
 .tomarkdown/
 gui/gen/
+.tomarkdown_word_graph.db

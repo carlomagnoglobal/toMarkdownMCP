@@ -1495,34 +1495,42 @@ async function showGraph(focus) {
     cancelAnimationFrame(graphAnim);
     let ticks = 0;
     const step = () => {
-      // repulsion
-      for (const n of graphNodes) {
-        for (const m of graphNodes) {
-          if (n === m) continue;
-          let dx = n.x - m.x, dy = n.y - m.y;
-          const d2 = Math.max(dx * dx + dy * dy, 100);
-          const f = 60000 / d2;
-          const d = Math.sqrt(d2);
-          n.vx += (dx / d) * f; n.vy += (dy / d) * f;
+      try {
+        // repulsion
+        for (const n of graphNodes) {
+          for (const m of graphNodes) {
+            if (n === m) continue;
+            let dx = n.x - m.x, dy = n.y - m.y;
+            const d2 = Math.max(dx * dx + dy * dy, 100);
+            const f = 60000 / d2;
+            const d = Math.sqrt(d2);
+            n.vx += (dx / d) * f; n.vy += (dy / d) * f;
+          }
+          // gravity to center
+          n.vx += (W / 2 - n.x) * 0.002; n.vy += (H / 2 - n.y) * 0.002;
         }
-        // gravity to center
-        n.vx += (W / 2 - n.x) * 0.002; n.vy += (H / 2 - n.y) * 0.002;
+        // spring along links
+        for (const { a, b } of graphLinks) {
+          if (!a || !b) {
+            console.warn('%c[GRAPH] Invalid link:', 'color: red', { a: !!a, b: !!b });
+            continue;
+          }
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const d = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+          const f = (d - 140) * 0.01;
+          a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+          b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+        }
+        for (const n of graphNodes) {
+          if (n === dragNode) continue;
+          n.vx *= 0.85; n.vy *= 0.85;
+          n.x += n.vx; n.y += n.vy;
+        }
+        drawGraph();
+        if (++ticks < 300 && graphAnimating) graphAnim = requestAnimationFrame(step);
+      } catch (err) {
+        console.error('%c[GRAPH] Error in step():', 'color: red', err.message, err.stack);
       }
-      // spring along links
-      for (const { a, b } of graphLinks) {
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const d = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-        const f = (d - 140) * 0.01;
-        a.vx += (dx / d) * f; a.vy += (dy / d) * f;
-        b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
-      }
-      for (const n of graphNodes) {
-        if (n === dragNode) continue;
-        n.vx *= 0.85; n.vy *= 0.85;
-        n.x += n.vx; n.y += n.vy;
-      }
-      drawGraph();
-      if (++ticks < 300 && graphAnimating) graphAnim = requestAnimationFrame(step);
     };
     step();
   } catch (e) { showError(String(e)); }
@@ -1602,12 +1610,10 @@ function drawGraph() {
     // Draw links
     ctx.strokeStyle = css.getPropertyValue('--border');
     for (const link of graphLinks) {
-      const sourceNode = graphNodes.find(n => n.word === link.source);
-      const targetNode = graphNodes.find(n => n.word === link.target);
-      if (sourceNode && targetNode) {
+      if (link.a && link.b) {
         ctx.beginPath();
-        ctx.moveTo(sourceNode.x, sourceNode.y);
-        ctx.lineTo(targetNode.x, targetNode.y);
+        ctx.moveTo(link.a.x, link.a.y);
+        ctx.lineTo(link.b.x, link.b.y);
         ctx.stroke();
       }
     }
@@ -1723,7 +1729,8 @@ document.getElementById('graph-global').addEventListener('click', () => switchGr
 document.getElementById('graph-current').addEventListener('click', () => switchGraphMode('current'));
 document.getElementById('graph-word').addEventListener('click', () => switchGraphMode('word'));
 
-function switchGraphMode(mode) {
+async function switchGraphMode(mode) {
+  console.log('%c[WORD_GRAPH] Switching to mode:', 'color: blue; font-weight: bold', mode);
   currentGraphMode = mode;
 
   // Update button states
@@ -1734,11 +1741,14 @@ function switchGraphMode(mode) {
   const wordHeader = document.getElementById('graph-header');
   if (mode === 'word') {
     wordHeader.style.display = 'block';
-    loadWordGraphData();
+    console.log('%c[WORD_GRAPH] Loading data for Word mode', 'color: cyan');
+    await loadWordGraphData();
+    console.log('%c[WORD_GRAPH] Data loaded, nodes:', 'color: green', graphNodes.length, 'links:', graphLinks.length);
   } else {
     wordHeader.style.display = 'none';
   }
 
+  console.log('%c[WORD_GRAPH] Redrawing graph', 'color: orange');
   redrawGraph();
 }
 
@@ -1837,6 +1847,8 @@ document.addEventListener('visibilitychange', () => {
 
 async function loadWordGraphData() {
   try {
+    console.log('%c[WORD_GRAPH] loadWordGraphData() starting', 'color: cyan');
+
     // Check if we have changed files from file watcher
     // For now, pass empty array (file watcher integration in future phase)
     const changedFiles = []; // TODO: integrate with vault file watcher
@@ -1848,11 +1860,20 @@ async function loadWordGraphData() {
       });
     }
 
+    console.log('%c[WORD_GRAPH] Fetching graph data for:', 'color: cyan', currentFolder);
     const response = await invoke('word_graph_data', { root: currentFolder });
+    console.log('%c[WORD_GRAPH] Response received:', 'color: green', { nodeCount: response.nodes.length, linkCount: response.links.length });
 
     const rect = graphCanvas.getBoundingClientRect();
-    const W = rect.width * devicePixelRatio;
-    const H = rect.height * devicePixelRatio;
+    let W = rect.width * devicePixelRatio;
+    let H = rect.height * devicePixelRatio;
+    console.log('%c[WORD_GRAPH] Canvas dimensions:', 'color: cyan', { W: W.toFixed(0), H: H.toFixed(0), rectWidth: rect.width, rectHeight: rect.height });
+
+    if (W <= 0 || H <= 0) {
+      W = graphCanvas.parentElement?.offsetWidth || 800;
+      H = graphCanvas.parentElement?.offsetHeight || 600;
+      console.log('%c[WORD_GRAPH] Using fallback dimensions:', 'color: orange', { W, H });
+    }
 
     graphNodes = response.nodes.map(node => ({
       ...node,
@@ -1861,12 +1882,18 @@ async function loadWordGraphData() {
       vx: 0,
       vy: 0,
     }));
+    console.log('%c[WORD_GRAPH] Nodes initialized:', 'color: green', graphNodes.length, 'sample:', graphNodes[0]);
 
-    graphLinks = response.links.map(link => ({
-      source: link.source,
-      target: link.target,
-      weight: link.weight,
-    }));
+    const nodeMap = new Map(graphNodes.map((n, i) => [i, n]));
+    graphLinks = response.links.map(link => {
+      const a = nodeMap.get(link.source);
+      const b = nodeMap.get(link.target);
+      if (!a || !b) {
+        console.warn('%c[WORD_GRAPH] Invalid link:', 'color: red', { source: link.source, target: link.target, a: !!a, b: !!b });
+      }
+      return { a, b, weight: link.weight };
+    });
+    console.log('%c[WORD_GRAPH] Links initialized:', 'color: green', graphLinks.length, 'valid links:', graphLinks.filter(l => l.a && l.b).length);
 
     // Update timestamp
     if (response.last_updated) {
