@@ -12,7 +12,6 @@ use serde::Serialize;
 use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
 
-use to_markdown_mcp::file_type::{detect_language, detect_language_from_filename};
 use to_markdown_mcp::obsidian::{tools as vault_tools, vault as obsidian_vault};
 use to_markdown_mcp::pipeline::convert_any_to_markdown;
 
@@ -26,7 +25,7 @@ mod word_graph;
 mod commands;
 use render::{render_note, RenderOpts};
 use file_types::{detect_file_type, FileType};
-use viewers::{CodeViewer, ImageViewer, HexViewer, MarkdownViewer, FileViewer};
+use viewers::{CodeViewer, ImageViewer, HexViewer, FileViewer};
 
 #[derive(Serialize)]
 struct TreeNode {
@@ -92,36 +91,15 @@ struct Rendered {
     read_minutes: usize,
 }
 
-/// Tab data structure for the tab system.
-/// Represents a single tab with its content, type, and metadata.
-#[derive(Serialize, Clone)]
-struct TabData {
-    /// File path (absolute)
-    path: String,
-    /// Tab type: "markdown", "code", "image", or "hex"
-    tab_type: String,
-    /// HTML content or rendered output
-    content: String,
-    /// Programming language (for code files)
-    language: Option<String>,
-    /// Whether the tab has unsaved changes
-    dirty: bool,
-    /// File size in bytes
-    file_size_bytes: u64,
-}
 
 /// Polymorphic open_file command that routes to appropriate viewer based on file type.
-/// Integrates all viewer types (Markdown, Code, Image, Hex) into the tab system.
+/// Returns Rendered struct for frontend compatibility.
 #[tauri::command]
-async fn open_file(path: String, vault_root: Option<String>) -> Result<TabData, String> {
+async fn open_file(path: String, vault_root: Option<String>) -> Result<Rendered, String> {
     let p = PathBuf::from(&path);
     if !p.is_file() {
         return Err(format!("Not a file: {}", path));
     }
-
-    let file_size = std::fs::metadata(&p)
-        .map(|m| m.len())
-        .map_err(|e| format!("Cannot read file size: {}", e))?;
 
     let file_type = detect_file_type(&p);
 
@@ -143,31 +121,42 @@ async fn open_file(path: String, vault_root: Option<String>) -> Result<TabData, 
             };
 
             let html = render_note(&md, &opts, 0);
+            let word_count = md.split_whitespace().count();
+            let char_count = md.len();
+            let read_minutes = (word_count + 199) / 200; // Rough: ~200 words per minute
 
-            Ok(TabData {
-                path: p.to_string_lossy().into_owned(),
-                tab_type: "markdown".to_string(),
-                content: html,
-                language: None,
-                dirty: false,
-                file_size_bytes: file_size,
+            Ok(Rendered {
+                title: p.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Untitled")
+                    .to_string(),
+                html,
+                words: word_count,
+                chars: char_count,
+                read_minutes,
             })
         }
 
         FileType::Code { language } => {
             // Handle code files with syntax highlighting
             let content = std::fs::read_to_string(&p).map_err(|e| e.to_string())?;
-            let viewer = CodeViewer::new(p.clone(), language.clone(), content, false)
+            let viewer = CodeViewer::new(p.clone(), language.clone(), content.clone(), false)
                 .map_err(|e| e.to_string())?;
             let html = viewer.render().map_err(|e| e.to_string())?;
 
-            Ok(TabData {
-                path: p.to_string_lossy().into_owned(),
-                tab_type: "code".to_string(),
-                content: html,
-                language: Some(language),
-                dirty: false,
-                file_size_bytes: file_size,
+            let word_count = content.split_whitespace().count();
+            let char_count = content.len();
+            let read_minutes = (word_count + 199) / 200;
+
+            Ok(Rendered {
+                title: p.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Untitled")
+                    .to_string(),
+                html,
+                words: word_count,
+                chars: char_count,
+                read_minutes,
             })
         }
 
@@ -178,30 +167,35 @@ async fn open_file(path: String, vault_root: Option<String>) -> Result<TabData, 
                 .map_err(|e| e.to_string())?;
             let html = viewer.render().map_err(|e| e.to_string())?;
 
-            Ok(TabData {
-                path: p.to_string_lossy().into_owned(),
-                tab_type: "image".to_string(),
-                content: html,
-                language: None,
-                dirty: false,
-                file_size_bytes: file_size,
+            Ok(Rendered {
+                title: p.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Image")
+                    .to_string(),
+                html,
+                words: 0,
+                chars: 0,
+                read_minutes: 0,
             })
         }
 
         FileType::Hex => {
             // Handle binary/hex files
             let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
-            let viewer = HexViewer::new_from_bytes(p.clone(), bytes, file_size)
+            let byte_count = bytes.len() as u64;
+            let viewer = HexViewer::new_from_bytes(p.clone(), bytes, byte_count)
                 .map_err(|e| e.to_string())?;
             let html = viewer.render().map_err(|e| e.to_string())?;
 
-            Ok(TabData {
-                path: p.to_string_lossy().into_owned(),
-                tab_type: "hex".to_string(),
-                content: html,
-                language: None,
-                dirty: false,
-                file_size_bytes: file_size,
+            Ok(Rendered {
+                title: p.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Binary")
+                    .to_string(),
+                html,
+                words: 0,
+                chars: 0,
+                read_minutes: 0,
             })
         }
     }
