@@ -1020,13 +1020,23 @@ async function openFolder(root) {
   } catch (e) { showError(String(e)); }
 }
 
-async function openFile(path, remember = true, preserveScroll = false) {
+async function openFile(path, remember = true, preserveScroll = false, binaryFormat = null) {
   clearError();
   // Preserve position across live reloads (ratio survives content growth).
   const ratio = preserveScroll && scrollBox.scrollHeight > 0
     ? scrollBox.scrollTop / scrollBox.scrollHeight : 0;
   try {
-    const r = await invoke('open_file', { path, vaultRoot: currentFolder });
+    let r = await invoke('open_file', { path, vaultRoot: currentFolder });
+
+    // For binary files (0 words, 0 chars), offer format selection
+    if (r.words === 0 && r.chars === 0 && !binaryFormat) {
+      const choice = prompt('Binary file detected. View as:\nhex\ntext\nbase64', 'hex');
+      if (choice === null) return; // User cancelled
+      if (['hex', 'text', 'base64'].includes(choice)) {
+        r = await invoke('view_binary', { path, format: choice });
+      }
+    }
+
     contentBox.innerHTML = r.html;
     postRender(contentBox);
     document.title = r.title + ' — toMarkdown Viewer';

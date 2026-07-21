@@ -210,6 +210,39 @@ fn extract_image_dimensions(path: &Path) -> Option<(u32, u32)> {
     Some(dimensions)
 }
 
+/// View binary file in specified format
+/// Supports: "hex" (hex dump), "text" (raw UTF-8), "base64"
+#[tauri::command]
+async fn view_binary(path: String, format: String) -> Result<Rendered, String> {
+    let p = PathBuf::from(&path);
+    if !p.is_file() {
+        return Err(format!("Not a file: {}", path));
+    }
+
+    let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
+    let byte_count = bytes.len() as u64;
+    let viewer = HexViewer::new_from_bytes(p.clone(), bytes, byte_count)
+        .map_err(|e| e.to_string())?;
+
+    let html = match format.as_str() {
+        "hex" => viewer.render_hex_html(),
+        "text" => viewer.render_text_html(),
+        "base64" => viewer.render_base64_html(),
+        _ => viewer.render_hex_html(), // default to hex
+    };
+
+    Ok(Rendered {
+        title: p.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Binary")
+            .to_string(),
+        html,
+        words: 0,
+        chars: 0,
+        read_minutes: 0,
+    })
+}
+
 /// Live watchers: one for the open folder tree, one for the parent of the
 /// open file (editors replace files on save, so the file itself would lose
 /// its inode). Setting a new watcher drops and replaces the previous one.
@@ -1891,7 +1924,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            list_tree, open_file, pick_folder, pick_file,
+            list_tree, open_file, view_binary, pick_folder, pick_file,
             watch_tree, watch_file, export_html, read_text_file,
             note_info, vault_overview, vault_search, vault_tasks,
             resolve_wikilink, graph_data, quick_list, wikilink_complete,
