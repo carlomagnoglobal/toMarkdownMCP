@@ -19,6 +19,7 @@ use to_markdown_mcp::pipeline::convert_any_to_markdown;
 mod export;
 mod render;
 mod word_graph;
+mod commands;
 use render::{render_note, RenderOpts};
 
 #[derive(Serialize)]
@@ -1827,7 +1828,8 @@ fn main() {
             export_docx, export_rtf, take_pending_opens,
             convert_file_to_markdown, convert_url_to_markdown, save_import, is_convertible,
             text_metrics, highlight_markdown, debug_log, debug_log_path, read_drag_pasteboard,
-            word_graph_data, index_vault_words, delta_index_vault_words, word_graph_notes
+            word_graph_data, index_vault_words, delta_index_vault_words, word_graph_notes,
+            commands::file_ops::duplicate_file
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");
