@@ -17,10 +17,14 @@ use to_markdown_mcp::obsidian::{tools as vault_tools, vault};
 use to_markdown_mcp::pipeline::convert_any_to_markdown;
 
 mod export;
+mod file_types;
 mod render;
+mod viewers;
 mod word_graph;
 mod commands;
 use render::{render_note, RenderOpts};
+use file_types::{detect_file_type, FileType};
+use viewers::{CodeViewer, ImageViewer, HexViewer, MarkdownViewer, FileViewer};
 
 #[derive(Serialize)]
 struct TreeNode {
@@ -86,56 +90,128 @@ struct Rendered {
     read_minutes: usize,
 }
 
+/// Tab data structure for the tab system.
+/// Represents a single tab with its content, type, and metadata.
+#[derive(Serialize, Clone)]
+struct TabData {
+    /// File path (absolute)
+    path: String,
+    /// Tab type: "markdown", "code", "image", or "hex"
+    tab_type: String,
+    /// HTML content or rendered output
+    content: String,
+    /// Programming language (for code files)
+    language: Option<String>,
+    /// Whether the tab has unsaved changes
+    dirty: bool,
+    /// File size in bytes
+    file_size_bytes: u64,
+}
+
+/// Polymorphic open_file command that routes to appropriate viewer based on file type.
+/// Integrates all viewer types (Markdown, Code, Image, Hex) into the tab system.
 #[tauri::command]
-async fn open_file(path: String, vault_root: Option<String>) -> Result<Rendered, String> {
+async fn open_file(path: String, vault_root: Option<String>) -> Result<TabData, String> {
     let p = PathBuf::from(&path);
     if !p.is_file() {
         return Err(format!("Not a file: {}", path));
     }
-    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let opts = RenderOpts {
-        file_dir: p.parent(),
-        vault_root: vault_root.as_deref().map(Path::new),
-    };
-    // Obsidian canvas files render via the JsonCanvas→Markdown converter.
-    if ext == "canvas" {
-        let value = vault_tools::convert_canvas(&p).map_err(|e| e.to_string())?;
-        let md = value["markdown"].as_str().unwrap_or_default().to_string();
-        let words = md.split_whitespace().count();
-        return Ok(Rendered {
-            title: p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(path),
-            html: render_note(&md, &opts, 0),
-            words,
-            chars: md.chars().count(),
-            read_minutes: (words / 200).max(1),
-        });
-    }
-    let converted = convert_any_to_markdown(&p).map_err(|e| e.to_string())?;
-    let words = converted.split_whitespace().count();
-    let chars = converted.chars().count();
-    // Markdown-ish output renders directly; code/text gets a fenced block so
-    // the viewer shows it monospaced.
-    let md = if matches!(ext, "md" | "markdown") || to_markdown_mcp::pipeline::is_structured_ext(Some(ext)) {
-        converted
-    } else {
-        let lang = {
-            let detected = detect_language(&p);
-            if detected.is_empty() {
-                detect_language_from_filename(p.file_name().and_then(|n| n.to_str()).unwrap_or(""))
+
+    let file_size = std::fs::metadata(&p)
+        .map(|m| m.len())
+        .map_err(|e| format!("Cannot read file size: {}", e))?;
+
+    let file_type = detect_file_type(&p);
+
+    match file_type {
+        FileType::Markdown => {
+            // Handle Markdown files using existing render_note pipeline
+            let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let opts = RenderOpts {
+                file_dir: p.parent(),
+                vault_root: vault_root.as_deref().map(Path::new),
+            };
+
+            // Obsidian canvas files render via the JsonCanvas→Markdown converter
+            let md = if ext == "canvas" {
+                let value = vault_tools::convert_canvas(&p).map_err(|e| e.to_string())?;
+                value["markdown"].as_str().unwrap_or_default().to_string()
             } else {
-                detected
-            }
-        };
-        format!("```{}\n{}\n```\n", lang, converted)
-    };
-    Ok(Rendered {
-        title: p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(path),
-        html: render_note(&md, &opts, 0),
-        words,
-        chars,
-        // ~200 words/minute, floor 1 so a short note doesn't show "0 min".
-        read_minutes: (words / 200).max(1),
-    })
+                std::fs::read_to_string(&p).map_err(|e| e.to_string())?
+            };
+
+            let html = render_note(&md, &opts, 0);
+
+            Ok(TabData {
+                path: p.to_string_lossy().into_owned(),
+                tab_type: "markdown".to_string(),
+                content: html,
+                language: None,
+                dirty: false,
+                file_size_bytes: file_size,
+            })
+        }
+
+        FileType::Code { language } => {
+            // Handle code files with syntax highlighting
+            let content = std::fs::read_to_string(&p).map_err(|e| e.to_string())?;
+            let viewer = CodeViewer::new(p.clone(), language.clone(), content, false)
+                .map_err(|e| e.to_string())?;
+            let html = viewer.render().map_err(|e| e.to_string())?;
+
+            Ok(TabData {
+                path: p.to_string_lossy().into_owned(),
+                tab_type: "code".to_string(),
+                content: html,
+                language: Some(language),
+                dirty: false,
+                file_size_bytes: file_size,
+            })
+        }
+
+        FileType::Image { format } => {
+            // Handle image files with dimensions
+            let (width, height) = extract_image_dimensions(&p).unwrap_or((0, 0));
+            let viewer = ImageViewer::new(p.clone(), format, width, height)
+                .map_err(|e| e.to_string())?;
+            let html = viewer.render().map_err(|e| e.to_string())?;
+
+            Ok(TabData {
+                path: p.to_string_lossy().into_owned(),
+                tab_type: "image".to_string(),
+                content: html,
+                language: None,
+                dirty: false,
+                file_size_bytes: file_size,
+            })
+        }
+
+        FileType::Hex => {
+            // Handle binary/hex files
+            let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
+            let viewer = HexViewer::new_from_bytes(p.clone(), bytes, file_size)
+                .map_err(|e| e.to_string())?;
+            let html = viewer.render().map_err(|e| e.to_string())?;
+
+            Ok(TabData {
+                path: p.to_string_lossy().into_owned(),
+                tab_type: "hex".to_string(),
+                content: html,
+                language: None,
+                dirty: false,
+                file_size_bytes: file_size,
+            })
+        }
+    }
+}
+
+/// Extract image dimensions from a file using the image crate.
+/// Returns (width, height) on success, None if dimensions cannot be determined.
+fn extract_image_dimensions(path: &Path) -> Option<(u32, u32)> {
+    use image::ImageReader;
+    let reader = ImageReader::open(path).ok()?;
+    let dimensions = reader.into_dimensions().ok()?;
+    Some(dimensions)
 }
 
 /// Live watchers: one for the open folder tree, one for the parent of the
