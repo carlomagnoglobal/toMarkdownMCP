@@ -22,7 +22,7 @@ pub struct RecentFile {
 /// 4. Return last 10 records
 /// 5. Return empty list if no recent files exist
 pub fn get_recent_files_impl(vault_root: &Path) -> Result<Vec<RecentFile>, String> {
-    use super::super::vault::init_vault_db;
+    use crate::vault::init_vault_db;
     let db = init_vault_db(vault_root).map_err(|e| e.to_string())?;
 
     let mut stmt = db
@@ -64,7 +64,7 @@ pub fn get_recent_files_impl(vault_root: &Path) -> Result<Vec<RecentFile>, Strin
 /// 3. Insert/update recent_files entry with current timestamp
 /// 4. Error if file path is outside vault or doesn't exist
 pub fn update_recent_file_impl(vault_root: &Path, file_path: &Path) -> Result<(), String> {
-    use super::super::vault::init_vault_db;
+    use crate::vault::init_vault_db;
 
     // Verify file exists
     if !file_path.is_file() {

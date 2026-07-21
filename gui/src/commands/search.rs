@@ -10,7 +10,7 @@ use std::path::Path;
 ///
 /// Returns: Vec of matching file paths (absolute paths)
 fn search_files_impl(vault_root: &Path, query: &str, search_content: bool) -> Result<Vec<String>, String> {
-    use super::super::vault::init_vault_db;
+    use crate::vault::init_vault_db;
 
     if query.trim().is_empty() {
         return Ok(Vec::new());
