@@ -90,21 +90,38 @@ impl ImageViewer {
 
 impl FileViewer for ImageViewer {
     fn render(&self) -> Result<String, ViewerError> {
+        // Properly escape the file path for URL
+        let path_str = self.path.display().to_string();
+        let file_url = if cfg!(target_os = "windows") {
+            format!("file:///{}", path_str.replace('\\', "/"))
+        } else {
+            format!("file://{}", path_str)
+        };
+
+        // Format file size nicely
+        let file_size_display = if self.file_size > 1024 * 1024 {
+            format!("{:.2} MB", self.file_size as f64 / (1024.0 * 1024.0))
+        } else if self.file_size > 1024 {
+            format!("{:.2} KB", self.file_size as f64 / 1024.0)
+        } else {
+            format!("{} bytes", self.file_size)
+        };
+
         // Build HTML with centered image and metadata
         let html = format!(
-            r#"<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; height: 100%;">
-    <img src="file://{}" style="max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 4px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);" alt="Image preview" />
-    <div style="margin-top: 20px; padding: 12px 16px; background-color: #f5f5f5; border-radius: 4px; text-align: center; font-family: monospace; font-size: 12px;">
+            r#"<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; min-height: 100vh; background: var(--bg);">
+    <img src="{}" style="max-width: 90%; max-height: 70vh; object-fit: contain; border-radius: 4px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); margin-bottom: 20px;" alt="Image preview" />
+    <div style="padding: 12px 16px; background-color: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; text-align: center; font-family: monospace; font-size: 12px; color: var(--fg);">
         <div style="margin: 4px 0;"><strong>Format:</strong> {}</div>
-        <div style="margin: 4px 0;"><strong>Dimensions:</strong> {} x {} px</div>
-        <div style="margin: 4px 0;"><strong>File Size:</strong> {} bytes</div>
+        <div style="margin: 4px 0;"><strong>Dimensions:</strong> {} × {} px</div>
+        <div style="margin: 4px 0;"><strong>File Size:</strong> {}</div>
     </div>
 </div>"#,
-            self.path.display(),
+            file_url,
             self.format.to_uppercase(),
             self.width,
             self.height,
-            self.file_size
+            file_size_display
         );
         Ok(html)
     }

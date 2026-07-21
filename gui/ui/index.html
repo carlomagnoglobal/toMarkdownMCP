@@ -1073,9 +1073,14 @@ function loadTabs() {
 function syncTabs(path) {
   if (activeTab >= 0 && tabs[activeTab] === path) { renderTabs(); return; }
   const existing = tabs.indexOf(path);
-  if (existing >= 0) activeTab = existing;
-  else if (activeTab >= 0) tabs[activeTab] = path;
-  else { tabs.push(path); activeTab = tabs.length - 1; }
+  if (existing >= 0) {
+    // File already open in a tab, switch to it
+    activeTab = existing;
+  } else {
+    // File not open, add it as a new tab
+    tabs.push(path);
+    activeTab = tabs.length - 1;
+  }
   renderTabs();
   saveTabs();
 }

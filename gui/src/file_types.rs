@@ -21,8 +21,10 @@ const LANGUAGE_MAP: &[(&str, &str)] = &[
     ("jsx", "jsx"),
     ("tsx", "tsx"),
     ("html", "html"),
+    ("htm", "html"),
     ("css", "css"),
     ("scss", "scss"),
+    ("sass", "scss"),
     ("less", "less"),
     ("vue", "vue"),
     ("svelte", "svelte"),
@@ -31,10 +33,12 @@ const LANGUAGE_MAP: &[(&str, &str)] = &[
     ("pyx", "python"),
     ("pyi", "python"),
     ("ipynb", "python"),
+    ("pyc", "python"),
     // Rust
     ("rs", "rust"),
     // Go
     ("go", "go"),
+    ("mod", "go"),
     // C/C++
     ("c", "c"),
     ("cpp", "cpp"),
@@ -46,34 +50,92 @@ const LANGUAGE_MAP: &[(&str, &str)] = &[
     // Java/JVM
     ("java", "java"),
     ("kt", "kotlin"),
+    ("kts", "kotlin"),
     ("scala", "scala"),
+    ("gradle", "groovy"),
+    ("groovy", "groovy"),
     // C#/.NET
     ("cs", "csharp"),
     ("csx", "csharp"),
     ("fsx", "fsharp"),
     ("fs", "fsharp"),
+    ("vb", "vbnet"),
+    ("vbs", "vbnet"),
     // PHP
     ("php", "php"),
     ("phtml", "php"),
+    ("php5", "php"),
+    ("php7", "php"),
+    ("php8", "php"),
     // Ruby
     ("rb", "ruby"),
     ("erb", "ruby"),
+    ("rbx", "ruby"),
+    ("gemfile", "ruby"),
     // Shell
     ("sh", "bash"),
     ("bash", "bash"),
     ("zsh", "bash"),
     ("fish", "fish"),
-    // Config/Data
+    ("ps1", "powershell"),
+    // Lisp/Scheme
+    ("el", "elisp"),
+    ("lisp", "lisp"),
+    ("cl", "lisp"),
+    ("clj", "clojure"),
+    ("cljs", "clojure"),
+    // Config/Data/Markup
     ("json", "json"),
+    ("jsonc", "json"),
+    ("json5", "json"),
     ("yaml", "yaml"),
     ("yml", "yaml"),
     ("toml", "toml"),
     ("xml", "xml"),
     ("ini", "ini"),
+    ("cfg", "ini"),
+    ("conf", "bash"),
     ("env", "bash"),
     ("properties", "properties"),
     ("sql", "sql"),
     ("sqlite", "sql"),
+    ("tsql", "sql"),
+    ("plsql", "sql"),
+    // Markup/Templates
+    ("markdown", "markdown"),
+    ("tex", "latex"),
+    ("latex", "latex"),
+    ("rst", "rst"),
+    ("asciidoc", "asciidoc"),
+    ("adoc", "asciidoc"),
+    ("handlebars", "handlebars"),
+    ("hbs", "handlebars"),
+    // Build/CI
+    ("dockerfile", "dockerfile"),
+    ("dockerfile.prod", "dockerfile"),
+    ("makefile", "makefile"),
+    ("cmake", "cmake"),
+    // Java build
+    ("pom", "xml"),
+    // Go modules
+    ("sum", "bash"),
+    // Perl
+    ("pl", "perl"),
+    ("pm", "perl"),
+    // R/Statistics
+    ("r", "r"),
+    ("R", "r"),
+    ("rmd", "markdown"),
+    // Lua
+    ("lua", "lua"),
+    // Swift/iOS
+    ("swift", "swift"),
+    ("m", "objective-c"),
+    ("mm", "objective-c++"),
+    // Dart
+    ("dart", "dart"),
+    // Kotlin mobile
+    ("gradle.kts", "kotlin"),
     // Text
     ("txt", "plaintext"),
 ];
@@ -99,6 +161,20 @@ const IMAGE_EXTENSIONS: &[(&str, &str)] = &[
 /// 3. Image files → Image { format }
 /// 4. Default → Hex
 pub fn detect_file_type(path: &Path) -> FileType {
+    // Get filename and convert to lowercase
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_lowercase();
+
+    // Check for Dockerfile (special case: no extension)
+    if filename == "dockerfile" || filename.ends_with(".dockerfile") {
+        return FileType::Code {
+            language: "dockerfile".to_string(),
+        };
+    }
+
     // Get file extension and convert to lowercase
     let extension = path
         .extension()

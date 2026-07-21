@@ -72,21 +72,99 @@ impl HexViewer {
             offset_str, hex_str, ascii_str
         )
     }
-}
 
-impl FileViewer for HexViewer {
-    fn render(&self) -> Result<String, ViewerError> {
-        let mut html = String::from("<table>");
+    /// Render as raw text (lossy UTF-8 conversion)
+    fn render_as_text(&self) -> String {
+        String::from_utf8_lossy(&self.bytes).to_string()
+    }
+
+    /// Render as base64
+    fn render_as_base64(&self) -> String {
+        use std::str;
+        const STANDARD: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut result = String::new();
+
+        for chunk in self.bytes.chunks(3) {
+            let b1 = chunk[0];
+            let b2 = chunk.get(1).copied().unwrap_or(0);
+            let b3 = chunk.get(2).copied().unwrap_or(0);
+
+            let n = ((b1 as u32) << 16) | ((b2 as u32) << 8) | (b3 as u32);
+
+            result.push(STANDARD[((n >> 18) & 0x3F) as usize] as char);
+            result.push(STANDARD[((n >> 12) & 0x3F) as usize] as char);
+
+            if chunk.len() > 1 {
+                result.push(STANDARD[((n >> 6) & 0x3F) as usize] as char);
+            } else {
+                result.push('=');
+            }
+
+            if chunk.len() > 2 {
+                result.push(STANDARD[(n & 0x3F) as usize] as char);
+            } else {
+                result.push('=');
+            }
+        }
+
+        result
+    }
+
+    /// Render as styled HTML hex dump
+    pub fn render_hex_html(&self) -> String {
+        let mut html = String::from(
+            r#"<div style="padding: 20px; background: var(--bg); color: var(--fg); font-family: monospace; font-size: 13px; overflow-x: auto;">
+<table style="border-collapse: collapse; width: 100%;">
+<thead style="position: sticky; top: 0; background: var(--code-bg); border-bottom: 1px solid var(--border);">
+<tr style="border-bottom: 1px solid var(--border);">
+<th style="padding: 8px 12px; text-align: left; font-weight: 600;">Offset</th>
+<th style="padding: 8px 12px; text-align: left; font-weight: 600;">Hex Data</th>
+<th style="padding: 8px 12px; text-align: left; font-weight: 600;">ASCII</th>
+</tr>
+</thead>
+<tbody>"#
+        );
 
         // Process bytes in 16-byte chunks
         for (i, chunk) in self.bytes.chunks(16).enumerate() {
             let offset = (i as u64) * 16;
             let row = Self::format_hex_line(offset, chunk);
-            html.push_str(&row);
+            html.push_str(&format!(r#"<tr style="border-bottom: 1px solid var(--border); hover-color: var(--hover);">{}</tr>"#, row));
         }
 
-        html.push_str("</table>");
-        Ok(html)
+        html.push_str("</tbody></table></div>");
+        html
+    }
+
+    /// Render as styled HTML text view
+    pub fn render_text_html(&self) -> String {
+        let text = self.render_as_text();
+        // Escape HTML special characters
+        let escaped = text
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#39;");
+        format!(
+            r#"<div style="padding: 20px; background: var(--bg); color: var(--fg); font-family: monospace; font-size: 13px; white-space: pre-wrap; word-wrap: break-word; line-height: 1.5;"><code>{}</code></div>"#,
+            escaped
+        )
+    }
+
+    /// Render as styled HTML base64 view
+    pub fn render_base64_html(&self) -> String {
+        let b64 = self.render_as_base64();
+        format!(
+            r#"<div style="padding: 20px; background: var(--bg); color: var(--fg); font-family: monospace; font-size: 13px; white-space: pre-wrap; word-wrap: break-word; line-height: 1.5;"><code>{}</code></div>"#,
+            b64
+        )
+    }
+}
+
+impl FileViewer for HexViewer {
+    fn render(&self) -> Result<String, ViewerError> {
+        Ok(self.render_hex_html())
     }
 
     fn get_state(&self) -> ViewerState {
