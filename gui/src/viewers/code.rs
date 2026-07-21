@@ -57,6 +57,28 @@ impl CodeViewer {
         self.dirty = dirty;
     }
 
+    /// Updates the file content and marks as dirty
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - New content to set
+    pub fn update_content(&mut self, content: String) {
+        self.content = content.clone();
+        self.file_size = content.len() as u64;
+        self.dirty = true;
+    }
+
+    /// Saves the content and clears the dirty flag
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if save is successful, `Err(String)` if save fails
+    pub fn save_content(&mut self) -> Result<(), String> {
+        // Clear the dirty flag after successful save
+        self.dirty = false;
+        Ok(())
+    }
+
     /// Returns a reference to the file content
     pub fn get_content(&self) -> &str {
         &self.content

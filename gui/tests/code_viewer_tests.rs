@@ -64,3 +64,48 @@ fn test_code_viewer_dirty_flag() {
     assert!(state.modified, "State should show modified");
     assert_eq!(state.file_type, "code", "State file_type should be 'code'");
 }
+
+#[test]
+fn test_code_viewer_update_content() {
+    let path = PathBuf::from("test.rs");
+    let language = "rust".to_string();
+    let original_content = "fn main() {}".to_string();
+    let dirty = false;
+
+    let mut viewer = CodeViewer::new(path, language, original_content.clone(), dirty)
+        .expect("Failed to create CodeViewer");
+
+    // Initial state should not be dirty
+    assert!(!viewer.is_dirty(), "Viewer should not be dirty initially");
+    assert_eq!(viewer.get_content(), original_content, "Content should match original");
+
+    // Update content
+    let new_content = "fn main() {\n    println!(\"updated\");\n}".to_string();
+    viewer.update_content(new_content.clone());
+
+    // Verify content was updated and dirty flag is set
+    assert_eq!(viewer.get_content(), new_content, "Content should match updated value");
+    assert!(viewer.is_dirty(), "Viewer should be dirty after update_content");
+}
+
+#[test]
+fn test_code_viewer_save_clears_dirty() {
+    let path = PathBuf::from("test.rs");
+    let language = "rust".to_string();
+    let content = "fn main() {}".to_string();
+    let dirty = false;
+
+    let mut viewer = CodeViewer::new(path, language, content.clone(), dirty)
+        .expect("Failed to create CodeViewer");
+
+    // Update content to make it dirty
+    let new_content = "fn main() {\n    println!(\"hello\");\n}".to_string();
+    viewer.update_content(new_content.clone());
+    assert!(viewer.is_dirty(), "Viewer should be dirty after update");
+
+    // Save content
+    let result = viewer.save_content();
+    assert!(result.is_ok(), "save_content should succeed");
+    assert!(!viewer.is_dirty(), "Viewer should not be dirty after save_content");
+    assert_eq!(viewer.get_content(), new_content, "Content should remain unchanged after save");
+}
