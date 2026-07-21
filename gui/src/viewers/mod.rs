@@ -1,6 +1,8 @@
 //! File viewer trait implementations and types
 
+pub mod markdown;
 pub mod traits;
 
 // Re-export public types for convenient access
+pub use markdown::MarkdownViewer;
 pub use traits::{FileViewer, ViewerError, ViewerState};
