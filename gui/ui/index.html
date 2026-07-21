@@ -634,6 +634,28 @@
       <div id="result-body"></div>
     </div>
   </div>
+  <div id="binary-overlay" class="overlay" role="dialog" aria-modal="true" aria-label="Binary file format">
+    <div class="dialog-box" style="width: 500px;">
+      <h3 style="margin: 0 0 16px; font-size: 16px; color: var(--fg);">How would you like to view this binary file?</h3>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button id="binary-hex" style="padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); cursor: pointer; text-align: left; font-weight: 500;">
+          <div style="font-size: 14px;">🔢 Hexadecimal (Hex Dump)</div>
+          <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Show as offset + hex bytes + ASCII representation</div>
+        </button>
+        <button id="binary-text" style="padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); cursor: pointer; text-align: left; font-weight: 500;">
+          <div style="font-size: 14px;">📝 Raw Text</div>
+          <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Attempt to decode as UTF-8 text (lossy conversion)</div>
+        </button>
+        <button id="binary-base64" style="padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: var(--fg); cursor: pointer; text-align: left; font-weight: 500;">
+          <div style="font-size: 14px;">🔐 Base64</div>
+          <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Encode as Base64 string</div>
+        </button>
+      </div>
+      <div style="margin-top: 16px; text-align: right;">
+        <button id="binary-cancel" style="padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer;">Cancel</button>
+      </div>
+    </div>
+  </div>
   <div id="settings-overlay" class="overlay" role="dialog" aria-modal="true" aria-label="Settings">
     <div class="dialog-box">
       <div id="settings-box">
@@ -1020,6 +1042,29 @@ async function openFolder(root) {
   } catch (e) { showError(String(e)); }
 }
 
+// Show binary file format selection dialog and return chosen format
+function showBinaryFormatDialog(filePath) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('binary-overlay');
+    const filename = filePath.split('/').pop();
+
+    const handleChoice = (format) => {
+      overlay.classList.remove('show');
+      resolve(format);
+    };
+
+    document.getElementById('binary-hex').onclick = () => handleChoice('hex');
+    document.getElementById('binary-text').onclick = () => handleChoice('text');
+    document.getElementById('binary-base64').onclick = () => handleChoice('base64');
+    document.getElementById('binary-cancel').onclick = () => {
+      overlay.classList.remove('show');
+      resolve(null);
+    };
+
+    overlay.classList.add('show');
+  });
+}
+
 async function openFile(path, remember = true, preserveScroll = false, binaryFormat = null) {
   clearError();
   // Preserve position across live reloads (ratio survives content growth).
@@ -1037,10 +1082,12 @@ async function openFile(path, remember = true, preserveScroll = false, binaryFor
       const isKnownCode = /\.(js|ts|jsx|tsx|html|css|py|rs|go|java|rb|php|sh|json|yaml|yml|toml|xml|dockerfile)$/i.test(path);
 
       if (!isImage && !isKnownCode) {
-        const choice = prompt('Binary file detected. View as:\nhex\ntext\nbase64', 'hex');
-        if (choice === null) return; // User cancelled
-        if (['hex', 'text', 'base64'].includes(choice)) {
+        // Show binary format selection dialog
+        const choice = await showBinaryFormatDialog(path);
+        if (choice) {
           r = await invoke('view_binary', { path, format: choice });
+        } else {
+          return; // User cancelled
         }
       }
     }

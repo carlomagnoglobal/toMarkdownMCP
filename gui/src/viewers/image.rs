@@ -88,15 +88,46 @@ impl ImageViewer {
     }
 }
 
+/// Encode bytes as base64
+fn base64_encode(data: &[u8]) -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::new();
+
+    for chunk in data.chunks(3) {
+        let b1 = chunk[0];
+        let b2 = chunk.get(1).copied().unwrap_or(0);
+        let b3 = chunk.get(2).copied().unwrap_or(0);
+
+        let n = ((b1 as u32) << 16) | ((b2 as u32) << 8) | (b3 as u32);
+
+        result.push(ALPHABET[((n >> 18) & 0x3F) as usize] as char);
+        result.push(ALPHABET[((n >> 12) & 0x3F) as usize] as char);
+
+        if chunk.len() > 1 {
+            result.push(ALPHABET[((n >> 6) & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+
+        if chunk.len() > 2 {
+            result.push(ALPHABET[(n & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+    }
+
+    result
+}
+
 impl FileViewer for ImageViewer {
     fn render(&self) -> Result<String, ViewerError> {
-        // Properly escape the file path for URL
-        let path_str = self.path.display().to_string();
-        let file_url = if cfg!(target_os = "windows") {
-            format!("file:///{}", path_str.replace('\\', "/"))
-        } else {
-            format!("file://{}", path_str)
-        };
+        // Read image file and convert to base64 data URL
+        let image_data = std::fs::read(&self.path)
+            .map_err(|e| ViewerError::IoError(format!("Failed to read image: {}", e)))?;
+
+        // Encode as base64
+        let encoded = base64_encode(&image_data);
+        let data_url = format!("data:image/{};base64,{}", self.format.to_lowercase(), encoded);
 
         // Format file size nicely
         let file_size_display = if self.file_size > 1024 * 1024 {
@@ -117,7 +148,7 @@ impl FileViewer for ImageViewer {
         <div style="margin: 4px 0;"><strong>File Size:</strong> {}</div>
     </div>
 </div>"#,
-            file_url,
+            data_url,
             self.format.to_uppercase(),
             self.width,
             self.height,
