@@ -1865,6 +1865,11 @@ fn count_markdown_files(path: &std::path::Path) -> std::io::Result<usize> {
 
 fn main() {
     use tauri::Manager;
+
+    // Initialize logging to default location
+    let default_logs_root = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let _ = logging::init_logging(&default_logs_root);
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
