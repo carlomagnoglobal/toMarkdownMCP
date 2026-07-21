@@ -62,3 +62,46 @@ pub async fn duplicate_file(path: String) -> Result<String, String> {
     let p = PathBuf::from(&path);
     duplicate_file_impl(&p).map(|pb| pb.to_string_lossy().into_owned())
 }
+
+/// Backend implementation: create an empty markdown note in a folder.
+///
+/// Logic:
+/// 1. Validate name is not empty (error if empty)
+/// 2. Check folder exists as directory (error if not)
+/// 3. Build note path: folder.join(name)
+/// 4. Error if file already exists
+/// 5. Create empty file at note_path via std::fs::write(..., "")
+/// 6. Return PathBuf to new note
+pub fn create_markdown_note_impl(folder: &Path, name: &str) -> Result<PathBuf, String> {
+    // Validate name is not empty
+    if name.trim().is_empty() {
+        return Err("Note name cannot be empty".to_string());
+    }
+
+    // Check folder exists as directory
+    if !folder.is_dir() {
+        return Err(format!("Folder not found: {}", folder.display()));
+    }
+
+    // Build note path
+    let note_path = folder.join(name);
+
+    // Error if file already exists
+    if note_path.exists() {
+        return Err(format!("File already exists: {}", note_path.display()));
+    }
+
+    // Create empty file
+    std::fs::write(&note_path, "").map_err(|e| format!("Failed to create file: {}", e))?;
+
+    // Return PathBuf to new note
+    Ok(note_path)
+}
+
+/// Tauri command to create a markdown note.
+/// Accepts folder path and note name as Strings, returns path to new note as String.
+#[tauri::command]
+pub async fn create_markdown_note(folder: String, name: String) -> Result<String, String> {
+    let f = PathBuf::from(&folder);
+    create_markdown_note_impl(&f, &name).map(|pb| pb.to_string_lossy().into_owned())
+}

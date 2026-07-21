@@ -95,3 +95,43 @@ fn test_duplicate_file_no_extension() {
     assert_eq!(dup_path.file_name().unwrap(), "README copy");
     assert!(dup_path.exists());
 }
+
+#[test]
+fn test_create_markdown_note() {
+    // Create a temporary directory for testing
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let temp_path = temp_dir.path();
+
+    // Create a markdown note
+    let note_name = "test_note.md";
+    let note_path = file_ops::create_markdown_note_impl(temp_path, note_name)
+        .expect("create_markdown_note_impl should succeed");
+
+    // Verify the file was created
+    assert!(note_path.exists(), "Note file should exist");
+
+    // Verify the name is correct
+    assert_eq!(note_path.file_name().unwrap(), note_name);
+
+    // Verify the content is empty
+    let content = std::fs::read_to_string(&note_path).expect("Failed to read note file");
+    assert_eq!(content, "", "Note should be empty");
+
+    // Verify the file is in the correct folder
+    assert_eq!(note_path.parent().unwrap(), temp_path);
+}
+
+#[test]
+fn test_create_markdown_note_invalid_name() {
+    // Create a temporary directory for testing
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let temp_path = temp_dir.path();
+
+    // Try to create a note with an empty name
+    let result = file_ops::create_markdown_note_impl(temp_path, "");
+    assert!(result.is_err(), "Should error when name is empty");
+
+    // Try with whitespace-only name
+    let result = file_ops::create_markdown_note_impl(temp_path, "   ");
+    assert!(result.is_err(), "Should error when name is only whitespace");
+}
