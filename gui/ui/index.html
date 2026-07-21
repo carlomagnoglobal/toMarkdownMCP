@@ -1028,12 +1028,20 @@ async function openFile(path, remember = true, preserveScroll = false, binaryFor
   try {
     let r = await invoke('open_file', { path, vaultRoot: currentFolder });
 
-    // For binary files (0 words, 0 chars), offer format selection
+    // For actual binary files (0 words, 0 chars, and unknown extension), offer format selection
+    // Skip this for known file types (images, code, markdown, etc.)
     if (r.words === 0 && r.chars === 0 && !binaryFormat) {
-      const choice = prompt('Binary file detected. View as:\nhex\ntext\nbase64', 'hex');
-      if (choice === null) return; // User cancelled
-      if (['hex', 'text', 'base64'].includes(choice)) {
-        r = await invoke('view_binary', { path, format: choice });
+      const ext = path.split('.').pop().toLowerCase();
+      const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif', 'tiff', 'tif'];
+      const isImage = imageExts.includes(ext);
+      const isKnownCode = /\.(js|ts|jsx|tsx|html|css|py|rs|go|java|rb|php|sh|json|yaml|yml|toml|xml|dockerfile)$/i.test(path);
+
+      if (!isImage && !isKnownCode) {
+        const choice = prompt('Binary file detected. View as:\nhex\ntext\nbase64', 'hex');
+        if (choice === null) return; // User cancelled
+        if (['hex', 'text', 'base64'].includes(choice)) {
+          r = await invoke('view_binary', { path, format: choice });
+        }
       }
     }
 
