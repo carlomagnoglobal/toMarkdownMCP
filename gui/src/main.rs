@@ -1908,9 +1908,8 @@ fn main() {
             word_graph_data, index_vault_words, delta_index_vault_words, word_graph_notes,
             commands::file_ops::duplicate_file, commands::file_ops::create_markdown_note,
             commands::preview::get_file_preview,
-            // Disabled: recent and search modules have vault module conflicts
-            // commands::recent::get_recent_files, commands::recent::update_recent_file,
-            // commands::search::search_files
+            commands::recent::get_recent_files, commands::recent::update_recent_file,
+            commands::search::search_files
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");

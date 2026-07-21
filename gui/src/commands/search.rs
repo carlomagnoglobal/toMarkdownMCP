@@ -1,6 +1,5 @@
 /// Full-text search functionality using SQLite FTS5
 use std::path::Path;
-use crate::vault::init_vault_db;
 
 /// Search files in the vault using FTS5.
 ///
@@ -11,6 +10,8 @@ use crate::vault::init_vault_db;
 ///
 /// Returns: Vec of matching file paths (absolute paths)
 fn search_files_impl(vault_root: &Path, query: &str, search_content: bool) -> Result<Vec<String>, String> {
+    use super::super::vault::init_vault_db;
+
     if query.trim().is_empty() {
         return Ok(Vec::new());
     }
