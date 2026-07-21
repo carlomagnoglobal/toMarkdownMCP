@@ -13,13 +13,14 @@ use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
 
 use to_markdown_mcp::file_type::{detect_language, detect_language_from_filename};
-use to_markdown_mcp::obsidian::{tools as vault_tools, vault};
+use to_markdown_mcp::obsidian::{tools as vault_tools, vault as obsidian_vault};
 use to_markdown_mcp::pipeline::convert_any_to_markdown;
 
 mod export;
 mod file_types;
 mod logging;
 mod render;
+mod vault;
 mod viewers;
 mod word_graph;
 mod commands;
@@ -336,11 +337,11 @@ async fn vault_tasks(root: String) -> Result<serde_json::Value, String> {
 /// shortest-path rules relative to the note the click came from.
 #[tauri::command]
 fn resolve_wikilink(root: String, target: String, from: String) -> Result<String, String> {
-    let idx = vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
+    let idx = obsidian_vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
     let from_rel = vault_rel(&root, &from);
-    match vault::resolve_target(&idx, &target, from_rel.as_deref()) {
-        vault::Resolution::Resolved(rel) => Ok(Path::new(&root).join(rel).to_string_lossy().into_owned()),
-        vault::Resolution::Ambiguous(mut candidates) => {
+    match obsidian_vault::resolve_target(&idx, &target, from_rel.as_deref()) {
+        obsidian_vault::Resolution::Resolved(rel) => Ok(Path::new(&root).join(rel).to_string_lossy().into_owned()),
+        obsidian_vault::Resolution::Ambiguous(mut candidates) => {
             // Obsidian opens the first shortest-path candidate.
             candidates.sort_by_key(|c| c.len());
             candidates
@@ -348,7 +349,7 @@ fn resolve_wikilink(root: String, target: String, from: String) -> Result<String
                 .map(|rel| Path::new(&root).join(rel).to_string_lossy().into_owned())
                 .ok_or_else(|| format!("Ambiguous link with no candidates: {}", target))
         }
-        vault::Resolution::Broken => Err(format!("Broken link: {}", target)),
+        obsidian_vault::Resolution::Broken => Err(format!("Broken link: {}", target)),
     }
 }
 
@@ -356,11 +357,11 @@ fn resolve_wikilink(root: String, target: String, from: String) -> Result<String
 /// neighborhood of one note (local graph).
 #[tauri::command]
 async fn graph_data(root: String, focus: Option<String>) -> Result<serde_json::Value, String> {
-    let idx = vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
+    let idx = obsidian_vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
     let mut edges: Vec<(String, String)> = Vec::new();
     for (from, links) in &idx.links {
         for link in links {
-            if let vault::Resolution::Resolved(to) = vault::resolve_target(&idx, &link.target, Some(from)) {
+            if let obsidian_vault::Resolution::Resolved(to) = obsidian_vault::resolve_target(&idx, &link.target, Some(from)) {
                 edges.push((from.clone(), to));
             }
         }
@@ -407,7 +408,7 @@ struct WikiMatch {
 /// Rank vault notes against `prefix`: 0 = title-prefix (or empty prefix), 1 =
 /// title-substring, 2 = alias-substring; case-insensitive, ties alphabetical.
 fn wikilink_matches(root: &Path, prefix: &str) -> Result<Vec<WikiMatch>, String> {
-    let idx = vault::get_index(root).map_err(|e| e.to_string())?;
+    let idx = obsidian_vault::get_index(root).map_err(|e| e.to_string())?;
     let q = prefix.to_lowercase();
     let mut ranked: Vec<(u8, String, String)> = Vec::new();
     for n in idx.notes.values() {
@@ -440,7 +441,7 @@ fn wikilink_complete(root: String, prefix: String) -> Result<Vec<WikiMatch>, Str
 /// Titles + aliases for the quick switcher's fuzzy matching.
 #[tauri::command]
 fn quick_list(root: String) -> Result<serde_json::Value, String> {
-    let idx = vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
+    let idx = obsidian_vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
     let mut items: Vec<serde_json::Value> = idx
         .notes
         .values()
@@ -472,7 +473,7 @@ fn save_file(path: String, content: String, vault_root: Option<String>) -> Resul
     std::fs::write(&tmp, &content).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, &p).map_err(|e| e.to_string())?;
     if let Some(root) = vault_root {
-        vault::invalidate(Path::new(&root));
+        obsidian_vault::invalidate(Path::new(&root));
     }
     Ok(())
 }
@@ -556,7 +557,7 @@ fn toggle_task(path: String, index: usize, vault_root: Option<String>) -> Result
 fn create_note(root: String, title: Option<String>, daily: bool, template: Option<String>) -> Result<String, String> {
     let v = vault_tools::create_note_from_template(Path::new(&root), title.as_deref(), template.as_deref(), daily)
         .map_err(|e| e.to_string())?;
-    vault::invalidate(Path::new(&root));
+    obsidian_vault::invalidate(Path::new(&root));
     let rel = v["created"].as_str().ok_or("create returned no path")?;
     Ok(Path::new(&root).join(rel).to_string_lossy().into_owned())
 }
@@ -567,7 +568,7 @@ fn rename_note(root: String, path: String, new_name: String) -> Result<String, S
     let rel = vault_rel(&root, &path).ok_or("File is outside the vault")?;
     let v = vault_tools::rename_note(Path::new(&root), &rel, &new_name, false)
         .map_err(|e| e.to_string())?;
-    vault::invalidate(Path::new(&root));
+    obsidian_vault::invalidate(Path::new(&root));
     let new_rel = v["renamed_to"].as_str().unwrap_or(&new_name);
     Ok(Path::new(&root).join(new_rel).to_string_lossy().into_owned())
 }
@@ -610,7 +611,7 @@ fn paste_image(root: String, base64_data: String, extension: String) -> Result<S
     let dir = attachment_dir(Path::new(&root))?;
     let name = format!("Pasted image {}.{}", chrono_stamp(), extension);
     std::fs::write(dir.join(&name), bytes).map_err(|e| e.to_string())?;
-    vault::invalidate(Path::new(&root));
+    obsidian_vault::invalidate(Path::new(&root));
     Ok(format!("![[{}]]", name))
 }
 
@@ -643,7 +644,7 @@ fn store_attachment_impl(root: &Path, src: &Path) -> Result<StoredAttachment, St
     let ext = src.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     let name = dedupe_in(&dir, &stem, &ext);
     std::fs::copy(src, dir.join(&name)).map_err(|e| e.to_string())?;
-    vault::invalidate(root);
+    obsidian_vault::invalidate(root);
     let embed = if IMAGE_EXTS.contains(&ext.as_str()) { format!("![[{}]]", name) } else { format!("[[{}]]", name) };
     Ok(StoredAttachment { name, embed })
 }
@@ -728,7 +729,7 @@ async fn store_url_attachment(root: String, url: String) -> Result<StoredAttachm
     let (stem, ext) = match name0.rsplit_once('.') { Some((s, e)) => (s.to_string(), e.to_string()), None => (name0.clone(), String::new()) };
     let name = dedupe_in(&dir, &stem, &ext);
     std::fs::write(dir.join(&name), bytes).map_err(|e| e.to_string())?;
-    vault::invalidate(rootp);
+    obsidian_vault::invalidate(rootp);
     let e = name.rsplit('.').next().unwrap_or("").to_lowercase();
     let embed = if IMAGE_EXTS.contains(&e.as_str()) { format!("![[{}]]", name) } else { format!("[[{}]]", name) };
     Ok(StoredAttachment { name, embed })
@@ -890,7 +891,7 @@ async fn localize_link_impl(root: &Path, note: &Path, link: &str, action: &str) 
         updated.replace_range(start..end, &replacement);
     }
     std::fs::write(note, &updated).map_err(|e| e.to_string())?;
-    vault::invalidate(root);
+    obsidian_vault::invalidate(root);
     Ok(updated)
 }
 
@@ -933,7 +934,7 @@ fn base64_decode(data: &str) -> Option<Vec<u8>> {
 /// Tag names for the editor's `#` autocomplete.
 #[tauri::command]
 fn tag_list(root: String) -> Result<Vec<String>, String> {
-    let idx = vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
+    let idx = obsidian_vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
     let mut tags: Vec<String> = idx.tags.keys().cloned().collect();
     tags.sort();
     Ok(tags)
@@ -945,7 +946,7 @@ fn tag_list(root: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 async fn related_notes(root: String, path: String) -> Result<serde_json::Value, String> {
     use to_markdown_mcp::knowledge;
-    let idx = vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
+    let idx = obsidian_vault::get_index(Path::new(&root)).map_err(|e| e.to_string())?;
     let target_rel = vault_rel(&root, &path);
     let target = convert_any_to_markdown(Path::new(&path)).map_err(|e| e.to_string())?;
     let ttf = knowledge::term_frequencies(&target);
@@ -973,7 +974,7 @@ async fn related_notes(root: String, path: String) -> Result<serde_json::Value, 
 async fn semantic_search(root: String, query: String) -> Result<serde_json::Value, String> {
     use to_markdown_mcp::embeddings;
     let rootp = PathBuf::from(&root);
-    let idx = vault::get_index(&rootp).map_err(|e| e.to_string())?;
+    let idx = obsidian_vault::get_index(&rootp).map_err(|e| e.to_string())?;
     let sources: Vec<PathBuf> = idx.notes.keys().map(|p| rootp.join(p)).collect();
     let mut embedder = embeddings::default_embedder();
     let mut vindex = embeddings::VectorIndex::load(&rootp);
@@ -1080,18 +1081,18 @@ async fn doc_stats(content: String) -> serde_json::Value {
 #[tauri::command]
 async fn peek_note(root: String, target: String, from: Option<String>) -> Result<serde_json::Value, String> {
     let rootp = PathBuf::from(&root);
-    let idx = vault::get_index(&rootp).map_err(|e| e.to_string())?;
+    let idx = obsidian_vault::get_index(&rootp).map_err(|e| e.to_string())?;
     let from_rel = from.as_deref().and_then(|f| vault_rel(&root, f));
-    let rel = match vault::resolve_target(&idx, &target, from_rel.as_deref()) {
-        vault::Resolution::Resolved(r) => r,
-        vault::Resolution::Ambiguous(mut c) => {
+    let rel = match obsidian_vault::resolve_target(&idx, &target, from_rel.as_deref()) {
+        obsidian_vault::Resolution::Resolved(r) => r,
+        obsidian_vault::Resolution::Ambiguous(mut c) => {
             c.sort_by_key(|p| p.len());
             match c.into_iter().next() {
                 Some(r) => r,
                 None => return Ok(peek_missing(&target)),
             }
         }
-        vault::Resolution::Broken => return Ok(peek_missing(&target)),
+        obsidian_vault::Resolution::Broken => return Ok(peek_missing(&target)),
     };
     let abs = rootp.join(&rel);
     let is_md = abs.extension().and_then(|e| e.to_str()).is_none_or(|e| e == "md");
@@ -1149,7 +1150,7 @@ fn daily_note(root: String) -> Result<String, String> {
         return Ok(abs.to_string_lossy().into_owned());
     }
     let v = vault_tools::create_note_from_template(rootp, None, None, true).map_err(|e| e.to_string())?;
-    vault::invalidate(rootp);
+    obsidian_vault::invalidate(rootp);
     let rel = v["created"].as_str().ok_or("create returned no path")?;
     Ok(rootp.join(rel).to_string_lossy().into_owned())
 }
@@ -1191,7 +1192,7 @@ fn delete_path(path: String, vault_root: Option<String>) -> Result<(), String> {
         std::fs::remove_file(&p)
     };
     if let Some(root) = vault_root {
-        vault::invalidate(Path::new(&root));
+        obsidian_vault::invalidate(Path::new(&root));
     }
     result.map_err(|e| e.to_string())
 }
@@ -1319,7 +1320,7 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
 #[tauri::command]
 async fn unlinked_mentions(root: String, path: String) -> Result<serde_json::Value, String> {
     let rootp = PathBuf::from(&root);
-    let idx = vault::get_index(&rootp).map_err(|e| e.to_string())?;
+    let idx = obsidian_vault::get_index(&rootp).map_err(|e| e.to_string())?;
     let rel = vault_rel(&root, &path).ok_or("File is outside the vault")?;
     let meta = idx.notes.get(&rel).ok_or("Not an indexed note")?;
     let mut needles: Vec<String> = vec![meta.title.to_lowercase()];
