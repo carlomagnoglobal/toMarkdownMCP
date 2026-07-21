@@ -34,6 +34,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 infer = "0.15"
 image = "0.25"
 thiserror = "1.0"
+walkdir = "2"
 
 # Already in the dependency tree via tauri (same versions); declared directly
 # only to read the macOS drag pasteboard for browser image drops.
