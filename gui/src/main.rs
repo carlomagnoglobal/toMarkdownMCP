@@ -1906,7 +1906,9 @@ fn main() {
             text_metrics, highlight_markdown, debug_log, debug_log_path, read_drag_pasteboard,
             word_graph_data, index_vault_words, delta_index_vault_words, word_graph_notes,
             commands::file_ops::duplicate_file, commands::file_ops::create_markdown_note,
-            commands::preview::get_file_preview
+            commands::preview::get_file_preview,
+            commands::recent::get_recent_files, commands::recent::update_recent_file,
+            commands::search::search_files
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");
