@@ -19,6 +19,7 @@ mod export;
 mod file_types;
 mod logging;
 mod render;
+mod state;
 mod vault;
 mod viewers;
 mod word_graph;
@@ -26,6 +27,7 @@ mod commands;
 use render::{render_note, RenderOpts};
 use file_types::{detect_file_type, FileType};
 use viewers::{CodeViewer, ImageViewer, HexViewer, FileViewer};
+use state::{VaultViewerState, UserPreferences, TabMode, ZoomBehavior};
 
 #[derive(Serialize)]
 struct TreeNode {
@@ -1903,11 +1905,25 @@ fn main() {
     let default_logs_root = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
     let _ = logging::init_logging(&default_logs_root);
 
+    // Initialize default user preferences for VaultViewerState
+    let default_prefs = UserPreferences {
+        tab_mode: TabMode::Multi,
+        theme: "light".to_string(),
+        auto_restore_tabs: true,
+        recycle_retention_days: 180,
+        auto_save: true,
+        show_toast: true,
+        zoom_behavior: ZoomBehavior::ResetPerImage,
+        mouse_wheel_zoom: true,
+    };
+    let vault_viewer_state = VaultViewerState::new(default_prefs);
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(WatchState::default())
         .manage(PendingOpens::default())
+        .manage(Mutex::new(vault_viewer_state))
         .menu(build_menu)
         .on_menu_event(|app, event| {
             let _ = app.emit("menu-action", event.id().0.clone());
@@ -1942,7 +1958,10 @@ fn main() {
             commands::file_ops::duplicate_file, commands::file_ops::create_markdown_note,
             commands::preview::get_file_preview,
             commands::recent::get_recent_files, commands::recent::update_recent_file,
-            commands::search::search_files
+            commands::search::search_files,
+            commands::tab_commands::add_tab, commands::tab_commands::close_tab,
+            commands::tab_commands::set_active_tab, commands::tab_commands::back_button,
+            commands::tab_commands::get_tabs
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");
