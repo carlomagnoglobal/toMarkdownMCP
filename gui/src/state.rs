@@ -218,7 +218,7 @@ impl VaultViewerState {
 
         // Identify expired files
         for deleted_file in &self.deleted_files {
-            if now - deleted_file.deleted_at > retention_seconds {
+            if now - deleted_file.deleted_at >= retention_seconds {
                 files_to_delete.push(deleted_file.id.clone());
             }
         }
@@ -357,6 +357,33 @@ mod tests {
         assert!(restore_result.is_ok());
         assert_eq!(state.deleted_files.len(), 0);
         assert!(test_file.exists());
+    }
+
+    #[test]
+    fn test_cleanup_expired_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let vault_root = temp_dir.path();
+
+        // Create a test file
+        let test_file = vault_root.join("test.md");
+        let mut file = File::create(&test_file).unwrap();
+        file.write_all(b"test content").unwrap();
+
+        // Create state and delete the file
+        let mut state = VaultViewerState::new(default_preferences());
+        let delete_result = state.delete_file(test_file.to_str().unwrap().to_string(), vault_root);
+        assert!(delete_result.is_ok());
+        assert_eq!(state.deleted_files.len(), 1);
+
+        // Get the file ID
+        let file_id = state.deleted_files[0].id.clone();
+        let recycled_path = PathBuf::from(&state.deleted_files[0].vault_path);
+
+        // Cleanup with 0 retention days should immediately delete the file
+        let cleanup_result = state.cleanup_expired(vault_root, 0);
+        assert!(cleanup_result.is_ok());
+        assert_eq!(state.deleted_files.len(), 0);
+        assert!(!recycled_path.exists(), "Recycled file should be deleted with 0 retention days");
     }
 
     fn default_preferences() -> UserPreferences {
