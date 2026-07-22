@@ -1,4 +1,7 @@
 use std::collections::{HashMap, VecDeque};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -109,11 +112,142 @@ impl VaultViewerState {
             self.active_tab = Some(tab_id);
         }
     }
+
+    pub fn delete_file(&mut self, path: String, vault_root: &Path) -> Result<(), String> {
+        let file_path = PathBuf::from(&path);
+
+        // Get file metadata before deletion
+        let metadata = fs::metadata(&file_path)
+            .map_err(|e| format!("Failed to access file: {}", e))?;
+        let file_size = metadata.len();
+
+        // Create recycle bin directory
+        let recycle_bin = vault_root.join(".tomarkdown/recycle_bin");
+        fs::create_dir_all(&recycle_bin)
+            .map_err(|e| format!("Failed to create recycle bin: {}", e))?;
+
+        // Generate unique ID and new location
+        let file_id = Uuid::new_v4().to_string();
+        let file_name = file_path
+            .file_name()
+            .ok_or("Invalid file name")?
+            .to_str()
+            .ok_or("Failed to convert file name")?
+            .to_string();
+        let recycled_path = recycle_bin.join(format!("{}_{}", file_id, file_name));
+
+        // Move file to recycle bin
+        fs::rename(&file_path, &recycled_path)
+            .map_err(|e| format!("Failed to move file to recycle bin: {}", e))?;
+
+        // Get current timestamp
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(|e| format!("Failed to get timestamp: {}", e))?
+            .as_secs() as i64;
+
+        // Record in deleted_files
+        let deleted_file = DeletedFile {
+            id: file_id,
+            original_path: path,
+            vault_path: recycled_path.to_str().unwrap_or("").to_string(),
+            deleted_at: timestamp,
+            file_size,
+        };
+        self.deleted_files.push(deleted_file);
+
+        Ok(())
+    }
+
+    pub fn restore_file(&mut self, file_id: &str, vault_root: &Path) -> Result<(), String> {
+        // Find the deleted file
+        let deleted_file = self.deleted_files
+            .iter()
+            .find(|df| df.id == file_id)
+            .ok_or("File not found in recycle bin")?
+            .clone();
+
+        let recycled_path = PathBuf::from(&deleted_file.vault_path);
+        let original_path = PathBuf::from(&deleted_file.original_path);
+
+        // Ensure parent directory exists
+        if let Some(parent) = original_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create directory: {}", e))?;
+        }
+
+        // Move file back to original location
+        fs::rename(&recycled_path, &original_path)
+            .map_err(|e| format!("Failed to restore file: {}", e))?;
+
+        // Remove from deleted_files
+        self.deleted_files.retain(|df| df.id != file_id);
+
+        Ok(())
+    }
+
+    pub fn permanently_delete(&mut self, file_id: &str, vault_root: &Path) -> Result<(), String> {
+        // Find the deleted file
+        let deleted_file = self.deleted_files
+            .iter()
+            .find(|df| df.id == file_id)
+            .ok_or("File not found in recycle bin")?
+            .clone();
+
+        let recycled_path = PathBuf::from(&deleted_file.vault_path);
+
+        // Delete the file permanently
+        fs::remove_file(&recycled_path)
+            .map_err(|e| format!("Failed to permanently delete file: {}", e))?;
+
+        // Remove from deleted_files
+        self.deleted_files.retain(|df| df.id != file_id);
+
+        Ok(())
+    }
+
+    pub fn cleanup_expired(&mut self, vault_root: &Path, retention_days: u32) -> Result<(), String> {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(|e| format!("Failed to get current time: {}", e))?
+            .as_secs() as i64;
+
+        let retention_seconds = (retention_days as i64) * 24 * 60 * 60;
+
+        let mut files_to_delete = Vec::new();
+
+        // Identify expired files
+        for deleted_file in &self.deleted_files {
+            if now - deleted_file.deleted_at > retention_seconds {
+                files_to_delete.push(deleted_file.id.clone());
+            }
+        }
+
+        // Delete expired files
+        for file_id in files_to_delete {
+            let deleted_file = self.deleted_files
+                .iter()
+                .find(|df| df.id == file_id)
+                .ok_or("File not found")?
+                .clone();
+
+            let recycled_path = PathBuf::from(&deleted_file.vault_path);
+            fs::remove_file(&recycled_path)
+                .map_err(|e| format!("Failed to delete expired file: {}", e))?;
+
+            self.deleted_files.retain(|df| df.id != file_id);
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::TempDir;
 
     #[test]
     fn test_create_state() {
@@ -176,6 +310,53 @@ mod tests {
         );
         state.back();
         assert_eq!(state.active_tab, Some(id1));
+    }
+
+    #[test]
+    fn test_delete_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let vault_root = temp_dir.path();
+
+        // Create a test file
+        let test_file = vault_root.join("test.md");
+        let mut file = File::create(&test_file).unwrap();
+        file.write_all(b"test content").unwrap();
+
+        // Create state and delete the file
+        let mut state = VaultViewerState::new(default_preferences());
+        let result = state.delete_file(test_file.to_str().unwrap().to_string(), vault_root);
+
+        assert!(result.is_ok());
+        assert_eq!(state.deleted_files.len(), 1);
+        assert!(!test_file.exists());
+        assert!(state.deleted_files[0].original_path.ends_with("test.md"));
+        assert_eq!(state.deleted_files[0].file_size, 12);
+    }
+
+    #[test]
+    fn test_restore_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let vault_root = temp_dir.path();
+
+        // Create a test file
+        let test_file = vault_root.join("test.md");
+        let mut file = File::create(&test_file).unwrap();
+        file.write_all(b"test content").unwrap();
+
+        // Create state and delete the file
+        let mut state = VaultViewerState::new(default_preferences());
+        let delete_result = state.delete_file(test_file.to_str().unwrap().to_string(), vault_root);
+        assert!(delete_result.is_ok());
+        assert_eq!(state.deleted_files.len(), 1);
+
+        // Get the file_id before restoring
+        let file_id = state.deleted_files[0].id.clone();
+
+        // Restore the file
+        let restore_result = state.restore_file(&file_id, vault_root);
+        assert!(restore_result.is_ok());
+        assert_eq!(state.deleted_files.len(), 0);
+        assert!(test_file.exists());
     }
 
     fn default_preferences() -> UserPreferences {
