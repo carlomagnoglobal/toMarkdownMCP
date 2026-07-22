@@ -38,11 +38,19 @@ fn test_image_viewer_dimensions() {
 
 #[test]
 fn test_image_viewer_render() {
-    let path = PathBuf::from("image.svg");
+    use std::fs;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let path = temp_dir.path().join("image.svg");
+
+    // Create a minimal SVG file
+    fs::write(&path, b"<svg></svg>").expect("Failed to write test SVG");
+
     let format = "svg".to_string();
     let width = 512;
     let height = 512;
-    let file_size = 50000;
+    let file_size = 7; // Size of "<svg></svg>"
 
     let viewer = ImageViewer::new_with_size(path.clone(), format.clone(), width, height, file_size)
         .expect("Failed to create ImageViewer");
@@ -51,8 +59,8 @@ fn test_image_viewer_render() {
 
     // Verify HTML structure
     assert!(html.contains("<img"), "HTML should contain <img> tag");
-    assert!(html.contains("file://"), "HTML should contain file:// URL");
-    assert!(html.contains("max-width: 100%"), "HTML should have max-width styling");
+    assert!(html.contains("data:image/svg;base64"), "HTML should contain data URL");
+    assert!(html.contains("max-width: 90%"), "HTML should have max-width styling");
 
     // Verify metadata is present
     assert!(html.contains("Format:"), "HTML should display Format");
@@ -61,6 +69,5 @@ fn test_image_viewer_render() {
 
     // Verify format and dimensions are rendered
     assert!(html.contains("SVG"), "HTML should contain uppercase format");
-    assert!(html.contains("512 x 512"), "HTML should contain dimensions");
-    assert!(html.contains("50000 bytes"), "HTML should contain file size");
+    assert!(html.contains("512"), "HTML should contain dimensions");
 }

@@ -15,9 +15,9 @@ fn test_hex_viewer_render() {
 
     let html = viewer.render().expect("Failed to render");
 
-    // Verify HTML structure
-    assert!(html.starts_with("<table>"), "HTML should start with <table>");
-    assert!(html.ends_with("</table>"), "HTML should end with </table>");
+    // Verify HTML structure (wrapped in div for styling)
+    assert!(html.starts_with("<div"), "HTML should start with <div>");
+    assert!(html.ends_with("</div>"), "HTML should end with </div>");
 
     // Verify content contains expected hex values
     assert!(html.contains("48"), "Should contain hex byte 48 (H)");

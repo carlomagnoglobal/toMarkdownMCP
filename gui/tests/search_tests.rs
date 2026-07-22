@@ -87,7 +87,8 @@ fn test_search_files_basic() {
         )
         .expect("Failed to insert into FTS");
 
-    // Test search by name - should find both project files
+    // Test search by name - FTS searches content, name, and path
+    // Should find both "notes/project.md" (name match) and "docs/readme.md" (content match "Project README")
     let mut stmt = vault_db
         .conn
         .prepare("SELECT path FROM files_fts WHERE files_fts MATCH ?1 LIMIT 100")
@@ -99,8 +100,9 @@ fn test_search_files_basic() {
         .collect::<Result<Vec<_>, _>>()
         .expect("Failed to collect");
 
-    assert_eq!(results.len(), 1, "Should find one file matching 'project'");
-    assert_eq!(results[0], "notes/project.md");
+    assert_eq!(results.len(), 2, "Should find two files matching 'project' (name and content match)");
+    assert!(results.contains(&"notes/project.md".to_string()));
+    assert!(results.contains(&"docs/readme.md".to_string()));
 
     // Test search by extension
     let mut stmt = vault_db
