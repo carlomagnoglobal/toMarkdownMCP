@@ -15,6 +15,7 @@ use tauri_plugin_dialog::DialogExt;
 use to_markdown_mcp::obsidian::{tools as vault_tools, vault as obsidian_vault};
 use to_markdown_mcp::pipeline::convert_any_to_markdown;
 
+mod clipboard_ops;
 mod config;
 mod export;
 mod file_types;

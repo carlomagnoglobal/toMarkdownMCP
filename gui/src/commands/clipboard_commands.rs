@@ -3,7 +3,7 @@ use std::path::Path;
 use std::io::Write;
 
 #[tauri::command]
-async fn copy_file(
+pub async fn copy_file(
     path: String,
     format: String,
     file_type: String,
