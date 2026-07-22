@@ -4,3 +4,4 @@ pub mod preview;
 pub mod recent;
 pub mod search;
 pub mod tab_commands;
+pub mod recycle_commands;
