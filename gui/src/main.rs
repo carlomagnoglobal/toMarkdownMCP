@@ -15,6 +15,7 @@ use tauri_plugin_dialog::DialogExt;
 use to_markdown_mcp::obsidian::{tools as vault_tools, vault as obsidian_vault};
 use to_markdown_mcp::pipeline::convert_any_to_markdown;
 
+mod config;
 mod export;
 mod file_types;
 mod logging;
@@ -1961,7 +1962,8 @@ fn main() {
             commands::search::search_files,
             commands::tab_commands::add_tab, commands::tab_commands::close_tab,
             commands::tab_commands::set_active_tab, commands::tab_commands::back_button,
-            commands::tab_commands::get_tabs
+            commands::tab_commands::get_tabs, commands::tab_commands::set_vault_root,
+            commands::tab_commands::load_saved_tabs
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");

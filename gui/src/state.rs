@@ -29,6 +29,7 @@ pub struct VaultViewerState {
     pub deleted_files: Vec<DeletedFile>,
     pub zoom_levels: HashMap<String, f32>, // file_id -> zoom level
     pub user_preferences: UserPreferences,
+    pub vault_root: Option<String>, // Root path of the currently opened vault
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +67,7 @@ impl VaultViewerState {
             deleted_files: Vec::new(),
             zoom_levels: HashMap::new(),
             user_preferences: preferences,
+            vault_root: None,
         }
     }
 
