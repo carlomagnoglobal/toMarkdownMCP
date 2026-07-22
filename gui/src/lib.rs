@@ -4,6 +4,7 @@ pub mod clipboard_ops;
 pub mod commands;
 pub mod config;
 pub mod file_types;
+pub mod image_zoom;
 pub mod logging;
 pub mod state;
 pub mod vault;
