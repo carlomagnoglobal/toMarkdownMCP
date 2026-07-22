@@ -3,6 +3,7 @@
 pub mod commands;
 pub mod file_types;
 pub mod logging;
+pub mod state;
 pub mod vault;
 pub mod viewers;
 pub mod word_graph;
