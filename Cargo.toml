@@ -1,8 +1,6 @@
 [workspace]
-members = [".", "gui"]
-# Plain cargo build/test targets the MCP crate only; the GUI builds
-# explicitly with `cargo build -p to_markdown_gui`.
-default-members = ["."]
+members = ["."]
+# GUI is now in a separate repository: github.com/carlomagnoglobal/toMarkdown-viewer
 
 [workspace.lints.clippy]
 # On by default in clippy 1.88 (our pinned MSRV toolchain) but pure style
@@ -11,7 +9,7 @@ uninlined_format_args = "allow"
 
 [package]
 name = "to_markdown_mcp"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 rust-version = "1.88"
 description = "MCP server converting anything to Markdown — documents, office files, live web pages (Chromium), Obsidian vaults — plus RAG tools and token analytics. Includes a terminal Markdown viewer."
