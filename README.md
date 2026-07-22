@@ -127,11 +127,14 @@ Claude-backed generation. Call `get_tool_help` (no arguments) for the full list,
 Run `to_markdown_mcp tui [PATH]` for an interactive terminal Markdown viewer over a vault or
 file: file tree, styled rendering, `[[wikilink]]` following, and filename search.
 
-A desktop GUI viewer (Tauri) lives in `gui/` — file tree, rendered Markdown for any supported
-format, drag-and-drop import/conversion (PDF, DOCX, URLs, …), Obsidian-grade vault navigation and
-editing, text analysis with token counts, four themes. Run it with `cargo run -p to_markdown_gui`;
-see the [User Guide](docs/gui/USER_GUIDE.md), [Install Guide](docs/gui/INSTALL.md), and
-[docs/gui/GUI.md](docs/gui/GUI.md).
+**Desktop GUI Viewer**: A standalone Tauri application is available in the separate
+[toMarkdown-viewer](https://github.com/carlomagnoglobal/toMarkdown-viewer) repository. It provides
+file tree navigation, rendered Markdown for any supported format, drag-and-drop import/conversion
+(PDF, DOCX, URLs, …), Obsidian-grade vault indexing with word graphs, multi-tab interface with
+recycle bin, clipboard export (Base64/Hex/Markdown), image zoom (1–15x), and four themes.
+
+**See:** [toMarkdown-viewer repository](https://github.com/carlomagnoglobal/toMarkdown-viewer) for
+installation, user guide, and documentation.
 
 The binary is also a standalone CLI — no MCP client needed:
 
