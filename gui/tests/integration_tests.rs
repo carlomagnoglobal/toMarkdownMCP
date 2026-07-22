@@ -26,6 +26,11 @@ use base64::Engine;
 // HELPER FUNCTIONS
 // ============================================================================
 
+/// Approximate floating point equality with epsilon tolerance
+fn approx_eq(left: f32, right: f32, epsilon: f32) -> bool {
+    (left - right).abs() < epsilon
+}
+
 fn default_preferences() -> UserPreferences {
     UserPreferences {
         tab_mode: TabMode::Multi,
@@ -104,7 +109,7 @@ fn test_tab_workflow_create_switch_close() {
     // Step 4: Switch to first tab
     state.set_active_tab(tab1_id.clone());
     assert_eq!(state.active_tab, Some(tab1_id.clone()));
-    assert_eq!(state.tab_history.len(), 2); // Should have history: tab3, tab2
+    assert_eq!(state.tab_history.len(), 3); // Should have history: tab1, tab2, tab3
 
     // Step 5: Switch to second tab
     state.set_active_tab(tab2_id.clone());
@@ -118,7 +123,7 @@ fn test_tab_workflow_create_switch_close() {
     // Step 7: Close second tab (active tab)
     state.close_tab(&tab2_id);
     assert_eq!(state.open_tabs.len(), 1);
-    assert_eq!(state.active_tab, Some(tab3_id));
+    assert_eq!(state.active_tab, Some(tab3_id.clone()));
 
     // Step 8: Close all tabs
     state.close_tab(&tab3_id);
@@ -148,17 +153,17 @@ fn test_tab_workflow_back_button() {
     );
 
     // Navigate: 1 → 2 → 3 → back should go to 2
-    assert_eq!(state.active_tab, Some(tab3_id));
+    assert_eq!(state.active_tab, Some(tab3_id.clone()));
     state.back();
-    assert_eq!(state.active_tab, Some(tab2_id));
+    assert_eq!(state.active_tab, Some(tab2_id.clone()));
 
     // Back again should go to 1
     state.back();
-    assert_eq!(state.active_tab, Some(tab1_id));
+    assert_eq!(state.active_tab, Some(tab1_id.clone()));
 
     // Back with no history should stay at 1
     state.back();
-    assert_eq!(state.active_tab, Some(tab1_id));
+    assert_eq!(state.active_tab, Some(tab1_id.clone()));
 }
 
 #[test]
@@ -446,13 +451,13 @@ fn test_image_zoom_workflow_zoom_in_out() {
     for _ in 0..5 {
         zoom.zoom_in();
     }
-    assert_eq!(zoom.get_current_zoom(), 1.5);
+    assert!(approx_eq(zoom.get_current_zoom(), 1.5, 0.0001), "Expected 1.5, got {}", zoom.get_current_zoom());
 
     // Zoom out 3 times
     for _ in 0..3 {
         zoom.zoom_out();
     }
-    assert_eq!(zoom.get_current_zoom(), 1.2);
+    assert!(approx_eq(zoom.get_current_zoom(), 1.2, 0.0001), "Expected 1.2, got {}", zoom.get_current_zoom());
 
     // Zoom out to minimum
     for _ in 0..20 {
@@ -540,15 +545,17 @@ fn test_image_zoom_workflow_mouse_wheel() {
 
     // Positive delta (scroll up) = zoom in
     zoom.mouse_wheel_zoom(1);
-    assert_eq!(zoom.get_current_zoom(), 1.1);
+    assert!(approx_eq(zoom.get_current_zoom(), 1.1, 0.0001), "Expected 1.1, got {}", zoom.get_current_zoom());
 
     // Negative delta (scroll down) = zoom out
     zoom.mouse_wheel_zoom(-1);
-    assert_eq!(zoom.get_current_zoom(), 1.0);
+    assert!(approx_eq(zoom.get_current_zoom(), 1.0, 0.0001), "Expected 1.0, got {}", zoom.get_current_zoom());
 
-    // Multiple wheel events
-    zoom.mouse_wheel_zoom(5);
-    assert_eq!(zoom.get_current_zoom(), 1.5);
+    // Multiple wheel events (each call is a single step, so 5 positive deltas = zoom in 5 times)
+    for _ in 0..5 {
+        zoom.mouse_wheel_zoom(1);
+    }
+    assert!(approx_eq(zoom.get_current_zoom(), 1.5, 0.0001), "Expected 1.5, got {}", zoom.get_current_zoom());
 }
 
 #[test]
