@@ -488,10 +488,19 @@
   #result-body pre { background: var(--code-bg); border: 1px solid var(--border);
                      border-radius: 6px; padding: 10px; overflow-x: auto; }
   #settings-box label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  #settings-box label[for] { font-weight: 600; color: var(--fg); margin: 12px 0 8px; }
   #settings-box select, #settings-box input {
     width: 100%; padding: 7px 9px; font-size: 13px; border: 1px solid var(--border);
     border-radius: 6px; background: var(--bg); color: var(--fg);
   }
+  #settings-box input[type="radio"], #settings-box input[type="checkbox"] {
+    width: auto; cursor: pointer;
+  }
+  #settings-box select { max-width: 200px; }
+  #settings-box input[type="password"], #settings-box input[type="text"], #settings-box input[type="number"] {
+    width: 100%; max-width: 300px;
+  }
+  #settings-box input[type="number"] { width: 80px; max-width: 80px; }
   #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none;
     flex-direction: column; align-items: center; justify-content: center; z-index: 300; }
   #lightbox.show { display: flex; }
@@ -525,7 +534,6 @@
     border-radius: 4px; box-shadow: 0 8px 40px rgba(0,0,0,.6);
     user-select: none; -webkit-user-drag: none;
   }
-  #content img, #edit-preview img { cursor: zoom-in; }
   #content img, #edit-preview img { cursor: zoom-in; }
   #cheatsheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none;
     align-items: center; justify-content: center; z-index: 260; }
@@ -935,15 +943,22 @@ async function postRender(container) {
   });
 }
 
-// ---- Image lightbox ----
-const lightbox = document.getElementById('lightbox');
-const lightboxImg = lightbox.querySelector('img');
-function openLightbox(src) { lightboxImg.src = src; lightbox.classList.add('show'); }
-function closeLightbox() { lightbox.classList.remove('show'); lightboxImg.src = ''; }
-lightbox.addEventListener('click', closeLightbox);
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && lightbox.classList.contains('show')) { e.stopPropagation(); closeLightbox(); }
-}, true);
+// ---- Image lightbox (enhanced with zoom/pan) ----
+// Note: openLightbox and closeLightbox are defined in image-zoom-ui.js
+// These are placeholder definitions that will be overridden after that script loads
+function openLightbox(src) {
+  if (window.initLightboxImage) {
+    window.initLightboxImage(src);
+    document.getElementById('lightbox').classList.add('show');
+  }
+}
+function closeLightbox() {
+  if (window.closeLightboxZoom) {
+    window.closeLightboxZoom();
+  } else {
+    document.getElementById('lightbox').classList.remove('show');
+  }
+}
 
 // ---- Shortcut cheat sheet ----
 const SHORTCUTS = [
@@ -3682,6 +3697,16 @@ document.addEventListener('keydown', (e) => {
   if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); setFontSize((parseInt(localStorage.getItem('fontSize'), 10) || 16) + 1); }
   if (mod && e.key === '-') { e.preventDefault(); setFontSize((parseInt(localStorage.getItem('fontSize'), 10) || 16) - 1); }
   if (mod && e.key === '0') { e.preventDefault(); setFontSize(16); }
+
+  // Copy file shortcuts (when a file is selected in the tree)
+  const selectedNode = document.querySelector('.node.selected');
+  if (selectedNode && !document.activeElement?.matches('input, textarea')) {
+    const path = selectedNode.title;
+    if (!path.split('/').pop().includes('.')) return; // Ignore if not a file
+    if (mod && e.key === 'c' && !e.shiftKey) { e.preventDefault(); doCopyFile(path, 'markdown'); }
+    if (mod && e.shiftKey && e.key.toLowerCase() === 'c') { e.preventDefault(); doCopyFile(path, 'base64'); }
+    if (mod && e.key === 'h') { e.preventDefault(); doCopyFile(path, 'hex'); }
+  }
 });
 
 // ---- Multi-vault manager (Settings) ----
@@ -4455,5 +4480,6 @@ document.addEventListener('keydown', (e) => {
 renderRecents();
 </script>
 <script src="js/tab-manager.js"></script>
+<script src="image-zoom-ui.js"></script>
 </body>
 </html>
