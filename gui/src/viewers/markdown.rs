@@ -7,6 +7,7 @@ use std::path::PathBuf;
 ///
 /// Displays pre-rendered HTML from markdown content.
 /// Read-only viewer that wraps existing markdown rendering logic.
+#[allow(dead_code)]
 pub struct MarkdownViewer {
     /// Path to the markdown file
     path: PathBuf,
@@ -24,6 +25,7 @@ impl MarkdownViewer {
     /// * `path` - Path to the markdown file
     /// * `html` - Pre-rendered HTML content
     /// * `file_size` - File size in bytes
+    #[allow(dead_code)]
     pub fn new(path: PathBuf, html: String, file_size: u64) -> Self {
         MarkdownViewer {
             path,

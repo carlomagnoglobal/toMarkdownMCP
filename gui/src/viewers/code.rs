@@ -13,14 +13,17 @@ use syntect::parsing::SyntaxSet;
 /// Supports multiple programming languages and includes line numbers.
 pub struct CodeViewer {
     /// Path to the code file
+    #[allow(dead_code)]
     path: PathBuf,
     /// Programming language identifier
     language: String,
     /// File content
     content: String,
     /// Unsaved changes flag
+    #[allow(dead_code)]
     dirty: bool,
     /// File size in bytes
+    #[allow(dead_code)]
     file_size: u64,
 }
 
@@ -53,6 +56,7 @@ impl CodeViewer {
     /// # Arguments
     ///
     /// * `dirty` - New dirty state
+    #[allow(dead_code)]
     pub fn set_dirty(&mut self, dirty: bool) {
         self.dirty = dirty;
     }
@@ -62,6 +66,7 @@ impl CodeViewer {
     /// # Arguments
     ///
     /// * `content` - New content to set
+    #[allow(dead_code)]
     pub fn update_content(&mut self, content: String) {
         self.content = content.clone();
         self.file_size = content.len() as u64;
@@ -73,6 +78,7 @@ impl CodeViewer {
     /// # Returns
     ///
     /// Returns `Ok(())` if save is successful, `Err(String)` if save fails
+    #[allow(dead_code)]
     pub fn save_content(&mut self) -> Result<(), String> {
         // Clear the dirty flag after successful save
         self.dirty = false;
@@ -80,11 +86,13 @@ impl CodeViewer {
     }
 
     /// Returns a reference to the file content
+    #[allow(dead_code)]
     pub fn get_content(&self) -> &str {
         &self.content
     }
 
     /// Returns whether the content has unsaved changes
+    #[allow(dead_code)]
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }

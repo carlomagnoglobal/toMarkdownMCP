@@ -66,6 +66,7 @@ impl ImageViewer {
     /// # Errors
     ///
     /// Returns `ViewerError` if parameters are invalid
+    #[allow(dead_code)]
     pub fn new_with_size(
         path: PathBuf,
         format: String,

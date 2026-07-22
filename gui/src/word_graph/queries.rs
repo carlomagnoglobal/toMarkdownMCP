@@ -53,6 +53,7 @@ pub fn get_notes_for_word(db: &WordGraphDb, word: &str) -> Result<Vec<String>> {
     Ok(notes)
 }
 
+#[allow(dead_code)]
 pub fn get_co_occurrence_partners(db: &WordGraphDb, word: &str, limit: usize) -> Result<Vec<(String, i32)>> {
     let mut stmt = db.conn().prepare(
         "SELECT w.word, c.count FROM co_occurrence c

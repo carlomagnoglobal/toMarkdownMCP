@@ -10,5 +10,7 @@ pub mod traits;
 pub use code::CodeViewer;
 pub use hex::HexViewer;
 pub use image::ImageViewer;
+#[allow(unused_imports)]
 pub use markdown::MarkdownViewer;
+#[allow(unused_imports)]
 pub use traits::{FileViewer, ViewerError, ViewerState};

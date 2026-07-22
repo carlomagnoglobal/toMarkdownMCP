@@ -27,11 +27,14 @@ pub struct DeletedFile {
 pub struct VaultViewerState {
     pub open_tabs: Vec<Tab>,
     pub active_tab: Option<String>,
+    #[allow(dead_code)]
     pub preview_tab: Option<String>,
     pub tab_history: VecDeque<String>, // tab IDs for back button
     pub deleted_files: Vec<DeletedFile>,
+    #[allow(dead_code)]
     pub zoom_levels: HashMap<String, f32>, // file_id -> zoom level
     pub user_preferences: UserPreferences,
+    #[allow(dead_code)]
     pub vault_root: Option<String>, // Root path of the currently opened vault
 }
 
@@ -159,7 +162,7 @@ impl VaultViewerState {
         Ok(())
     }
 
-    pub fn restore_file(&mut self, file_id: &str, vault_root: &Path) -> Result<(), String> {
+    pub fn restore_file(&mut self, file_id: &str, _vault_root: &Path) -> Result<(), String> {
         // Find the deleted file
         let deleted_file = self.deleted_files
             .iter()
@@ -186,7 +189,7 @@ impl VaultViewerState {
         Ok(())
     }
 
-    pub fn permanently_delete(&mut self, file_id: &str, vault_root: &Path) -> Result<(), String> {
+    pub fn permanently_delete(&mut self, file_id: &str, _vault_root: &Path) -> Result<(), String> {
         // Find the deleted file
         let deleted_file = self.deleted_files
             .iter()
@@ -206,7 +209,8 @@ impl VaultViewerState {
         Ok(())
     }
 
-    pub fn cleanup_expired(&mut self, vault_root: &Path, retention_days: u32) -> Result<(), String> {
+    #[allow(dead_code)]
+    pub fn cleanup_expired(&mut self, _vault_root: &Path, retention_days: u32) -> Result<(), String> {
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_err(|e| format!("Failed to get current time: {}", e))?

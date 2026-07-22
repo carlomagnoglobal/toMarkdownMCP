@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 /// Vault database connection wrapper
 pub struct VaultDb {
     pub conn: Connection,
+    #[allow(dead_code)]
     pub vault_root: PathBuf,
 }
 

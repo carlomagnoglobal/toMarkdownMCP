@@ -13,6 +13,7 @@ pub enum ViewerError {
     /// Content parsing errors
     ParseError(String),
     /// Rendering errors
+    #[allow(dead_code)]
     RenderError(String),
 }
 
@@ -29,6 +30,7 @@ impl fmt::Display for ViewerError {
 impl Error for ViewerError {}
 
 /// State information for a file viewer
+#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize)]
 pub struct ViewerState {
     /// Type identifier (markdown, code, image, hex)
@@ -42,6 +44,7 @@ pub struct ViewerState {
 }
 
 /// Trait for polymorphic file viewer implementations
+#[allow(dead_code)]
 pub trait FileViewer: Send + Sync {
     /// Returns HTML or formatted content for display
     fn render(&self) -> Result<String, ViewerError>;

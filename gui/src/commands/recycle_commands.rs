@@ -1,8 +1,7 @@
 /// Recycle bin operations: delete, restore, and manage deleted files.
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
-use serde::Serialize;
 
 use crate::state::{VaultViewerState, DeletedFile};
 

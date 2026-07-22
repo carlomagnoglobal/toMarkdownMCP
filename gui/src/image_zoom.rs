@@ -96,6 +96,7 @@ impl ZoomCalculator {
     /// # Arguments
     ///
     /// * `delta` - Mouse wheel delta (positive for zoom in, negative for zoom out)
+    #[allow(dead_code)]
     pub fn mouse_wheel_zoom(&mut self, delta: i32) {
         if delta > 0 {
             self.zoom_in();
@@ -116,11 +117,13 @@ impl ZoomCalculator {
     }
 
     /// Returns the current zoom level.
+    #[allow(dead_code)]
     pub fn get_current_zoom(&self) -> f32 {
         self.current_zoom
     }
 
     /// Returns the current pan offset.
+    #[allow(dead_code)]
     pub fn get_pan_offset(&self) -> (i32, i32) {
         (self.pan_x, self.pan_y)
     }

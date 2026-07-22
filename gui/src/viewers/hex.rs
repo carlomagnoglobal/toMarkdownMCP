@@ -9,10 +9,12 @@ use std::path::PathBuf;
 /// Each row displays 16 bytes for compact readability.
 pub struct HexViewer {
     /// Path to the binary file
+    #[allow(dead_code)]
     path: PathBuf,
     /// Raw binary data
     bytes: Vec<u8>,
     /// Total file size in bytes
+    #[allow(dead_code)]
     total_size: u64,
 }
 
@@ -80,7 +82,6 @@ impl HexViewer {
 
     /// Render as base64
     fn render_as_base64(&self) -> String {
-        use std::str;
         const STANDARD: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         let mut result = String::new();
 

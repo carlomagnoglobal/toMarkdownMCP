@@ -104,6 +104,7 @@ pub fn load_tabs(vault_root: &Path) -> Result<Option<TabsState>, String> {
 }
 
 /// Update tab mode preference and save to config.
+#[allow(dead_code)]
 pub fn update_tab_mode(vault_root: &Path, mode: TabMode) -> Result<(), String> {
     let mut prefs = load_config(vault_root)?;
     prefs.tab_mode = mode;
@@ -111,6 +112,7 @@ pub fn update_tab_mode(vault_root: &Path, mode: TabMode) -> Result<(), String> {
 }
 
 /// Update recycle bin retention days and save to config.
+#[allow(dead_code)]
 pub fn update_recycle_retention(vault_root: &Path, days: u32) -> Result<(), String> {
     let mut prefs = load_config(vault_root)?;
     prefs.recycle_retention_days = days;
@@ -118,6 +120,7 @@ pub fn update_recycle_retention(vault_root: &Path, days: u32) -> Result<(), Stri
 }
 
 /// Update auto-save setting and save to config.
+#[allow(dead_code)]
 pub fn update_auto_save(vault_root: &Path, enabled: bool) -> Result<(), String> {
     let mut prefs = load_config(vault_root)?;
     prefs.auto_save = enabled;
@@ -125,6 +128,7 @@ pub fn update_auto_save(vault_root: &Path, enabled: bool) -> Result<(), String> 
 }
 
 /// Update theme preference and save to config.
+#[allow(dead_code)]
 pub fn update_theme(vault_root: &Path, theme: String) -> Result<(), String> {
     let mut prefs = load_config(vault_root)?;
     prefs.theme = theme;
@@ -132,6 +136,7 @@ pub fn update_theme(vault_root: &Path, theme: String) -> Result<(), String> {
 }
 
 /// Update zoom behavior and save to config.
+#[allow(dead_code)]
 pub fn update_zoom_behavior(vault_root: &Path, behavior: ZoomBehavior) -> Result<(), String> {
     let mut prefs = load_config(vault_root)?;
     prefs.zoom_behavior = behavior;
