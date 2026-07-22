@@ -103,6 +103,41 @@ pub fn load_tabs(vault_root: &Path) -> Result<Option<TabsState>, String> {
     Ok(Some(tabs_state))
 }
 
+/// Update tab mode preference and save to config.
+pub fn update_tab_mode(vault_root: &Path, mode: TabMode) -> Result<(), String> {
+    let mut prefs = load_config(vault_root)?;
+    prefs.tab_mode = mode;
+    save_config(vault_root, prefs)
+}
+
+/// Update recycle bin retention days and save to config.
+pub fn update_recycle_retention(vault_root: &Path, days: u32) -> Result<(), String> {
+    let mut prefs = load_config(vault_root)?;
+    prefs.recycle_retention_days = days;
+    save_config(vault_root, prefs)
+}
+
+/// Update auto-save setting and save to config.
+pub fn update_auto_save(vault_root: &Path, enabled: bool) -> Result<(), String> {
+    let mut prefs = load_config(vault_root)?;
+    prefs.auto_save = enabled;
+    save_config(vault_root, prefs)
+}
+
+/// Update theme preference and save to config.
+pub fn update_theme(vault_root: &Path, theme: String) -> Result<(), String> {
+    let mut prefs = load_config(vault_root)?;
+    prefs.theme = theme;
+    save_config(vault_root, prefs)
+}
+
+/// Update zoom behavior and save to config.
+pub fn update_zoom_behavior(vault_root: &Path, behavior: ZoomBehavior) -> Result<(), String> {
+    let mut prefs = load_config(vault_root)?;
+    prefs.zoom_behavior = behavior;
+    save_config(vault_root, prefs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

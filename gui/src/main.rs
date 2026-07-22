@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::collections::HashMap;
 
 use notify::Watcher;
 use serde::Serialize;
@@ -19,6 +20,7 @@ mod clipboard_ops;
 mod config;
 mod export;
 mod file_types;
+mod image_zoom;
 mod logging;
 mod render;
 mod state;
@@ -30,6 +32,7 @@ use render::{render_note, RenderOpts};
 use file_types::{detect_file_type, FileType};
 use viewers::{CodeViewer, ImageViewer, HexViewer, FileViewer};
 use state::{VaultViewerState, UserPreferences, TabMode, ZoomBehavior};
+use image_zoom::ZoomCalculator;
 
 #[derive(Serialize)]
 struct TreeNode {
@@ -1926,6 +1929,7 @@ fn main() {
         .manage(WatchState::default())
         .manage(PendingOpens::default())
         .manage(Mutex::new(vault_viewer_state))
+        .manage(Mutex::new(HashMap::<String, ZoomCalculator>::new()))
         .menu(build_menu)
         .on_menu_event(|app, event| {
             let _ = app.emit("menu-action", event.id().0.clone());
@@ -1968,7 +1972,11 @@ fn main() {
             commands::recycle_commands::delete_file, commands::recycle_commands::restore_file,
             commands::recycle_commands::permanently_delete, commands::recycle_commands::get_deleted_files,
             commands::recycle_commands::empty_recycle_bin,
-            commands::clipboard_commands::copy_file
+            commands::clipboard_commands::copy_file,
+            commands::settings_commands::get_preferences, commands::settings_commands::update_preferences,
+            commands::image_commands::zoom_in, commands::image_commands::zoom_out,
+            commands::image_commands::reset_zoom, commands::image_commands::fit_to_window,
+            commands::image_commands::pan
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");
