@@ -1,6 +1,7 @@
 //! toMarkdown Viewer library - exposes internal modules for testing
 
 pub mod commands;
+pub mod config;
 pub mod file_types;
 pub mod logging;
 pub mod state;
