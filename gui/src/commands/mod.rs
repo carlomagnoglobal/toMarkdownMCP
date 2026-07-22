@@ -5,3 +5,4 @@ pub mod recent;
 pub mod search;
 pub mod tab_commands;
 pub mod recycle_commands;
+pub mod clipboard_commands;

@@ -1,5 +1,6 @@
 //! toMarkdown Viewer library - exposes internal modules for testing
 
+pub mod clipboard_ops;
 pub mod commands;
 pub mod config;
 pub mod file_types;

@@ -36,6 +36,9 @@ image = "0.25"
 thiserror = "1.0"
 walkdir = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
+sha2 = "0.10"
+md5 = "0.7"
+base64 = "0.21"
 
 # Already in the dependency tree via tauri (same versions); declared directly
 # only to read the macOS drag pasteboard for browser image drops.

@@ -1966,7 +1966,8 @@ fn main() {
             commands::tab_commands::load_saved_tabs,
             commands::recycle_commands::delete_file, commands::recycle_commands::restore_file,
             commands::recycle_commands::permanently_delete, commands::recycle_commands::get_deleted_files,
-            commands::recycle_commands::empty_recycle_bin
+            commands::recycle_commands::empty_recycle_bin,
+            commands::clipboard_commands::copy_file
         ])
         .build(tauri::generate_context!())
         .expect("error while building toMarkdown Viewer");
