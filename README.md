@@ -1,5 +1,9 @@
 # toMarkdownMCP
 
+[![Crates.io](https://img.shields.io/crates/v/to_markdown_mcp.svg)](https://crates.io/crates/to_markdown_mcp)
+[![License](https://img.shields.io/crates/l/to_markdown_mcp.svg)](LICENSE)
+[![CI](https://github.com/carlomagnoglobal/toMarkdownMCP/workflows/ci/badge.svg)](https://github.com/carlomagnoglobal/toMarkdownMCP/actions)
+
 A Model Context Protocol (MCP) server written in Rust that converts code files, HTML documents, and text content to Markdown format. Cross-platform compatible with Windows, Linux, and macOS.
 
 Supports converting from multiple sources including local files, HTTP/HTTPS URLs, and stdin. Handles 60+ programming languages, HTML/HTM/MHTML web formats, office/document formats (PDF, DOCX, XLSX, PPTX, …), email, ebooks, feeds, and markup — and exposes **62 tools** in total, including Chromium-based web page capture, full Obsidian vault support (wikilinks, backlinks, canvas, dataview, templates), an AI/RAG toolkit, and optional Claude-backed generation. The same binary doubles as a terminal Markdown viewer (`to_markdown_mcp tui <vault>`).
